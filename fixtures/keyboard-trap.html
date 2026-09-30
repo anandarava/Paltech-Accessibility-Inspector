@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keyboard trap fixture - A11y Checker</title>
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: #1a1a1a; background: #ffffff; margin: 0; line-height: 1.5; }
+    /* KBD-06: a fixed header that covers the top 72px of the viewport */
+    .site-header { position: fixed; top: 0; left: 0; right: 0; height: 72px; background: #0b4f9c; color: #ffffff; display: flex; align-items: center; padding: 0 24px; box-sizing: border-box; z-index: 10; }
+    .site-header a { color: #ffffff; margin-right: 16px; }
+    /* The first link of the page sits underneath the fixed header (no top offset) */
+    .under-header { position: absolute; top: 20px; left: 400px; }
+    main, footer { max-width: 760px; margin: 0 auto; padding: 96px 24px 24px; }
+    footer { padding-top: 16px; border-top: 1px solid #cfcfcf; font-size: 14px; color: #3a3a3a; }
+    h1 { font-size: 28px; margin: 0 0 16px; }
+    h2 { font-size: 22px; margin: 32px 0 12px; }
+    button { font: inherit; padding: 8px 14px; border: 1px solid #3a3a3a; border-radius: 4px; background: #f4f4f4; color: #1a1a1a; }
+    a:focus, button:focus, [tabindex]:focus { outline: 3px solid #d35400; outline-offset: 2px; }
+    /* KBD-05: focus indicator removed with no replacement */
+    .no-focus:focus, .no-focus:focus-visible { outline: none; outline-offset: 0; box-shadow: none; }
+    .fake-button { display: inline-block; padding: 8px 14px; border: 1px solid #3a3a3a; border-radius: 4px; background: #f4f4f4; cursor: pointer; }
+    .tags { border: 1px dashed #5c5c5c; padding: 12px; display: inline-flex; gap: 8px; }
+    .tags button { background: #e8f0fb; }
+    .modal-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); z-index: 20; }
+    .modal { position: fixed; top: 20%; left: 50%; transform: translateX(-50%); width: 360px; background: #ffffff; padding: 24px; border-radius: 8px; z-index: 21; }
+    [hidden] { display: none !important; }
+    .spacer { height: 900px; }
+    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <nav aria-label="Primary">
+      <a href="keyboard-trap.html" aria-current="page">Keyboard</a>
+      <a href="images.html">Images</a>
+      <a href="forms.html">Forms</a>
+    </nav>
+  </header>
+
+  <!-- KBD-06: focusable element obscured by the fixed header -->
+  <a class="under-header" href="#release-notes">Release notes</a>
+
+  <main id="content">
+    <h1>Keyboard and focus fixture</h1>
+    <p>This page contains a real keyboard trap, a legitimate modal dialog that closes on Escape, buttons without a visible focus indicator, click handlers on non-focusable elements, and a focusable element hidden behind a fixed header.</p>
+
+    <section aria-labelledby="ok-heading">
+      <h2 id="ok-heading">Working controls</h2>
+      <p>
+        <button type="button" id="ok-button">Refresh list</button>
+        <a href="#release-notes">Go to release notes</a>
+        <span tabindex="0" role="button" id="ok-custom">Custom button with tabindex</span>
+      </p>
+    </section>
+
+    <section aria-labelledby="trap-heading">
+      <h2 id="trap-heading">Tag editor (keyboard trap)</h2>
+      <p>Tab into the tag editor. It intercepts Tab and Shift+Tab, cycles focus between its own buttons, and offers no Escape handling.</p>
+      <div class="tags" id="tag-editor" role="group" aria-label="Tags">
+        <button type="button" data-trap>Design</button>
+        <button type="button" data-trap>Frontend</button>
+        <button type="button" data-trap>QA</button>
+      </div>
+    </section>
+
+    <section aria-labelledby="modal-heading">
+      <h2 id="modal-heading">Settings dialog (legitimate focus trap)</h2>
+      <p>The dialog keeps focus inside while open, closes on Escape, and returns focus to the button that opened it.</p>
+      <button type="button" id="open-settings">Open settings</button>
+    </section>
+
+    <section aria-labelledby="focus-heading">
+      <h2 id="focus-heading">Buttons without a focus indicator</h2>
+      <p>
+        <!-- KBD-05: outline removed and no other focus style (2) -->
+        <button type="button" class="no-focus">Archive</button>
+        <button type="button" class="no-focus">Duplicate</button>
+      </p>
+    </section>
+
+    <section aria-labelledby="click-heading">
+      <h2 id="click-heading">Click handlers on non-focusable elements</h2>
+      <p>
+        <!-- KBD-01: clickable but not focusable (2) -->
+        <span class="fake-button" onclick="alert('Saved')">Save draft</span>
+        <span class="fake-button" role="button" onclick="alert('Published')">Publish</span>
+      </p>
+    </section>
+
+    <section aria-labelledby="nested-heading">
+      <h2 id="nested-heading">Nested interactive controls</h2>
+      <!-- KBD-10: interactive control nested in another -->
+      <button type="button">Download <a href="#release-notes">release notes</a></button>
+      <!-- KBD-03 (best practice, not counted): positive tabindex -->
+      <p><a href="#content" tabindex="5">Back to top</a></p>
+    </section>
+
+    <div class="spacer" aria-hidden="true"></div>
+    <h2 id="release-notes">Release notes</h2>
+    <p>Version 1.0 adds the keyboard test and the tab-order overlay.</p>
+  </main>
+
+  <footer>
+    <p>A11y Checker fixture pages are for testing only.</p>
+  </footer>
+
+  <div class="modal-backdrop" id="settings-backdrop" hidden></div>
+  <div class="modal" id="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title" hidden>
+    <h2 id="settings-title" style="margin-top:0">Settings</h2>
+    <p>
+      <label><input type="checkbox" id="setting-notify"> Email notifications</label>
+    </p>
+    <p>
+      <button type="button" id="settings-save">Save</button>
+      <button type="button" id="settings-cancel">Cancel</button>
+    </p>
+  </div>
+
+  <script>
+    (function () {
+      // --- Real keyboard trap: Tab / Shift+Tab cycle inside the widget, Escape does nothing.
+      var editor = document.getElementById("tag-editor");
+      var trapButtons = Array.prototype.slice.call(editor.querySelectorAll("button[data-trap]"));
+      editor.addEventListener("keydown", function (event) {
+        if (event.key !== "Tab") return;
+        event.preventDefault();
+        var index = trapButtons.indexOf(document.activeElement);
+        if (index === -1) index = 0;
+        var next = event.shiftKey
+          ? (index - 1 + trapButtons.length) % trapButtons.length
+          : (index + 1) % trapButtons.length;
+        trapButtons[next].focus();
+      });
+
+      // --- Legitimate modal: focus moves in, cycles inside, Escape closes and restores focus.
+      var opener = document.getElementById("open-settings");
+      var dialog = document.getElementById("settings-dialog");
+      var backdrop = document.getElementById("settings-backdrop");
+      var lastFocused = null;
+
+      function focusables() {
+        return Array.prototype.slice.call(
+          dialog.querySelectorAll("button, input, [tabindex]:not([tabindex='-1'])")
+        );
+      }
+      function openDialog() {
+        lastFocused = document.activeElement;
+        dialog.hidden = false;
+        backdrop.hidden = false;
+        var first = focusables()[0];
+        if (first) first.focus();
+      }
+      function closeDialog() {
+        dialog.hidden = true;
+        backdrop.hidden = true;
+        if (lastFocused && typeof lastFocused.focus === "function") lastFocused.focus();
+      }
+      opener.addEventListener("click", openDialog);
+      document.getElementById("settings-save").addEventListener("click", closeDialog);
+      document.getElementById("settings-cancel").addEventListener("click", closeDialog);
+      backdrop.addEventListener("click", closeDialog);
+      dialog.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          closeDialog();
+          return;
+        }
+        if (event.key !== "Tab") return;
+        var items = focusables();
+        if (items.length === 0) return;
+        var first = items[0];
+        var last = items[items.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      });
+    })();
+  </script>
+
+  <!-- Definite (Auto) findings the automated scan must report, per project rule id. -->
+  <script type="application/json" id="expected">
+    { "KBD-01": 2, "KBD-05": 2, "KBD-06": 1, "KBD-10": 1 }
+  </script>
+  <!-- Expected outcome of the keyboard (Tab simulation) test, which runs separately from the scan. -->
+  <script type="application/json" id="expected-keyboard">
+    { "trapDetected": true, "trapSelector": "#tag-editor", "KBD-02": 1 }
+  </script>
+</body>
+</html>

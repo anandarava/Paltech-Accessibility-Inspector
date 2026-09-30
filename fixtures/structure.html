@@ -1,0 +1,128 @@
+<!doctype html>
+<!-- STR-02: invalid lang value on <html> -->
+<html lang="english">
+<head>
+  <meta charset="utf-8">
+  <!-- ZM-01: viewport meta disables zoom -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <!-- STR-01: empty document title -->
+  <title></title>
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: #1a1a1a; background: #ffffff; margin: 0; line-height: 1.5; }
+    .page { max-width: 820px; margin: 0 auto; padding: 16px 24px; }
+    nav a { color: #0b4f9c; margin-right: 16px; }
+    h1 { font-size: 28px; margin: 8px 0 16px; }
+    h2 { font-size: 22px; margin: 32px 0 12px; }
+    h4 { font-size: 16px; margin: 16px 0 8px; }
+    table { border-collapse: collapse; margin: 12px 0; }
+    th, td { border: 1px solid #5c5c5c; padding: 6px 10px; text-align: left; }
+    caption { caption-side: top; font-weight: 600; text-align: left; margin-bottom: 4px; }
+    iframe { border: 1px solid #5c5c5c; width: 300px; height: 80px; }
+    marquee { border: 1px dashed #5c5c5c; padding: 4px; }
+    a:focus, button:focus { outline: 3px solid #0b4f9c; outline-offset: 2px; }
+    .footer { border-top: 1px solid #cfcfcf; font-size: 14px; color: #3a3a3a; padding-top: 16px; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <!-- Intentionally no <header>/<main>/<footer> landmarks (STR-05 / STR-06 best-practice findings). -->
+    <nav aria-label="Primary">
+      <a href="structure.html" aria-current="page">Structure</a>
+      <a href="aria.html">ARIA</a>
+      <a href="links.html">Links</a>
+    </nav>
+
+    <h1>Quarterly report</h1>
+    <p>This fixture plants document-level and structural failures: page title, language, tables, duplicate ids, frames, lists, a marquee, and a zoom-disabling viewport meta. The content below is otherwise readable.</p>
+
+    <h2>Correct structures</h2>
+    <table>
+      <caption>Revenue by region (accessible table)</caption>
+      <thead>
+        <tr><th scope="col">Region</th><th scope="col">Q1</th><th scope="col">Q2</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">Europe</th><td>120</td><td>134</td></tr>
+        <tr><th scope="row">Americas</th><td>98</td><td>105</td></tr>
+      </tbody>
+    </table>
+
+    <ul>
+      <li>Well-formed list item one</li>
+      <li>Well-formed list item two</li>
+    </ul>
+
+    <dl>
+      <dt>ARR</dt>
+      <dd>Annual recurring revenue.</dd>
+    </dl>
+
+    <p>The team greeting in Dutch, <span lang="nl">welkom bij het team</span>, is correctly marked up.</p>
+
+    <iframe src="about:blank" title="Embedded revenue chart"></iframe>
+
+    <h2>Planted violations</h2>
+
+    <!-- STR-04 (best practice, not counted): heading level skipped from h2 to h4 -->
+    <h4>Headcount by office</h4>
+
+    <!-- STR-07: td headers attribute references a missing id -->
+    <table>
+      <caption>Headcount (broken headers attribute)</caption>
+      <tr><th id="office">Office</th><th id="count">Headcount</th></tr>
+      <tr><td headers="office">Amsterdam</td><td headers="headcount-missing">42</td></tr>
+      <tr><td headers="office">Austin</td><td headers="headcount-missing">37</td></tr>
+    </table>
+
+    <!-- STR-07 (Semi, not reported): a column header with no data cells; axe reports this as "needs review" -->
+    <table>
+      <caption>Open positions (header without data cells)</caption>
+      <thead>
+        <tr><th scope="col">Role</th><th scope="col">Location</th><th scope="col">Hiring manager</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>QA engineer</td><td>Remote</td></tr>
+        <tr><td>Designer</td><td>Berlin</td></tr>
+      </tbody>
+    </table>
+
+    <!-- STR-08 (Semi, not reported): duplicate id referenced by ARIA; axe flags duplicate-id-aria as "needs review" -->
+    <h4 id="metric-label">Net promoter score</h4>
+    <p id="metric-label">Customer satisfaction</p>
+    <div role="group" aria-labelledby="metric-label">
+      <p>Score: 61</p>
+    </div>
+
+    <!-- STR-09: iframe without a title -->
+    <iframe src="about:blank"></iframe>
+
+    <!-- STR-11: invalid lang attribute on an element -->
+    <p>The French office says <span lang="xyz123">bonjour</span> every morning.</p>
+
+    <!-- STR-14: list with a non-li child (1 of 2) -->
+    <ul>
+      <li>Milestone one</li>
+      <div>Milestone two (not a list item)</div>
+    </ul>
+
+    <!-- STR-14: list item outside a list (2 of 2) -->
+    <li>Orphaned milestone</li>
+
+    <!-- STR-12 (best practice, not counted): empty heading -->
+    <h4></h4>
+
+    <!-- OTH-02: scrolling marquee -->
+    <marquee>Ticker: revenue up 12 percent this quarter</marquee>
+
+    <div class="footer">
+      <p>A11y Checker fixture pages are for testing only.</p>
+    </div>
+  </div>
+
+  <!-- Definite (Auto) findings the extension must report, per project rule id. -->
+  <script type="application/json" id="expected">
+    { "STR-01": 1, "STR-02": 1, "STR-07": 1, "STR-09": 1, "STR-11": 1, "STR-14": 2, "OTH-02": 1, "ZM-01": 1 }
+  </script>
+  <!-- Findings axe reports as "needs review" (Semi) on this page; listed for documentation, not asserted. -->
+</body>
+</html>

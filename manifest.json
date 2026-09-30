@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "PalTech A11y Inspector",
+  "short_name": "PalTech A11y",
+  "version": "1.0.0",
+  "description": "Scan pages for WCAG 2.2 accessibility issues, highlight them, and report bugs.",
+  "minimum_chrome_version": "116",
+  "action": {
+    "default_title": "Open PalTech A11y Inspector",
+    "default_icon": { "16": "icons/16.png", "32": "icons/32.png", "48": "icons/48.png", "128": "icons/128.png" }
+  },
+  "side_panel": { "default_path": "src/sidepanel/index.html" },
+  "background": { "service_worker": "src/background/service-worker.ts", "type": "module" },
+  "options_page": "src/options/index.html",
+  "devtools_page": "src/devtools/index.html",
+  "permissions": ["activeTab", "scripting", "sidePanel", "storage", "unlimitedStorage", "downloads", "offscreen"],
+  "host_permissions": ["<all_urls>"],
+  "web_accessible_resources": [
+    {
+      "resources": ["src/content/*.iife.js"],
+      "matches": ["<all_urls>"],
+      "use_dynamic_url": true
+    }
+  ],
+  "icons": { "16": "icons/16.png", "32": "icons/32.png", "48": "icons/48.png", "128": "icons/128.png" }
+}

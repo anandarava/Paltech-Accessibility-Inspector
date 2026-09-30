@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Images fixture - A11y Checker</title>
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: #1a1a1a; background: #ffffff; margin: 0; line-height: 1.5; }
+    header, main, footer { max-width: 920px; margin: 0 auto; padding: 16px 24px; }
+    header { border-bottom: 1px solid #cfcfcf; }
+    nav a { color: #0b4f9c; margin-right: 16px; }
+    h1 { font-size: 28px; margin: 8px 0 16px; }
+    h2 { font-size: 22px; margin: 32px 0 12px; }
+    .gallery { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start; }
+    figure { margin: 0; width: 140px; }
+    figcaption { font-size: 14px; color: #3a3a3a; }
+    img, svg { display: block; }
+    a:focus, button:focus, input:focus { outline: 3px solid #0b4f9c; outline-offset: 2px; }
+    footer { border-top: 1px solid #cfcfcf; font-size: 14px; color: #3a3a3a; }
+  </style>
+</head>
+<body>
+  <header>
+    <nav aria-label="Primary">
+      <a href="images.html" aria-current="page">Images</a>
+      <a href="forms.html">Forms</a>
+      <a href="links.html">Links</a>
+    </nav>
+  </header>
+
+  <main>
+    <h1>Product gallery</h1>
+    <p>This fixture plants several image text-alternative failures among correctly described images.</p>
+
+    <section aria-labelledby="good-heading">
+      <h2 id="good-heading">Correct examples</h2>
+      <div class="gallery">
+        <figure>
+          <img width="120" height="80" alt="Blue mountain bike leaning against a fence"
+               src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='80'%3E%3Crect width='120' height='80' fill='%230b4f9c'/%3E%3C/svg%3E">
+          <figcaption>Informative image with a descriptive alt.</figcaption>
+        </figure>
+        <figure>
+          <img width="120" height="80" alt=""
+               src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='80'%3E%3Crect width='120' height='80' fill='%23d9d9d9'/%3E%3C/svg%3E">
+          <figcaption>Decorative image with an empty alt.</figcaption>
+        </figure>
+        <figure>
+          <svg role="img" aria-labelledby="ok-svg-title" width="120" height="80" viewBox="0 0 120 80">
+            <title id="ok-svg-title">Sales grew 12 percent in the last quarter</title>
+            <rect width="120" height="80" fill="#eef3fa"/>
+            <polyline points="10,60 40,45 70,50 110,20" fill="none" stroke="#0b4f9c" stroke-width="4"/>
+          </svg>
+          <figcaption>SVG graphic with a title.</figcaption>
+        </figure>
+        <figure>
+          <svg aria-hidden="true" focusable="false" width="24" height="24" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="10" fill="#0b4f9c"/>
+          </svg>
+          <figcaption>Decorative inline SVG hidden from assistive tech.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section aria-labelledby="bad-heading">
+      <h2 id="bad-heading">Planted violations</h2>
+      <div class="gallery">
+        <!-- IMG-01: missing alt attribute (2) -->
+        <figure>
+          <img width="120" height="80"
+               src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='80'%3E%3Crect width='120' height='80' fill='%23c0392b'/%3E%3C/svg%3E">
+          <figcaption>Hero image with no alt attribute.</figcaption>
+        </figure>
+        <figure>
+          <img width="120" height="80"
+               src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='80'%3E%3Crect width='120' height='80' fill='%2327ae60'/%3E%3C/svg%3E">
+          <figcaption>Second image with no alt attribute.</figcaption>
+        </figure>
+
+        <!-- IMG-02: alt text is a filename (2) -->
+        <figure>
+          <img width="120" height="80" alt="IMG_2031.jpg"
+               src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='80'%3E%3Crect width='120' height='80' fill='%238e44ad'/%3E%3C/svg%3E">
+          <figcaption>Alt is a camera filename.</figcaption>
+        </figure>
+        <figure>
+          <img width="120" height="80" alt="hero-banner-final.png"
+               src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='80'%3E%3Crect width='120' height='80' fill='%23f39c12'/%3E%3C/svg%3E">
+          <figcaption>Alt is an export filename.</figcaption>
+        </figure>
+
+        <!-- IMG-03: generic alt (2) -->
+        <figure>
+          <img width="120" height="80" alt="image"
+               src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='80'%3E%3Crect width='120' height='80' fill='%2316a085'/%3E%3C/svg%3E">
+          <figcaption>Alt is the word "image".</figcaption>
+        </figure>
+        <figure>
+          <img width="120" height="80" alt="icon"
+               src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='80'%3E%3Crect width='120' height='80' fill='%232c3e50'/%3E%3C/svg%3E">
+          <figcaption>Alt is the word "icon".</figcaption>
+        </figure>
+
+        <!-- IMG-05: svg role=img with no accessible name (1) -->
+        <figure>
+          <svg role="img" width="120" height="80" viewBox="0 0 120 80">
+            <rect width="120" height="80" fill="#fdf2e9"/>
+            <circle cx="60" cy="40" r="25" fill="#e67e22"/>
+          </svg>
+          <figcaption>SVG marked as an image without a title or label.</figcaption>
+        </figure>
+
+        <!-- IMG-08 (Semi, not reported): bare inline svg with no role, name, or aria-hidden -->
+        <figure>
+          <svg width="48" height="48" viewBox="0 0 48 48">
+            <path d="M8 24h32M24 8v32" stroke="#0b4f9c" stroke-width="4"/>
+          </svg>
+          <figcaption>Bare inline SVG (possibly decorative).</figcaption>
+        </figure>
+      </div>
+
+      <h2>Image controls</h2>
+      <form action="#" method="get">
+        <!-- IMG-06: input type=image without alt (1 of 2) -->
+        <input type="image" width="32" height="32"
+               src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%230b4f9c'/%3E%3C/svg%3E">
+        <input type="image" alt="Search products" width="32" height="32"
+               src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%2327ae60'/%3E%3C/svg%3E">
+      </form>
+
+      <!-- IMG-06: area without alt (2 of 2) -->
+      <img usemap="#regions" width="200" height="100" alt="Map of store regions"
+           src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='100'%3E%3Crect width='100' height='100' fill='%23b8d8f0'/%3E%3Crect x='100' width='100' height='100' fill='%23f0d8b8'/%3E%3C/svg%3E">
+      <map name="regions">
+        <area shape="rect" coords="0,0,100,100" href="#west">
+        <area shape="rect" coords="100,0,200,100" href="#east" alt="East region">
+      </map>
+    </section>
+  </main>
+
+  <footer>
+    <p>A11y Checker fixture pages are for testing only.</p>
+  </footer>
+
+  <!-- Definite (Auto) findings the extension must report, per project rule id. -->
+  <script type="application/json" id="expected">
+    { "IMG-01": 2, "IMG-02": 2, "IMG-03": 2, "IMG-05": 1, "IMG-06": 2 }
+  </script>
+</body>
+</html>

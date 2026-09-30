@@ -1,0 +1,49 @@
+@import "tailwindcss";
+
+:root {
+  --sev-critical: #d7263d;
+  --sev-serious: #f46036;
+  --sev-moderate: #f5b700;
+  --sev-minor: #8d99ae;
+  --sev-bp: #6c757d;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+}
+
+/* Visible focus for the extension's own UI (it must pass its own checks). */
+:focus-visible {
+  outline: 2px solid #2e86de;
+  outline-offset: 2px;
+}
+
+.sev-dot {
+  display: inline-block;
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 9999px;
+  flex-shrink: 0;
+}
+.sev-Critical { background: var(--sev-critical); }
+.sev-Serious { background: var(--sev-serious); }
+.sev-Moderate { background: var(--sev-moderate); }
+.sev-Minor { background: var(--sev-minor); }
+.sev-bp { background: var(--sev-bp); }
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

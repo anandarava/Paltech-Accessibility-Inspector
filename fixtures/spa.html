@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SPA fixture - A11y Checker</title>
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: #1a1a1a; background: #ffffff; margin: 0; line-height: 1.5; }
+    header, main, footer { max-width: 820px; margin: 0 auto; padding: 16px 24px; }
+    header { border-bottom: 1px solid #cfcfcf; }
+    nav a { color: #0b4f9c; margin-right: 16px; }
+    nav a[aria-current="page"] { font-weight: 700; }
+    h1 { font-size: 28px; margin: 8px 0 16px; }
+    h2 { font-size: 22px; margin: 24px 0 12px; }
+    button { font: inherit; padding: 8px 14px; border: 1px solid #3a3a3a; border-radius: 4px; background: #f4f4f4; color: #1a1a1a; }
+    label { display: block; font-weight: 600; margin: 12px 0 4px; }
+    input[type="text"], input[type="search"] { font: inherit; padding: 6px 8px; border: 1px solid #5c5c5c; border-radius: 4px; min-width: 240px; }
+    .card { border: 1px solid #cfcfcf; border-radius: 6px; padding: 12px 16px; margin: 12px 0; }
+    .backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); }
+    .dialog { position: fixed; top: 20%; left: 50%; transform: translateX(-50%); width: 360px; background: #ffffff; padding: 24px; border-radius: 8px; }
+    [hidden] { display: none !important; }
+    a:focus, button:focus, input:focus { outline: 3px solid #0b4f9c; outline-offset: 2px; }
+    footer { border-top: 1px solid #cfcfcf; font-size: 14px; color: #3a3a3a; }
+  </style>
+</head>
+<body>
+  <header>
+    <nav aria-label="Primary" id="spa-nav">
+      <a href="?view=home" data-view="home" aria-current="page">Home</a>
+      <a href="?view=products" data-view="products">Products</a>
+      <a href="?view=account" data-view="account">Account</a>
+    </nav>
+  </header>
+
+  <main id="app" aria-live="off">
+    <!-- Rendered by the router below; the initial "home" view is also present for no-JS. -->
+    <h1>Welcome back</h1>
+    <p>Loading application...</p>
+  </main>
+
+  <footer>
+    <p>A11y Checker fixture pages are for testing only.</p>
+  </footer>
+
+  <div class="backdrop" id="cart-backdrop" hidden></div>
+  <div class="dialog" id="cart-dialog" role="dialog" aria-modal="true" aria-labelledby="cart-title" hidden>
+    <h2 id="cart-title" style="margin-top:0">Your cart</h2>
+    <p>Two items are ready for checkout.</p>
+    <!-- Planted inside the dialog: an unlabeled search box (FRM-01) the dialog rescan should find -->
+    <input type="search" name="coupon" placeholder="">
+    <p>
+      <button type="button" id="cart-checkout">Checkout</button>
+      <button type="button" id="cart-close">Close</button>
+    </p>
+  </div>
+
+  <template id="view-home">
+    <h1>Welcome back</h1>
+    <p>This single-page app navigates with <code>history.pushState</code>, swaps the main region, and opens a modal dialog. Each of those should trigger the SPA observer.</p>
+    <div class="card">
+      <h2>Featured</h2>
+      <!-- IMG-01: image without alt on the initial view -->
+      <img width="120" height="80"
+           src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='80'%3E%3Crect width='120' height='80' fill='%230b4f9c'/%3E%3C/svg%3E">
+      <!-- LNK-01: link without an accessible name on the initial view -->
+      <p>Featured product: <a href="?view=products&item=1"></a></p>
+      <p><button type="button" id="open-cart">Open cart</button></p>
+    </div>
+  </template>
+
+  <template id="view-products">
+    <h1>Products</h1>
+    <p>Rendered after a pushState navigation.</p>
+    <div class="card">
+      <h2>Filter</h2>
+      <!-- FRM-01: unlabeled input on the products view -->
+      <input type="text" name="filter">
+      <p>
+        <!-- LNK-02: button without a name on the products view -->
+        <button type="button"></button>
+      </p>
+    </div>
+    <p><button type="button" id="open-cart">Open cart</button></p>
+  </template>
+
+  <template id="view-account">
+    <h1>Account</h1>
+    <p>This view is accessible: every control has a name.</p>
+    <div class="card">
+      <label for="account-name">Display name</label>
+      <input id="account-name" type="text" name="displayName" autocomplete="nickname">
+      <p><button type="button">Save changes</button></p>
+    </div>
+  </template>
+
+  <script>
+    (function () {
+      var app = document.getElementById("app");
+      var nav = document.getElementById("spa-nav");
+      var dialog = document.getElementById("cart-dialog");
+      var backdrop = document.getElementById("cart-backdrop");
+      var lastFocused = null;
+
+      function currentView() {
+        var params = new URLSearchParams(window.location.search);
+        var view = params.get("view") || "home";
+        return document.getElementById("view-" + view) ? view : "home";
+      }
+
+      function render() {
+        var view = currentView();
+        var tpl = document.getElementById("view-" + view);
+        app.innerHTML = "";
+        app.appendChild(tpl.content.cloneNode(true));
+        document.title = view.charAt(0).toUpperCase() + view.slice(1) + " - SPA fixture";
+        Array.prototype.forEach.call(nav.querySelectorAll("a[data-view]"), function (a) {
+          if (a.getAttribute("data-view") === view) a.setAttribute("aria-current", "page");
+          else a.removeAttribute("aria-current");
+        });
+        var opener = document.getElementById("open-cart");
+        if (opener) opener.addEventListener("click", openCart);
+      }
+
+      function navigate(url) {
+        history.pushState({ view: new URL(url, location.href).searchParams.get("view") }, "", url);
+        render();
+      }
+
+      nav.addEventListener("click", function (event) {
+        var link = event.target.closest("a[data-view]");
+        if (!link) return;
+        event.preventDefault();
+        navigate(link.getAttribute("href"));
+      });
+
+      window.addEventListener("popstate", render);
+
+      function openCart() {
+        lastFocused = document.activeElement;
+        dialog.hidden = false;
+        backdrop.hidden = false;
+        document.getElementById("cart-checkout").focus();
+      }
+      function closeCart() {
+        dialog.hidden = true;
+        backdrop.hidden = true;
+        if (lastFocused && typeof lastFocused.focus === "function") lastFocused.focus();
+      }
+      document.getElementById("cart-close").addEventListener("click", closeCart);
+      document.getElementById("cart-checkout").addEventListener("click", closeCart);
+      backdrop.addEventListener("click", closeCart);
+      dialog.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") { event.preventDefault(); closeCart(); }
+      });
+
+      render();
+    })();
+  </script>
+
+  <!-- Definite (Auto) findings expected on the initial (home) view. -->
+  <script type="application/json" id="expected">
+    { "IMG-01": 1, "LNK-01": 1 }
+  </script>
+  <!-- Findings that appear only after navigating to ?view=products (route change) or opening the cart dialog. -->
+  <script type="application/json" id="expected-after-change">
+    { "route": { "view": "products", "FRM-01": 1, "LNK-02": 1 }, "dialog": { "FRM-01": 1 } }
+  </script>
+</body>
+</html>

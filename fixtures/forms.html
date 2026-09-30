@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Forms fixture - A11y Checker</title>
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: #1a1a1a; background: #ffffff; margin: 0; line-height: 1.5; }
+    header, main, footer { max-width: 760px; margin: 0 auto; padding: 16px 24px; }
+    header { border-bottom: 1px solid #cfcfcf; }
+    nav a { color: #0b4f9c; margin-right: 16px; }
+    h1 { font-size: 28px; margin: 8px 0 16px; }
+    h2 { font-size: 22px; margin: 32px 0 12px; }
+    .field { margin: 0 0 16px; }
+    label, legend { display: block; font-weight: 600; margin-bottom: 4px; }
+    input[type="text"], input[type="email"], input[type="tel"], select, textarea {
+      font: inherit; padding: 6px 8px; border: 1px solid #5c5c5c; border-radius: 4px; min-width: 260px;
+    }
+    .inline label { display: inline; font-weight: 400; margin-right: 12px; }
+    .required-mark { color: #b3261e; }
+    .error { color: #b3261e; font-size: 14px; margin-top: 4px; }
+    button { font: inherit; padding: 8px 16px; background: #0b4f9c; color: #fff; border: 0; border-radius: 4px; }
+    a:focus, button:focus, input:focus, select:focus, textarea:focus { outline: 3px solid #0b4f9c; outline-offset: 2px; }
+    footer { border-top: 1px solid #cfcfcf; font-size: 14px; color: #3a3a3a; }
+  </style>
+</head>
+<body>
+  <header>
+    <nav aria-label="Primary">
+      <a href="images.html">Images</a>
+      <a href="forms.html" aria-current="page">Forms</a>
+      <a href="links.html">Links</a>
+    </nav>
+  </header>
+
+  <main>
+    <h1>Create your account</h1>
+    <p>The first form is correctly labelled. The second one plants labelling, grouping, required-state, and autocomplete failures.</p>
+
+    <section aria-labelledby="good-form-heading">
+      <h2 id="good-form-heading">Accessible form</h2>
+      <form action="#" method="post" novalidate>
+        <div class="field">
+          <label for="ok-name">Full name <span class="required-mark" aria-hidden="true">*</span></label>
+          <input id="ok-name" name="fullName" type="text" autocomplete="name" required aria-required="true">
+        </div>
+        <div class="field">
+          <label for="ok-email">Email address <span class="required-mark" aria-hidden="true">*</span></label>
+          <input id="ok-email" name="email" type="email" autocomplete="email" required aria-required="true"
+                 aria-describedby="ok-email-hint">
+          <div id="ok-email-hint">We only use this to send your receipt.</div>
+        </div>
+        <fieldset class="inline">
+          <legend>Preferred contact method</legend>
+          <input id="ok-contact-email" type="radio" name="contact" value="email" checked>
+          <label for="ok-contact-email">Email</label>
+          <input id="ok-contact-phone" type="radio" name="contact" value="phone">
+          <label for="ok-contact-phone">Phone</label>
+        </fieldset>
+        <div class="field">
+          <label for="ok-country">Country</label>
+          <select id="ok-country" name="country" autocomplete="country-name">
+            <option value="">Choose a country</option>
+            <option value="nl">Netherlands</option>
+            <option value="us">United States</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="ok-postal">Postal code</label>
+          <input id="ok-postal" name="postal" type="text" autocomplete="postal-code" aria-invalid="true"
+                 aria-describedby="ok-postal-error" value="ABC">
+          <div id="ok-postal-error" class="error" role="alert">Enter a postal code in the format 1234 AB.</div>
+        </div>
+        <button type="submit">Create account</button>
+      </form>
+    </section>
+
+    <section aria-labelledby="bad-form-heading">
+      <h2 id="bad-form-heading">Form with planted violations</h2>
+      <form action="#" method="post" novalidate>
+        <!-- FRM-01: text input with no label at all (1 of 2) -->
+        <div class="field">
+          <input name="company" type="text">
+        </div>
+
+        <!-- FRM-01: select with no accessible name (2 of 2) -->
+        <div class="field">
+          <select name="plan-size">
+            <option value="">Team size</option>
+            <option value="1">1 to 10</option>
+            <option value="2">11 to 50</option>
+          </select>
+        </div>
+
+        <!-- FRM-02: title is the only label -->
+        <div class="field">
+          <input name="jobTitle" type="text" title="Job title">
+        </div>
+
+        <!-- FRM-02: placeholder is the only label (axe accepts a placeholder as
+             a name, so this is found by the custom forms rule, not by axe) -->
+        <div class="field">
+          <input name="department" type="text" placeholder="Department">
+        </div>
+
+        <!-- FRM-04: visually required (asterisk + "required") but no required / aria-required (2) -->
+        <div class="field">
+          <label for="bad-phone">Phone number <span class="required-mark">*</span> (required)</label>
+          <input id="bad-phone" name="phone" type="tel">
+        </div>
+        <div class="field">
+          <label for="bad-vat">VAT number <span class="required-mark">*</span> (required)</label>
+          <input id="bad-vat" name="vat" type="text">
+        </div>
+
+        <!-- FRM-03: radio group without fieldset/legend or role=group (1 of 2) -->
+        <div class="field inline">
+          <p>Billing plan</p>
+          <input id="bad-plan-monthly" type="radio" name="plan" value="monthly">
+          <label for="bad-plan-monthly">Monthly</label>
+          <input id="bad-plan-yearly" type="radio" name="plan" value="yearly">
+          <label for="bad-plan-yearly">Yearly</label>
+          <input id="bad-plan-none" type="radio" name="plan" value="none">
+          <label for="bad-plan-none">Pay as you go</label>
+        </div>
+
+        <!-- FRM-03: checkbox group without a group label (2 of 2) -->
+        <div class="field inline">
+          <p>Interests</p>
+          <input id="bad-int-news" type="checkbox" name="interests" value="news">
+          <label for="bad-int-news">Product news</label>
+          <input id="bad-int-events" type="checkbox" name="interests" value="events">
+          <label for="bad-int-events">Events</label>
+        </div>
+
+        <!-- FRM-07: invalid autocomplete token -->
+        <div class="field">
+          <label for="bad-address">Street address</label>
+          <input id="bad-address" name="address" type="text" autocomplete="street">
+        </div>
+
+        <!-- FRM-05 / FRM-06 (Semi, not reported): visible error not linked, aria-invalid missing -->
+        <div class="field">
+          <label for="bad-zip">ZIP code</label>
+          <input id="bad-zip" name="zip" type="text" value="12">
+          <div id="bad-zip-error" class="error">ZIP code must be 5 digits.</div>
+        </div>
+
+        <!-- FRM-10 (best practice, not counted): two labels for one field -->
+        <div class="field">
+          <label for="bad-nick">Nickname</label>
+          <label for="bad-nick">Display name</label>
+          <input id="bad-nick" name="nick" type="text">
+        </div>
+
+        <button type="submit">Save</button>
+      </form>
+    </section>
+  </main>
+
+  <footer>
+    <p>A11y Checker fixture pages are for testing only.</p>
+  </footer>
+
+  <!-- Definite (Auto) findings the extension must report, per project rule id. -->
+  <script type="application/json" id="expected">
+    { "FRM-01": 2, "FRM-02": 2, "FRM-03": 2, "FRM-04": 2, "FRM-07": 1 }
+  </script>
+</body>
+</html>

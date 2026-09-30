@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Links fixture - A11y Checker</title>
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: #1a1a1a; background: #ffffff; margin: 0; line-height: 1.5; }
+    header, main, footer { max-width: 820px; margin: 0 auto; padding: 16px 24px; }
+    header { border-bottom: 1px solid #cfcfcf; }
+    nav a { color: #0b4f9c; margin-right: 16px; }
+    h1 { font-size: 28px; margin: 8px 0 16px; }
+    h2 { font-size: 22px; margin: 32px 0 12px; }
+    a { color: #0b4f9c; }
+    article { border: 1px solid #cfcfcf; border-radius: 6px; padding: 12px 16px; margin: 12px 0; }
+    button { font: inherit; padding: 8px 14px; border: 1px solid #3a3a3a; border-radius: 4px; background: #f4f4f4; color: #1a1a1a; }
+    .toolbar { display: flex; gap: 12px; align-items: center; }
+    .toolbar button { width: 44px; height: 44px; padding: 0; }
+    /* TGT-01: 16x16 targets touching each other */
+    .tiny-toolbar { display: flex; gap: 0; }
+    .tiny-toolbar button { width: 16px; height: 16px; padding: 0; margin: 0; border-radius: 0; line-height: 1; }
+    .icon { display: inline-block; width: 12px; height: 12px; background: #0b4f9c; }
+    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    a:focus, button:focus, input:focus { outline: 3px solid #0b4f9c; outline-offset: 2px; }
+    footer { border-top: 1px solid #cfcfcf; font-size: 14px; color: #3a3a3a; }
+  </style>
+</head>
+<body>
+  <header>
+    <nav aria-label="Primary">
+      <a href="links.html" aria-current="page">Links</a>
+      <a href="images.html">Images</a>
+      <a href="forms.html">Forms</a>
+    </nav>
+  </header>
+
+  <main>
+    <h1>Engineering blog</h1>
+    <p>The first article uses descriptive links and named buttons. The remaining articles plant empty names, vague link text, unannounced new windows, and undersized targets.</p>
+
+    <section aria-labelledby="ok-heading">
+      <h2 id="ok-heading">Correct examples</h2>
+      <article>
+        <h3>Shipping the keyboard test</h3>
+        <p>We explain how the tab-order overlay works in <a href="#keyboard-test-article">the keyboard test write-up</a>.</p>
+        <p>Source is on <a href="https://example.com/repo" target="_blank" rel="noopener">GitHub (opens in a new tab)</a>.</p>
+        <p>Design notes are in <a href="https://example.com/figma" target="_blank" rel="noopener" aria-label="Figma design notes, opens in new window">Figma</a>.</p>
+        <div class="toolbar">
+          <button type="button" aria-label="Share article"><span class="icon" aria-hidden="true"></span></button>
+          <button type="button">Save</button>
+          <input type="button" value="Print">
+        </div>
+      </article>
+    </section>
+
+    <section aria-labelledby="bad-heading">
+      <h2 id="bad-heading">Planted violations</h2>
+
+      <article>
+        <h3>Empty accessible names</h3>
+        <!-- LNK-01: link with no accessible name (2) -->
+        <p>Download the quarterly report: <a href="#report"></a></p>
+        <p>
+          <a href="#profile"><img width="24" height="24" alt=""
+             src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Ccircle cx='12' cy='12' r='11' fill='%230b4f9c'/%3E%3C/svg%3E"></a>
+        </p>
+        <!-- LNK-02: button and input button with no accessible name (2) -->
+        <p>
+          <button type="button"><span class="icon" aria-hidden="true"></span></button>
+          <input type="button">
+        </p>
+      </article>
+
+      <article>
+        <h3>Vague link text</h3>
+        <!-- LNK-03 (best practice): vague link text (3): "Click here", "Read more", "here". The fourth link is descriptive. -->
+        <p>Our new contrast engine is faster than ever. <a href="#contrast-article">Click here</a></p>
+        <p>The keyboard tester now detects modal traps. <a href="#keyboard-test-article">Read more</a></p>
+        <p>Release notes for version 1.0 are available <a href="#release-notes">here</a>.</p>
+        <p>Read more about <a href="#contrast-article">how the contrast engine blends transparent backgrounds</a>.</p>
+      </article>
+
+      <article>
+        <h3>New windows without warning</h3>
+        <!-- LNK-05 (best practice): target=_blank with no visible or hidden warning (2) -->
+        <p>See the <a href="https://example.com/status" target="_blank" rel="noopener">status page</a> for current uptime.</p>
+        <p>Vote on the <a href="https://example.com/roadmap" target="_blank" rel="noopener">public roadmap</a>.</p>
+        <!-- LNK-04 (best practice, AAA, not counted): same text, different destinations.
+             The repeated text is deliberately NOT in VAGUE_LINK_TEXT (link-text.ts), so these links do not add LNK-03 findings. -->
+        <p><a href="#contrast-article">Read the guide</a> to contrast and <a href="#keyboard-test-article">Read the guide</a> to the keyboard test.</p>
+      </article>
+
+      <article>
+        <h3>Small targets</h3>
+        <!-- TGT-01: adjacent 16x16 buttons with no spacing (2) -->
+        <div class="tiny-toolbar">
+          <button type="button" aria-label="Upvote">+</button>
+          <button type="button" aria-label="Downvote">-</button>
+        </div>
+      </article>
+
+      <h2 id="contrast-article">Contrast engine</h2>
+      <p>The contrast engine walks visible text nodes and blends translucent backgrounds.</p>
+      <h2 id="keyboard-test-article">Keyboard test</h2>
+      <p>The keyboard test sends real Tab presses through the DevTools protocol.</p>
+      <h2 id="release-notes">Release notes</h2>
+      <p>Version 1.0.</p>
+    </section>
+  </main>
+
+  <footer>
+    <p>A11y Checker fixture pages are for testing only.</p>
+  </footer>
+
+  <!-- Definite (Auto) WCAG findings the extension must report, per project rule id. -->
+  <script type="application/json" id="expected">
+    { "LNK-01": 2, "LNK-02": 2, "TGT-01": 2 }
+  </script>
+  <!-- Best-practice findings expected when scanning with includeBestPractices enabled. -->
+  <script type="application/json" id="expected-best-practice">
+    { "LNK-03": 3, "LNK-05": 2 }
+  </script>
+</body>
+</html>
