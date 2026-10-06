@@ -202,7 +202,29 @@ async function getEntries(key: string): Promise<BaselineEntry[]> {
   }));
 }
 
-async function addEntries(key: string, entries: BaselineEntry[]): Promise<void> {
+/** Serialises read-modify-write sections per storage key so concurrent calls cannot lose data. */
+const keyLocks = new Map<string, Promise<unknown>>();
+
+function withKeyLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const previous = keyLocks.get(key) ?? Promise.resolve();
+  const run = previous.catch(() => undefined).then(fn);
+  const settled = run.catch(() => undefined);
+  keyLocks.set(key, settled);
+  void settled.then(() => {
+    if (keyLocks.get(key) === settled) keyLocks.delete(key);
+  });
+  return run;
+}
+
+function addEntries(key: string, entries: BaselineEntry[]): Promise<void> {
+  return withKeyLock(key, () => addEntriesNow(key, entries));
+}
+
+function removeEntries(key: string, fingerprints: string[]): Promise<void> {
+  return withKeyLock(key, () => removeEntriesNow(key, fingerprints));
+}
+
+async function addEntriesNow(key: string, entries: BaselineEntry[]): Promise<void> {
   const existing = await getEntries(key);
   const byFingerprint = new Map<string, BaselineEntry>();
   for (const e of existing) byFingerprint.set(e.fingerprint, e);
@@ -220,7 +242,7 @@ async function addEntries(key: string, entries: BaselineEntry[]): Promise<void> 
   await localSet(key, [...byFingerprint.values()]);
 }
 
-async function removeEntries(key: string, fingerprints: string[]): Promise<void> {
+async function removeEntriesNow(key: string, fingerprints: string[]): Promise<void> {
   const remove = new Set(fingerprints);
   const existing = await getEntries(key);
   const next = existing.filter((e) => !remove.has(e.fingerprint));
@@ -633,6 +655,50 @@ export async function setLastResult(tabId: number, r: ScanResult): Promise<void>
   });
 }
 
+const scanOptionsKey = (tabId: number): string => `scanOptions:${tabId}`;
+
+/** Options of the tab's last scan; kept in session storage so they survive service-worker suspension. */
+export async function getScanOptions<T>(tabId: number): Promise<T | undefined> {
+  const v = await sessionGet<unknown>(scanOptionsKey(tabId));
+  return isPlainObject(v) ? (v as unknown as T) : undefined;
+}
+
+export function setScanOptions(tabId: number, options: unknown): Promise<void> {
+  return sessionSet(scanOptionsKey(tabId), options);
+}
+
+export function clearScanOptions(tabId: number): Promise<void> {
+  return sessionRemove(scanOptionsKey(tabId));
+}
+
+/**
+ * Drop the stored scan result, evidence and scan options of every tab (session storage only:
+ * saved scans, baselines and settings are untouched). Returns the tab ids that had data.
+ */
+export async function clearAllTabData(): Promise<number[]> {
+  const items = await new Promise<Record<string, unknown>>((resolve, reject) => {
+    try {
+      sessionArea().get(null, (all) => {
+        const err = chrome.runtime.lastError;
+        if (err) reject(new Error(err.message));
+        else resolve((all ?? {}) as Record<string, unknown>);
+      });
+    } catch (e) {
+      reject(e instanceof Error ? e : new Error(String(e)));
+    }
+  });
+  const tabIds = new Set<number>();
+  for (const key of Object.keys(items)) {
+    const m = /^(?:lastResult|scanOptions):(\d+)$/.exec(key);
+    if (m) tabIds.add(Number(m[1]));
+  }
+  for (const tabId of tabIds) {
+    await clearLastResult(tabId).catch(() => undefined);
+    await clearScanOptions(tabId).catch(() => undefined);
+  }
+  return [...tabIds];
+}
+
 export async function clearLastResult(tabId: number): Promise<void> {
   await sessionRemove(STORAGE_KEYS.lastResult(tabId));
   await withEvidenceLock(async () => {
@@ -703,27 +769,39 @@ export async function saveScan(name: string, result: ScanResult): Promise<SavedS
     issueCount: result.issues.length,
   };
   await localSet(STORAGE_KEYS.savedScan(id), result);
-  const index = [meta, ...(await listSavedScans())];
-  const dropped = index.splice(SAVED_SCAN_LIMIT);
-  await localSet(STORAGE_KEYS.savedScanIndex, index);
+  let dropped: SavedScanMeta[] = [];
+  try {
+    await withKeyLock(STORAGE_KEYS.savedScanIndex, async () => {
+      const index = [meta, ...(await listSavedScans())];
+      dropped = index.splice(SAVED_SCAN_LIMIT);
+      await localSet(STORAGE_KEYS.savedScanIndex, index);
+    });
+  } catch (e) {
+    await localRemove(STORAGE_KEYS.savedScan(id)).catch(() => undefined);
+    throw e;
+  }
   if (dropped.length) await localRemove(dropped.map((m) => STORAGE_KEYS.savedScan(m.id)));
   return meta;
 }
 
-export async function renameSavedScan(id: string, name: string): Promise<SavedScanMeta> {
-  const index = await listSavedScans();
-  const meta = index.find((m) => m.id === id);
-  if (!meta) throw new Error("That saved scan no longer exists.");
-  meta.name = name.trim() || meta.name;
-  await localSet(STORAGE_KEYS.savedScanIndex, index);
-  return meta;
+export function renameSavedScan(id: string, name: string): Promise<SavedScanMeta> {
+  return withKeyLock(STORAGE_KEYS.savedScanIndex, async () => {
+    const index = await listSavedScans();
+    const meta = index.find((m) => m.id === id);
+    if (!meta) throw new Error("That saved scan no longer exists.");
+    meta.name = name.trim() || meta.name;
+    await localSet(STORAGE_KEYS.savedScanIndex, index);
+    return meta;
+  });
 }
 
 export async function deleteSavedScan(id: string): Promise<void> {
-  const index = await listSavedScans();
-  await localSet(
-    STORAGE_KEYS.savedScanIndex,
-    index.filter((m) => m.id !== id),
-  );
+  await withKeyLock(STORAGE_KEYS.savedScanIndex, async () => {
+    const index = await listSavedScans();
+    await localSet(
+      STORAGE_KEYS.savedScanIndex,
+      index.filter((m) => m.id !== id),
+    );
+  });
   await localRemove(STORAGE_KEYS.savedScan(id));
 }

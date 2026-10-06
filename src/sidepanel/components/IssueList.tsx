@@ -11,7 +11,9 @@ import {
   severityRank,
   useStore,
 } from "@src/sidepanel/store";
-import { SeverityLabel, StatusLabel } from "./SeverityLabel";
+import { SeverityBadge, SeverityLabel, StatusLabel } from "./SeverityLabel";
+import { RulePanel } from "./RulePanel";
+import { ChevronDownIcon, ChevronRightIcon } from "./icons";
 
 const RULES = (rulesJson as unknown as RulesFile).rules;
 
@@ -45,7 +47,11 @@ function elementLabel(issue: Issue): string {
   return text ? `${head} ${text.slice(0, 60)}` : head;
 }
 
-export function IssueList({ onOpen }: { onOpen(issueId: string): void }) {
+/**
+ * `wide`: the two-pane layout shows the issue detail beside the list, so rule cards only list their
+ * instances. In the single column an expanded rule card is an accordion with the details inline.
+ */
+export function IssueList({ onOpen, wide = false }: { onOpen(issueId: string): void; wide?: boolean }) {
   const result = useStore((s) => s.result);
   const filters = useStore((s) => s.filters);
   const tab = useStore((s) => s.resultTab);
@@ -240,20 +246,21 @@ export function IssueList({ onOpen }: { onOpen(issueId: string): void }) {
   const tabTotal = result.issues.filter((i) => matchesFilters(i, { ...filters, severities: [], categories: [], sources: [], search: "" }, tab)).length;
   const hiddenCount = tabTotal - visibleIds.length;
 
-  const instanceRow = (issue: Issue, mode: "rule" | "category") => {
+  /** `selId` is the highlighted instance of the row's group; `inline` selects the row instead of opening the detail view. */
+  const instanceRow = (issue: Issue, mode: "rule" | "category", selId: string | null, inline: boolean) => {
     const n = numbers.get(issue.id) ?? 0;
-    const selected = issue.id === selectedIssueId;
+    const selected = issue.id === selId;
     // Ignored / baselined / fixed issues are shown softer: they are not counted.
     const excluded = issue.status !== "new";
     return (
       <li
         key={issue.id}
         data-issue-id={issue.id}
-        className={`flex items-center gap-1 rounded border-l-4 ${selected ? "border-blue-700 bg-blue-50" : "border-transparent"}`}
+        className={`flex items-center gap-1 rounded border-l-4 ${selected ? (inline ? "border-blue-600 bg-white shadow-sm" : "border-blue-700 bg-blue-50") : "border-transparent"}`}
       >
         <button
           type="button"
-          onClick={() => onOpen(issue.id)}
+          onClick={() => (inline ? selectIssue(issue.id) : onOpen(issue.id))}
           aria-current={selected ? "true" : undefined}
           className="flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-1 text-left hover:bg-slate-100"
         >
@@ -261,9 +268,9 @@ export function IssueList({ onOpen }: { onOpen(issueId: string): void }) {
             className={`inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1 text-[11px] font-bold tabular-nums ${
               excluded ? "border border-slate-300 bg-slate-100 text-slate-700" : "bg-slate-800 text-white"
             }`}
-            aria-label={`Issue number ${n}`}
           >
-            {n}
+            <span aria-hidden="true">{n}</span>
+            <span className="sr-only">Issue number {n}</span>
           </span>
           <span className="min-w-0 flex-1">
             <span className="flex min-w-0 items-center gap-2">
@@ -295,13 +302,13 @@ export function IssueList({ onOpen }: { onOpen(issueId: string): void }) {
       className="flex min-h-0 flex-1 flex-col"
     >
       <div className="flex items-center justify-between gap-2 px-3 py-1.5">
-        <h2 id="issues-heading" ref={headingRef} tabIndex={-1} className="text-sm font-semibold text-slate-900">
+        <h2 id="issues-heading" ref={headingRef} tabIndex={-1} className="text-[13px] font-semibold text-slate-900">
           {groupBy === "rule" ? `${groups.length} rule${groups.length === 1 ? "" : "s"}, ` : ""}
           {visibleIds.length} issue{visibleIds.length === 1 ? "" : "s"}
           {hiddenCount > 0 && <span className="font-normal text-slate-600"> ({hiddenCount} filtered out)</span>}
         </h2>
       </div>
-      <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+      <div ref={listRef} className="relative min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         {result.issues.length === 0 && (
           <p className="px-1 py-4 text-sm text-green-800">
             No issues found by the automated checks. Automated checks do not cover everything: also test the page with a keyboard and a screen reader.
@@ -316,43 +323,55 @@ export function IssueList({ onOpen }: { onOpen(issueId: string): void }) {
           const isRule = groupBy === "rule";
           const isOpen = isRule ? expandedRules.includes(group.key) : !collapsed.includes(group.label as Category);
           const panelId = `group-${group.key.replace(/[^a-z0-9]+/gi, "-")}`;
+          // Single column + rule mode: the card expands in place; the buttons act on the selected instance (default: the first).
+          const inline = isRule && !wide;
+          const selectedHere = group.issues.find((i) => i.id === selectedIssueId) ?? group.issues[0];
+          const rowSel = inline ? selectedHere.id : selectedIssueId;
+          const rows = (
+            <ul id={inline ? undefined : panelId} aria-label={inline ? "Instances" : undefined} className={isRule ? (inline ? "space-y-0.5" : "border-t border-slate-200 py-0.5 pl-3") : "ml-1"}>
+              {group.issues.map((issue) => instanceRow(issue, isRule ? "rule" : "category", rowSel, inline))}
+            </ul>
+          );
           return (
-            <div key={group.key} className={isRule ? "mb-0.5 rounded border border-slate-200" : "mb-1"}>
-              <h3 className="text-sm">
+            <div key={group.key} className={isRule ? "mb-2 overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm" : "mb-1"}>
+              <h3 className="text-[13px]">
                 <button
                   type="button"
                   aria-expanded={isOpen}
                   aria-controls={panelId}
                   onClick={() => (isRule ? toggleRule(group.key) : toggleCollapsed(group.label as Category))}
-                  className="flex w-full items-center gap-1.5 rounded px-1 py-1 text-left text-slate-900 hover:bg-slate-100"
+                  className={`flex w-full items-center gap-2 px-2.5 text-left text-slate-900 hover:bg-slate-50 ${isRule ? "py-2" : "rounded py-1"}`}
                 >
-                  <span aria-hidden="true" className="w-3 shrink-0 text-xs">
-                    {isOpen ? "▾" : "▸"}
-                  </span>
-                  {isRule && group.severity && (
-                    <>
-                      <span className={`sev-dot sev-${group.severity}`} aria-hidden="true" />
-                      <span className="sr-only">{group.severity}: </span>
-                    </>
-                  )}
+                  {isRule && group.severity && <span className={`sev-dot sev-${group.severity}`} aria-hidden="true" />}
+                  {!isRule && <span className="w-3 shrink-0 text-slate-600">{isOpen ? <ChevronDownIcon size={12} /> : <ChevronRightIcon size={12} />}</span>}
                   <span className="min-w-0 flex-1">
                     <span className="block font-semibold">
                       {group.label}{" "}
                       <span className="font-normal tabular-nums text-slate-700">({group.issues.length})</span>
                     </span>
-                    {isRule && (
-                      <span className="block text-[11px] font-normal text-slate-600">
-                        <span className="font-mono">{group.ruleId}</span> · {group.wcag} · {group.severity}
+                    {isRule && group.severity && (
+                      <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] font-normal text-slate-600">
+                        <span className="font-mono">{group.ruleId}</span>
+                        <span aria-hidden="true">·</span>
+                        <span>{group.wcag}</span>
+                        <span aria-hidden="true">·</span>
+                        <SeverityBadge severity={group.severity} />
                       </span>
                     )}
                   </span>
+                  {isRule && <span className="shrink-0 text-slate-600">{isOpen ? <ChevronDownIcon size={16} /> : <ChevronRightIcon size={16} />}</span>}
                 </button>
               </h3>
-              {isOpen && (
-                <ul id={panelId} className={isRule ? "border-t border-slate-200 py-0.5 pl-3" : "ml-1"}>
-                  {group.issues.map((issue) => instanceRow(issue, isRule ? "rule" : "category"))}
-                </ul>
-              )}
+              {isOpen &&
+                (inline ? (
+                  <div id={panelId}>
+                    <RulePanel issues={group.issues} selected={selectedHere} onOpen={onOpen}>
+                      {group.issues.length > 1 && rows}
+                    </RulePanel>
+                  </div>
+                ) : (
+                  rows
+                ))}
             </div>
           );
         })}

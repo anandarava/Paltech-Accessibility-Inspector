@@ -15,7 +15,7 @@ import { createOverlay } from "./overlay/overlay-root";
 import { startSpaObserver } from "./observers/spa-observer";
 import { scanFrame, type FrameScanOutput } from "./scanner";
 import { fingerprint, textSnippet } from "./fingerprint";
-import { accessibleName, boundingBoxes, getFocusableElements, isExtensionNode, resolveSelector, uniqueSelector } from "./dom-utils";
+import { accessibleName, boundingBoxes, fingerprintSelector, getFocusableElements, isExtensionNode, resolveSelector, uniqueSelector } from "./dom-utils";
 import { cancelPicker, startPicker } from "./picker";
 
 declare global {
@@ -39,9 +39,11 @@ const DEFAULT_SCAN_OPTIONS: ScanOptions = { scope: "page", wcagLevel: "AA", rule
 /** Messages this script answers. Anything else is left for other listeners. */
 const HANDLED_TYPES = new Set<string>([
   "CS_PING",
+  "CS_RESET",
   "SCAN_START",
   "SCAN_RESULT",
   "HIGHLIGHT_ISSUE",
+  "CLEAR_ISSUE_FOCUS",
   "TOGGLE_OVERLAY",
   "SET_COLOR_BLINDNESS",
   "HIGHLIGHT_SELECTORS",
@@ -64,6 +66,7 @@ const HANDLED_TYPES = new Set<string>([
 const TOP_ONLY_TYPES = new Set<string>([
   "SCAN_RESULT",
   "HIGHLIGHT_ISSUE",
+  "CLEAR_ISSUE_FOCUS",
   "TOGGLE_OVERLAY",
   "SET_COLOR_BLINDNESS",
   "HIGHLIGHT_SELECTORS",
@@ -215,6 +218,10 @@ function isActiveIssue(issue: Issue): boolean {
   return issue.status === "new";
 }
 
+/** Overlay visibility captured when the picker started (null = no picker running); survives a restart. */
+let pickerOverlayWasVisible: boolean | null = null;
+let pickerGeneration = 0;
+
 function findIssue(issueId: string): Issue | undefined {
   return localIssues.find((i) => i.id === issueId) ?? lastResult?.issues.find((i) => i.id === issueId);
 }
@@ -358,7 +365,7 @@ function resolveInRoot(issue: Issue, root: Document | ShadowRoot): Element | nul
 function matchesFingerprint(issue: Issue, el: Element): boolean {
   if (!issue.fingerprint) return true;
   try {
-    return fingerprint(issue.ruleId, issue.element.selector, textSnippet(el)) === issue.fingerprint;
+    return fingerprint(issue.ruleId, fingerprintSelector(el, issue.element.selector), textSnippet(el)) === issue.fingerprint;
   } catch {
     return false;
   }
@@ -444,6 +451,26 @@ function overlayIssues(): Issue[] {
     if (el && el.getRootNode() !== document) return hiddenFromOverlay(issue);
     return issue;
   });
+}
+
+/**
+ * "View element" with the overlay switched off: the outline is drawn inside the overlay, which is
+ * hidden then, so the overlay is shown just for the outline and hidden again afterwards.
+ */
+let overlayForcedVisible = false;
+let forcedOverlayTimer: number | undefined;
+const FORCED_OVERLAY_MS = 4000;
+
+function releaseForcedOverlay(): void {
+  window.clearTimeout(forcedOverlayTimer);
+  if (!overlayForcedVisible) return;
+  overlayForcedVisible = false;
+  try {
+    overlay?.clearFocus();
+    overlay?.hide();
+  } catch {
+    /* ignore */
+  }
 }
 
 function pushOverlayIssues(): void {
@@ -598,6 +625,9 @@ function recordGuidedStep(session: GuidedSession, el: Element | null): void {
   if (session.path.length - 1 >= session.limit) stopGuidedKeyboardTest(true);
 }
 
+/** Number of scans currently running in this frame (focus events during a scan are synthetic). */
+let scanDepth = 0;
+
 function startGuidedKeyboardTest(maxTabs: number): void {
   if (guided) stopGuidedKeyboardTest(true);
   const limit = Number.isFinite(maxTabs) && maxTabs > 0 ? Math.floor(maxTabs) : 200;
@@ -619,7 +649,7 @@ function startGuidedKeyboardTest(maxTabs: number): void {
     cycleCompleted: false,
     lastElement: null,
     onFocusIn: () => {
-      if (guided !== session) return;
+      if (guided !== session || scanDepth > 0) return;
       // Let nested shadow roots settle on their active element before reading it.
       setTimeout(() => {
         if (guided === session) recordGuidedStep(session, deepActiveElement());
@@ -783,6 +813,7 @@ async function handleScanStart(options: ScanOptions): Promise<Response<FrameScan
   lastScanOptions = scanOptions;
   const ruleConfig = await loadRuleConfig();
   const wasVisible = overlay?.isVisible() ?? false;
+  scanDepth++; // programmatic focus() calls made by rules must not be recorded as guided Tab steps
   try {
     overlay?.hide();
     // A new scan replaces every issue, so the pulse on the issue open in the panel no longer applies.
@@ -813,6 +844,7 @@ async function handleScanStart(options: ScanOptions): Promise<Response<FrameScan
     }
     return ok(output);
   } finally {
+    scanDepth--;
     try {
       if (overlay && (wasVisible || isTop)) overlay.show();
       overlay?.reposition();
@@ -822,11 +854,47 @@ async function handleScanStart(options: ScanOptions): Promise<Response<FrameScan
   }
 }
 
+/** Scroll positions captured before a screenshot scrolls the element into view (null = nothing to restore). */
+let screenshotScrollState: { win: Window; x: number; y: number; containers: Array<{ el: Element; left: number; top: number }> } | null = null;
+
+/** Remember the window scroll and every scrolled ancestor container of `el` (through shadow hosts). */
+function saveScrollState(el: Element): void {
+  if (screenshotScrollState) return; // a previous prepare was never restored: keep the original positions
+  const view = el.ownerDocument.defaultView ?? window;
+  const containers: Array<{ el: Element; left: number; top: number }> = [];
+  let node: Element | null = el.parentElement ?? (el.getRootNode() instanceof ShadowRoot ? (el.getRootNode() as ShadowRoot).host : null);
+  for (let guard = 0; node && guard < 200; guard++) {
+    if (node.scrollTop !== 0 || node.scrollLeft !== 0) containers.push({ el: node, left: node.scrollLeft, top: node.scrollTop });
+    const root: Node = node.getRootNode();
+    node = node.parentElement ?? (root instanceof ShadowRoot ? root.host : null);
+  }
+  screenshotScrollState = { win: view, x: view.scrollX, y: view.scrollY, containers };
+}
+
+function restoreScrollState(): void {
+  const state = screenshotScrollState;
+  screenshotScrollState = null;
+  if (!state) return;
+  for (const c of state.containers) {
+    try {
+      c.el.scrollTo({ left: c.left, top: c.top, behavior: "instant" as ScrollBehavior });
+    } catch {
+      /* element gone or not scrollable any more */
+    }
+  }
+  try {
+    state.win.scrollTo({ left: state.x, top: state.y, behavior: "instant" as ScrollBehavior });
+  } catch {
+    /* ignore */
+  }
+}
+
 async function handlePrepareScreenshot(msg: Record<string, unknown>, issueId: string): Promise<Handled> {
   const issue = findIssue(issueId);
   if (!issue) return fail(`Unknown issue "${issueId}"`);
   const el = elementForIssue(issue);
   if (!el) return fail("The element for this issue no longer exists on the page");
+  saveScrollState(el);
   try {
     el.scrollIntoView({ block: "center", inline: "center", behavior: "instant" as ScrollBehavior });
   } catch {
@@ -884,6 +952,26 @@ async function handle(msg: Message): Promise<Handled> {
     case "SCAN_START":
       return handleScanStart(msg.options);
 
+    case "CS_RESET": {
+      lastResult = null;
+      localIssues = [];
+      lastKeyboardPath = [];
+      lastTrapSelectors = [];
+      cancelPicker();
+      if (overlay) {
+        try {
+          overlay.clearHighlights();
+          overlay.clearFocus();
+          pushOverlayIssues();
+          overlay.setMode("off");
+          overlay.hide();
+        } catch (e) {
+          console.warn("[a11y-checker] overlay reset failed:", e);
+        }
+      }
+      return ok();
+    }
+
     case "SCAN_RESULT": {
       lastResult = msg.result;
       localIssues = [];
@@ -896,6 +984,14 @@ async function handle(msg: Message): Promise<Handled> {
       let found = false;
       try {
         found = ov.focusIssue(msg.issueId);
+        if (found && !ov.isVisible()) {
+          ov.show();
+          overlayForcedVisible = true;
+        }
+        if (found && overlayForcedVisible) {
+          window.clearTimeout(forcedOverlayTimer);
+          forcedOverlayTimer = window.setTimeout(releaseForcedOverlay, FORCED_OVERLAY_MS);
+        }
       } catch (e) {
         return fail(errorMessage(e));
       }
@@ -912,8 +1008,17 @@ async function handle(msg: Message): Promise<Handled> {
       return ok({ found });
     }
 
+    case "CLEAR_ISSUE_FOCUS": {
+      if (overlayForcedVisible) releaseForcedOverlay();
+      else overlay?.clearFocus();
+      return ok();
+    }
+
     case "TOGGLE_OVERLAY": {
       const ov = requireOverlay();
+      // An explicit overlay choice replaces the temporary one made for "View element".
+      overlayForcedVisible = false;
+      window.clearTimeout(forcedOverlayTimer);
       if (!msg.visible) {
         ov.setMode("off");
         ov.hide();
@@ -1012,6 +1117,7 @@ async function handle(msg: Message): Promise<Handled> {
       return handlePrepareScreenshot(raw, msg.issueId);
 
     case "CS_RESTORE_AFTER_SCREENSHOT":
+      restoreScrollState();
       try {
         overlay?.restore();
         overlay?.reposition();
@@ -1056,10 +1162,16 @@ async function handle(msg: Message): Promise<Handled> {
       return ok();
 
     case "PICKER_START": {
-      const wasVisible = overlay?.isVisible() ?? false;
+      // A restart cancels the running picker, which has already hidden the overlay: keep the
+      // visibility captured by the first start and only restore once the latest picker ends.
+      if (pickerOverlayWasVisible === null) pickerOverlayWasVisible = overlay?.isVisible() ?? false;
+      const generation = ++pickerGeneration;
       overlay?.hide();
       startPicker((result) => {
-        if (wasVisible) overlay?.show();
+        if (generation === pickerGeneration) {
+          if (pickerOverlayWasVisible) overlay?.show();
+          pickerOverlayWasVisible = null;
+        }
         sendEvent({ type: "PICKER_RESULT", selector: result.selector, html: result.html });
       });
       return ok();

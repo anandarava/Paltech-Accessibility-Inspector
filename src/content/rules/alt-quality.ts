@@ -28,7 +28,7 @@
  */
 import rulesJson from "@shared/a11y-rules.json";
 import type { RuleDefinition, RulesFile } from "@shared/types";
-import { accessibleName } from "@src/content/dom-utils";
+import { accessibleName, queryAllIncludingRoot } from "@src/content/dom-utils";
 import { isExtensionElement } from "./contrast";
 import type { CustomRule, RuleContext, RuleFinding } from "./types";
 
@@ -176,7 +176,7 @@ export const rule: CustomRule = {
     // --- img[alt], input[type=image][alt], area[alt] -----------------------
     let images: Element[] = [];
     try {
-      images = Array.from(ctx.root.querySelectorAll("img[alt], input[type='image'][alt], area[alt]"));
+      images = Array.from(queryAllIncludingRoot(ctx.root, "img[alt], input[type='image'][alt], area[alt]"));
     } catch {
       images = [];
     }
@@ -207,7 +207,7 @@ export const rule: CustomRule = {
     // --- [role=img] and svg[role=img]: same lists on the accessible name ---
     let roleImgs: Element[] = [];
     try {
-      roleImgs = Array.from(ctx.root.querySelectorAll("[role='img']"));
+      roleImgs = Array.from(queryAllIncludingRoot(ctx.root, "[role='img']"));
     } catch {
       roleImgs = [];
     }
@@ -231,7 +231,7 @@ export const rule: CustomRule = {
     // --- IMG-08: inline svg without role/name/aria-hidden ------------------
     let svgs: Element[] = [];
     try {
-      svgs = Array.from(ctx.root.querySelectorAll("svg"));
+      svgs = Array.from(queryAllIncludingRoot(ctx.root, "svg"));
     } catch {
       svgs = [];
     }

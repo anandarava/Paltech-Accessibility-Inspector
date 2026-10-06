@@ -11,7 +11,7 @@ export interface StatusMessage {
 
 const inputClass =
   "w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm " +
-  "placeholder:text-slate-400 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500";
+  "placeholder:text-slate-500 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500";
 
 export function Section(props: { id: string; title: string; description?: string; children: ReactNode }): JSX.Element {
   const headingId = `${props.id}-heading`;

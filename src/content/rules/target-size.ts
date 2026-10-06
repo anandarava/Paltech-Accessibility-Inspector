@@ -28,6 +28,7 @@
 import rulesJson from "@shared/a11y-rules.json";
 import type { RuleDefinition, RulesFile } from "@shared/types";
 import { isExtensionElement } from "./contrast";
+import { queryAllIncludingRoot } from "@src/content/dom-utils";
 import type { CustomRule, RuleContext, RuleFinding } from "./types";
 
 const RULES: RuleDefinition[] = (rulesJson as unknown as RulesFile).rules;
@@ -112,7 +113,7 @@ export const rule: CustomRule = {
 
     let candidates: Element[] = [];
     try {
-      candidates = Array.from(ctx.root.querySelectorAll(TARGET_SELECTOR)).slice(0, MAX_TARGETS);
+      candidates = Array.from(queryAllIncludingRoot(ctx.root, TARGET_SELECTOR)).slice(0, MAX_TARGETS);
     } catch {
       return findings;
     }

@@ -17,10 +17,42 @@ body,
   font-size: 13px;
 }
 
+/* Tailwind v4's reset sets `cursor: default` on buttons; restore the hand on clickable controls.
+   In the base layer so utilities such as cursor-not-allowed still win. */
+@layer base {
+  button:not(:disabled):not([aria-disabled="true"]),
+  [role="button"]:not([aria-disabled="true"]),
+  [role="tab"],
+  [role="menuitem"],
+  [role="option"],
+  a[href],
+  summary,
+  select:not(:disabled),
+  select:not(:disabled) option,
+  label[for],
+  label:has(input:is([type="checkbox"], [type="radio"]):not(:disabled)),
+  input:is([type="checkbox"], [type="radio"], [type="button"], [type="submit"], [type="file"]):not(:disabled) {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  [aria-disabled="true"] {
+    cursor: not-allowed;
+  }
+}
+
 /* Visible focus for the extension's own UI (it must pass its own checks). */
 :focus-visible {
   outline: 2px solid #2e86de;
   outline-offset: 2px;
+}
+
+/* Text fields sit right under their labels: an outline drawn outside the field would cover
+   the label, so draw it inside the border instead. */
+input:not([type="checkbox"]):not([type="radio"]):focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline-offset: -2px;
 }
 
 .sev-dot {

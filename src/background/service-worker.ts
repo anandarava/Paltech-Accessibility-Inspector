@@ -21,7 +21,7 @@ import type {
   Severity,
 } from "@shared/types";
 import type { Message, MessageOf, Response, ScanOptions } from "@shared/messages";
-import { isMessage, sendToTab } from "@shared/messages";
+import { isMessage, issueFrameTarget, sendToTab } from "@shared/messages";
 import { computeScore, isNotConformant, summarize } from "@shared/scoring";
 import { wcagDocsUrl } from "@shared/wcag-map";
 import { PANEL_PORT_PREFIX } from "@shared/constants";
@@ -34,6 +34,9 @@ import {
   addBaseline,
   addIgnored,
   clearLastResult,
+  clearScanOptions,
+  getScanOptions,
+  setScanOptions,
   getBaseline,
   getIgnored,
   getLastResult,
@@ -208,7 +211,11 @@ function syntheticIssue(
 // ---------------------------------------------------------------------------
 
 const scansInProgress = new Map<number, Promise<ScanResult>>();
-const lastScanOptions = new Map<number, ScanOptions>();
+/** Tabs closed since the SW started; a scan finishing for one of these must not recreate its result. */
+const removedTabs = new Set<number>();
+/** Frame scans that timed out but may still be running in the page, keyed by tab and frame. */
+const staleFrameScans = new Map<string, Promise<unknown>>();
+const STALE_SCAN_WAIT_MS = 10_000;
 
 function defaultScanOptions(settings: Settings): ScanOptions {
   return {
@@ -227,10 +234,29 @@ function defaultScanOptions(settings: Settings): ScanOptions {
 
 async function scanFrame(tabId: number, frameId: number, options: ScanOptions): Promise<Response<FrameScanOutput>> {
   const msg: Message = { type: "SCAN_START", tabId, options };
-  return withTimeout(sendToTab<FrameScanOutput>(tabId, msg, frameId), FRAME_SCAN_TIMEOUT_MS, () => ({
-    ok: false,
-    error: "Frame scan timed out.",
-  }));
+  const key = `${tabId}:${frameId}`;
+  // A previous scan of this frame timed out but may still be running; let it finish
+  // (briefly) so two scans do not overlap in the page.
+  const stale = staleFrameScans.get(key);
+  if (stale) {
+    await withTimeout(stale, STALE_SCAN_WAIT_MS, () => undefined);
+    staleFrameScans.delete(key);
+  }
+  const pending = sendToTab<FrameScanOutput>(tabId, msg, frameId);
+  let timedOut = false;
+  const res = await withTimeout(pending, FRAME_SCAN_TIMEOUT_MS, () => {
+    timedOut = true;
+    return { ok: false, error: "Frame scan timed out." } as Response<FrameScanOutput>;
+  });
+  // The late result is discarded (only the fallback above is returned); remember the
+  // still-running scan so the next one for this frame waits for it.
+  if (timedOut) {
+    const tracked = pending.catch(() => undefined).finally(() => {
+      if (staleFrameScans.get(key) === tracked) staleFrameScans.delete(key);
+    });
+    staleFrameScans.set(key, tracked);
+  }
+  return res;
 }
 
 function applyKnownStatuses(
@@ -264,6 +290,7 @@ function applyKnownStatuses(
 }
 
 async function performScan(tabId: number, requested: ScanOptions | undefined): Promise<ScanResult> {
+  removedTabs.delete(tabId);
   const stopKeepAlive = keepAlive();
   const startedAt = Date.now();
   try {
@@ -310,7 +337,7 @@ async function performScan(tabId: number, requested: ScanOptions | undefined): P
       ...(requested ?? {}),
       rules: Array.isArray(requested?.rules) ? requested.rules : [],
     };
-    lastScanOptions.set(tabId, options);
+    void setScanOptions(tabId, options).catch(() => undefined);
 
     // Push the current overlay colours before the CS draws anything.
     void sendToTab(tabId, settingsChangedMessage(settings), 0);
@@ -327,13 +354,18 @@ async function performScan(tabId: number, requested: ScanOptions | undefined): P
     // Same fingerprint = same finding (baseline/ignore key on it). Drop repeats coming
     // from other frames (e.g. a same-document about:blank child) or the reflow pass.
     const seenFingerprints = new Set<string>();
-    const pushIssue = (issue: Issue, idSuffix: string): void => {
+    const pushIssue = (issue: Issue, frameId: number): void => {
       // Only definite findings are reported; undeterminable ("Semi") ones are dropped.
       if (issue.type === "Semi") return;
-      if (seenFingerprints.has(issue.fingerprint)) return;
+      // Selectors are frame-local, so identical widgets in two iframes share a fingerprint;
+      // only repeats within one frame are duplicates.
+      const dedupeKey = `${frameId}:${issue.fingerprint}`;
+      if (seenFingerprints.has(dedupeKey)) return;
+      issue.frameId = frameId;
+      const idSuffix = `@f${frameId}`;
       if (seenIds.has(issue.id)) issue.id = `${issue.id}${idSuffix}`;
       seenIds.add(issue.id);
-      seenFingerprints.add(issue.fingerprint);
+      seenFingerprints.add(dedupeKey);
       issues.push(issue);
     };
 
@@ -355,7 +387,7 @@ async function performScan(tabId: number, requested: ScanOptions | undefined): P
       const out = res.data;
       for (const issue of out.issues) {
         if (!isIssue(issue)) continue;
-        pushIssue(issue, `@f${frameId}`);
+        pushIssue(issue, frameId);
       }
       for (const r of out.passedRules ?? []) passedRules.add(r);
       Object.assign(passedRuleSeverity, out.passedRuleSeverity ?? {});
@@ -398,7 +430,18 @@ async function performScan(tabId: number, requested: ScanOptions | undefined): P
     };
     recompute(result);
 
+    // The tab may have been closed while the scan ran; do not resurrect its result.
+    if (removedTabs.has(tabId)) throw new Error("The tab was closed during the scan.");
+    try {
+      await chrome.tabs.get(tabId);
+    } catch {
+      throw new Error("The tab was closed during the scan.");
+    }
     await setLastResult(tabId, result);
+    if (removedTabs.has(tabId)) {
+      void clearLastResult(tabId).catch(() => undefined);
+      throw new Error("The tab was closed during the scan.");
+    }
 
     // Give the top frame the merged result so the overlay can draw all issues.
     void sendToTab(tabId, { type: "SCAN_RESULT", tabId, result }, 0);
@@ -436,9 +479,15 @@ async function maybeAutoRescan(tabId: number): Promise<void> {
   } catch {
     return;
   }
-  const options = lastScanOptions.get(tabId) ?? {
+  const stored = await getScanOptions<ScanOptions>(tabId).catch(() => undefined);
+  const options: ScanOptions = stored ?? {
     ...defaultScanOptions(settings),
     wcagLevel: last.wcagLevel,
+    wcagVersion: last.wcagVersion ?? settings.wcagVersion,
+    axeOnly: last.axeOnly ?? settings.axeOnly,
+    ...(last.scope?.kind === "selector" && last.scope.selector
+      ? { scope: "selector" as const, selector: last.scope.selector }
+      : {}),
   };
   await startScan(tabId, options).catch(() => undefined);
 }
@@ -454,7 +503,12 @@ async function requireLastResult(tabId: number): Promise<ScanResult> {
 }
 
 async function pushStatusToContentScript(tabId: number, issue: Issue): Promise<void> {
-  await sendToTab(tabId, { type: "CS_SET_ISSUE_STATUS", tabId, issueId: issue.id, status: issue.status, reason: issue.reason }, 0);
+  const target = issueFrameTarget(issue);
+  await sendToTab(tabId, { type: "CS_SET_ISSUE_STATUS", tabId, issueId: target.issueId, status: issue.status, reason: issue.reason }, target.frameId);
+  // The overlay lives in the top frame and draws every issue from its own copy of the result.
+  if (target.frameId !== 0) {
+    await sendToTab(tabId, { type: "CS_SET_ISSUE_STATUS", tabId, issueId: issue.id, status: issue.status, reason: issue.reason }, 0);
+  }
 }
 
 function entriesFor(issues: Issue[], reason: string): BaselineEntry[] {
@@ -510,6 +564,10 @@ async function markIssuesNow(
   const targets = result.issues.filter((i) => wanted.has(i.id));
   if (targets.length === 0) throw new Error("None of the selected issues exist in the current result.");
   await persist(result.origin, entriesFor(targets, reason));
+  // Keep the lists consistent: a fingerprint is either baselined or ignored, not both.
+  const fps = targets.map((i) => i.fingerprint);
+  if (status === "baselined") await removeIgnored(result.origin, fps);
+  else if (status === "ignored") await removeBaseline(result.origin, fps);
   for (const issue of targets) {
     issue.status = status;
     issue.reason = reason;
@@ -526,6 +584,10 @@ async function markIssuesNow(
 async function unmarkIssues(origin: string, fingerprints: string[], fromStatus: IssueStatus): Promise<void> {
   const fps = new Set(fingerprints);
   const normalizedOrigin = originOf(origin);
+  // A fingerprint may still be on the other list; then the issue takes that status instead of "new".
+  const otherEntries = await (fromStatus === "baselined" ? getIgnored(origin) : getBaseline(origin)).catch(() => []);
+  const otherByFp = new Map(otherEntries.map((e) => [e.fingerprint, e] as const));
+  const otherStatus: IssueStatus = fromStatus === "baselined" ? "ignored" : "baselined";
   let tabs: chrome.tabs.Tab[] = [];
   try {
     tabs = await chrome.tabs.query({});
@@ -542,8 +604,9 @@ async function unmarkIssues(origin: string, fingerprints: string[], fromStatus: 
       const changed: Issue[] = [];
       for (const issue of result.issues) {
         if (issue.status === fromStatus && fps.has(issue.fingerprint)) {
-          issue.status = "new";
-          issue.reason = undefined;
+          const other = otherByFp.get(issue.fingerprint);
+          issue.status = other ? otherStatus : "new";
+          issue.reason = other ? other.reason : undefined;
           changed.push(issue);
         }
       }
@@ -1012,7 +1075,8 @@ chrome.runtime.onConnect.addListener((port) => {
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
-  lastScanOptions.delete(tabId);
+  removedTabs.add(tabId);
+  void clearScanOptions(tabId).catch(() => undefined);
   void clearLastResult(tabId).catch(() => undefined);
 });
 

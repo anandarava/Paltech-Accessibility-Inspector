@@ -18,6 +18,20 @@ export function SeverityLabel({ issue, className = "" }: { issue: Issue; classNa
   );
 }
 
+/** Small tinted severity badge (text on a light tint, >= 4.5:1); the word keeps it from being colour-only. */
+const SEVERITY_BADGE: Record<Issue["severity"], string> = {
+  Critical: "border-red-200 bg-red-50 text-red-900",
+  Serious: "border-orange-200 bg-orange-50 text-orange-900",
+  Moderate: "border-yellow-300 bg-yellow-50 text-yellow-900",
+  Minor: "border-slate-200 bg-slate-100 text-slate-800",
+};
+
+export function SeverityBadge({ severity }: { severity: Issue["severity"] }) {
+  return (
+    <span className={`inline-flex items-center rounded-full border px-1.5 py-px text-[11px] font-medium leading-4 ${SEVERITY_BADGE[severity]}`}>{severity}</span>
+  );
+}
+
 const STATUS_STYLE: Record<Exclude<Issue["status"], "new">, { label: string; className: string; icon: JSX.Element }> = {
   ignored: {
     label: "Ignored",

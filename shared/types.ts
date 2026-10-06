@@ -82,6 +82,11 @@ export interface Issue {
   fix: FixGuidance;
   /** Hash of ruleId + selector + text snippet; stable across scans. */
   fingerprint: string;
+  /**
+   * Chrome frame id the issue was found in (0 = top frame). Set by the service worker when it
+   * merges frame results; selectors and `id` are only meaningful inside that frame.
+   */
+  frameId?: number;
   status: IssueStatus;
   /** Reason entered by the tester when ignoring/baselining. */
   reason?: string;

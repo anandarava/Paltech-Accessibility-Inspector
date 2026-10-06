@@ -148,6 +148,10 @@ export function RulesSection(props: {
             className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              // Enter in the filter must not submit (and save) the surrounding settings form.
+              if (e.key === "Enter") e.preventDefault();
+            }}
             placeholder="Search by id, description or WCAG criterion"
           />
         </div>

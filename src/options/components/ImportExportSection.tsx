@@ -1,7 +1,12 @@
 import { useMemo, useRef, useState, type JSX } from "react";
 import type { BaselineEntry, RuleConfig, RulesFile } from "@shared/types";
+import rulesJson from "@shared/a11y-rules.json";
 import { Section, Fieldset, Button, InlineStatus, errorText, type StatusMessage } from "./ui";
 import type { BaselineStore } from "./BaselinesSection";
+import { THRESHOLD_FIELDS } from "./RulesSection";
+
+/** Rule ids in the shipped catalogue; imports naming anything else are dropped. */
+const KNOWN_RULE_IDS: ReadonlySet<string> = new Set((rulesJson as unknown as RulesFile).rules.map((r) => r.id));
 
 export const EXPORT_FORMAT = "a11y-checker-config";
 export const EXPORT_FORMAT_VERSION = 1;
@@ -85,7 +90,7 @@ function parseEntries(v: unknown, label: string, warnings: string[]): Record<str
 }
 
 /** Validate an import file. Throws with a readable message when the file is unusable. */
-export function parseImport(text: string): ImportPayload {
+export function parseImport(text: string, knownRuleIds: ReadonlySet<string> = KNOWN_RULE_IDS): ImportPayload {
   let raw: unknown;
   try {
     raw = JSON.parse(text);
@@ -95,18 +100,48 @@ export function parseImport(text: string): ImportPayload {
   if (!isRecord(raw)) throw new Error("The file does not contain a JSON object.");
   const warnings: string[] = [];
 
+  if (raw.format !== undefined && raw.format !== EXPORT_FORMAT) {
+    throw new Error(`Unrecognised file format "${String(raw.format)}"; expected "${EXPORT_FORMAT}".`);
+  }
+  if (raw.formatVersion !== undefined) {
+    if (typeof raw.formatVersion !== "number" || !Number.isFinite(raw.formatVersion)) {
+      throw new Error("The file's formatVersion is not a number.");
+    }
+    if (raw.formatVersion > EXPORT_FORMAT_VERSION) {
+      throw new Error(`The file uses format version ${raw.formatVersion}, which is newer than this build supports (${EXPORT_FORMAT_VERSION}).`);
+    }
+  }
+
   // Accept either a full export or a bare RuleConfig / RulesFile for convenience.
   const ruleConfig: RuleConfig = { disabled: [], thresholds: {} };
   const cfgSource = isRecord(raw.ruleConfig) ? raw.ruleConfig : Array.isArray(raw.disabled) || isRecord(raw.thresholds) ? raw : undefined;
   if (cfgSource) {
     if (Array.isArray(cfgSource.disabled)) {
-      ruleConfig.disabled = cfgSource.disabled.filter((x): x is string => typeof x === "string");
+      for (const id of cfgSource.disabled) {
+        if (typeof id !== "string") continue;
+        if (!knownRuleIds.has(id)) warnings.push(`Unknown rule "${id}" in disabled rules was skipped.`);
+        else if (!ruleConfig.disabled.includes(id)) ruleConfig.disabled.push(id);
+      }
     }
     if (isRecord(cfgSource.thresholds)) {
       for (const [ruleId, values] of Object.entries(cfgSource.thresholds)) {
         if (!isRecord(values)) continue;
+        if (!knownRuleIds.has(ruleId)) {
+          warnings.push(`Unknown rule "${ruleId}" in thresholds was skipped.`);
+          continue;
+        }
+        const fields = THRESHOLD_FIELDS[ruleId] ?? [];
         const clean: Record<string, number> = {};
-        for (const [k, n] of Object.entries(values)) if (typeof n === "number" && Number.isFinite(n)) clean[k] = n;
+        for (const [k, n] of Object.entries(values)) {
+          if (typeof n !== "number" || !Number.isFinite(n)) continue;
+          const field = fields.find((f) => f.key === k);
+          if (!field) {
+            warnings.push(`Unsupported threshold "${ruleId}.${k}" was skipped.`);
+            continue;
+          }
+          // Same range the Rules section enforces.
+          clean[k] = Math.min(field.max, Math.max(field.min, Math.round(n)));
+        }
         if (Object.keys(clean).length) ruleConfig.thresholds[ruleId] = clean;
       }
     }
@@ -117,7 +152,7 @@ export function parseImport(text: string): ImportPayload {
   if (rulesSource && Array.isArray(rulesSource.rules)) {
     if (typeof rulesSource.version === "string") rulesVersion = rulesSource.version;
     for (const r of rulesSource.rules) {
-      if (isRecord(r) && typeof r.id === "string" && r.enabled === false && !ruleConfig.disabled.includes(r.id)) {
+      if (isRecord(r) && typeof r.id === "string" && r.enabled === false && knownRuleIds.has(r.id) && !ruleConfig.disabled.includes(r.id)) {
         ruleConfig.disabled.push(r.id);
       }
     }
@@ -135,7 +170,9 @@ export function parseImport(text: string): ImportPayload {
 
 export function ImportExportSection(props: {
   rulesFile: RulesFile;
+  /** The saved (persisted) rule configuration; unsaved edits are not exported. */
   ruleConfig: RuleConfig;
+  hasUnsavedRuleChanges?: boolean;
   store: BaselineStore;
   onImport: (payload: ImportPayload) => Promise<{ disabledAdded: number; thresholdsMerged: number; baselinesAdded: number; ignoredAdded: number }>;
   onResetRules: () => void;
@@ -177,7 +214,7 @@ export function ImportExportSection(props: {
     }
   };
 
-  const configured = ruleConfig.disabled.length > 0 || Object.keys(ruleConfig.thresholds).length > 0;
+  const configured = props.hasUnsavedRuleChanges === true || ruleConfig.disabled.length > 0 || Object.keys(ruleConfig.thresholds).length > 0;
 
   return (
     <Section
@@ -194,6 +231,9 @@ export function ImportExportSection(props: {
           >
             Download {filename}
           </a>
+          {props.hasUnsavedRuleChanges ? (
+            <p className="text-xs text-amber-800">The export contains the saved rule configuration; save your changes first to include them.</p>
+          ) : null}
           <p className="text-xs text-slate-500">
             {rulesFile.rules.length} rules · {ruleConfig.disabled.length} disabled · {Object.values(store).reduce((n, l) => n + l.baseline.length, 0)} baselined ·{" "}
             {Object.values(store).reduce((n, l) => n + l.ignored.length, 0)} ignored

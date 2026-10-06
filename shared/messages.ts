@@ -58,6 +58,8 @@ export type Message =
   | { type: "KEYBOARD_TEST_RESULT"; tabId: number; result: KeyboardTestResult }
   // ---- Content-script internals (SW -> CS) ----
   | { type: "CS_PING" }
+  /** Forget every scan result, highlight and overlay badge held by the page (panel "Reset"). */
+  | { type: "CS_RESET"; tabId: number }
   | { type: "CS_GET_ACTIVE_ELEMENT"; tabId: number }
   | { type: "CS_FOCUS_FIRST"; tabId: number }
   | { type: "CS_GET_ELEMENT_BOX"; tabId: number; issueId?: string; selector?: string }
@@ -103,6 +105,16 @@ export interface Response<T = unknown> {
   ok: boolean;
   data?: T;
   error?: string;
+}
+
+/**
+ * Where to send a message about a single issue: the frame it was found in, and the id the
+ * content script of that frame knows it by (the service worker appends `@f<frameId>` to ids
+ * that collide across frames).
+ */
+export function issueFrameTarget(issue: Issue): { frameId: number; issueId: string } {
+  const frameId = issue.frameId ?? 0;
+  return { frameId, issueId: frameId > 0 ? issue.id.replace(new RegExp(`@f${frameId}$`), "") : issue.id };
 }
 
 export function isMessage(value: unknown): value is Message {

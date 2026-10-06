@@ -1,9 +1,16 @@
 import { useId } from "react";
 import type { Category, IssueSource, IssueStatus, Severity } from "@shared/types";
 import { CATEGORY_ORDER, SEVERITIES, useStore, type GroupBy } from "@src/sidepanel/store";
-import { Popover } from "./Popover";
+import { FilterCheckRow, FilterHeading, FilterMenu } from "./FilterMenu";
+import { FilterIcon, InfoCircleIcon, SearchIcon } from "./icons";
+import { SelectMenu, type SelectOption } from "./SelectMenu";
 
 const SOURCE_LABEL: Record<IssueSource, string> = { axe: "axe-core", custom: "advanced", manual: "manual" };
+
+const GROUP_OPTIONS: Array<SelectOption<GroupBy>> = [
+  { value: "rule", label: "By rule", description: "One row per rule, issues nested" },
+  { value: "category", label: "By category", description: "Rules grouped by category" },
+];
 
 /** Statuses offered in the Status filter ("fixed" is never set by the panel). */
 const STATUS_OPTIONS: Array<{ value: IssueStatus; label: string; hint: string }> = [
@@ -12,16 +19,19 @@ const STATUS_OPTIONS: Array<{ value: IssueStatus; label: string; hint: string }>
   { value: "baselined", label: "Baselined", hint: "Known and accepted for now" },
 ];
 
-function statusFilterLabel(statuses: IssueStatus[]): string {
+/** Short description of the current status selection, e.g. "Open" or "All". */
+function statusSelection(statuses: IssueStatus[]): string {
   const shown = STATUS_OPTIONS.filter((o) => statuses.length === 0 || statuses.includes(o.value));
-  if (shown.length === STATUS_OPTIONS.length) return "Status: all";
-  if (shown.length === 1) return `Status: ${shown[0].label}`;
-  return `Status: ${shown.length} selected`;
+  if (shown.length === STATUS_OPTIONS.length) return "All";
+  if (shown.length === 1) return shown[0].label;
+  return `${shown.length} selected`;
 }
 
 function toggle<T>(list: T[], value: T): T[] {
   return list.includes(value) ? list.filter((x) => x !== value) : [...list, value];
 }
+
+const LINK_BUTTON = "rounded px-1.5 py-0.5 text-xs font-medium text-blue-800 hover:bg-blue-50 hover:underline";
 
 export function Filters() {
   const id = useId();
@@ -35,79 +45,103 @@ export function Filters() {
 
   const presentCategories = new Set<Category>(result.issues.map((i) => i.category));
   const statusCount = (s: IssueStatus) => result.issues.filter((i) => i.status === s).length;
-  const statusLabel = statusFilterLabel(filters.statuses);
+  const shownByStatus = STATUS_OPTIONS.filter((o) => filters.statuses.length === 0 || filters.statuses.includes(o.value)).reduce(
+    (n, o) => n + statusCount(o.value),
+    0,
+  );
+  const statusSel = statusSelection(filters.statuses);
   const sevLabel = filters.severities.length === 0 ? "Severity: all" : `Severity: ${filters.severities.length}`;
   const catLabel = filters.categories.length === 0 ? "Category: all" : `Category: ${filters.categories.length}`;
+  const sevCount = (s: Severity) => result.issues.filter((i) => i.severity === s).length;
+  const catCount = (c: Category) => result.issues.filter((i) => i.category === c).length;
+  const lastStatus = filters.statuses.length === 1;
 
   return (
-    <section aria-label="Filters" className="border-b border-slate-300 px-3 py-2">
+    <section aria-label="Filters" className="px-3 py-2">
       <div className="flex items-center gap-2">
         <label htmlFor={`${id}-search`} className="sr-only">
           Search issues
         </label>
-        <input
-          id={`${id}-search`}
-          type="search"
-          value={filters.search}
-          onChange={(e) => setFilters({ search: e.target.value })}
-          placeholder="Search rule, selector, WCAG…"
-          className="min-w-0 flex-1 rounded border border-slate-500 bg-white px-2 py-1 text-sm text-slate-900"
-        />
-        <label htmlFor={`${id}-group`} className="text-xs text-slate-700">
+        <div className="relative min-w-0 flex-1">
+          <SearchIcon size={14} className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-slate-600" />
+          <input
+            id={`${id}-search`}
+            type="search"
+            value={filters.search}
+            onChange={(e) => setFilters({ search: e.target.value })}
+            placeholder="Search rule, selector, WCAG..."
+            className="w-full rounded-md border border-slate-500 bg-white py-1 pr-2 pl-7 text-[13px] text-slate-900 placeholder:text-slate-600"
+          />
+        </div>
+        <span id={`${id}-group-lbl`} className="text-xs font-medium text-slate-700">
           Group
-        </label>
-        <select
+        </span>
+        <SelectMenu
           id={`${id}-group`}
+          label="Group by"
+          labelledBy={`${id}-group-lbl`}
           value={groupBy}
-          onChange={(e) => setGroupBy(e.target.value as GroupBy)}
-          className="rounded border border-slate-500 bg-white px-1 py-1 text-xs text-slate-900"
-        >
-          <option value="rule">By rule</option>
-          <option value="category">By category</option>
-        </select>
+          options={GROUP_OPTIONS}
+          onChange={setGroupBy}
+          align="right"
+        />
       </div>
-      <div className="mt-1.5 flex flex-wrap items-center gap-2">
-        <Popover label={sevLabel} ariaLabel={`${sevLabel}, open severity filter`} align="left">
-          <fieldset>
-            <legend className="mb-1 text-xs font-semibold text-slate-800">Severity</legend>
-            {SEVERITIES.map((sev: Severity) => (
-              <label key={sev} className="flex items-center gap-2 py-0.5 text-sm text-slate-800">
-                <input
-                  type="checkbox"
+      <div className="mt-2 flex flex-wrap items-stretch gap-2">
+        <FilterMenu
+          ariaLabel={`${sevLabel}, open severity filter`}
+          className="min-w-24 flex-1"
+          panelClassName="w-60"
+          panel={
+            <fieldset>
+              <FilterHeading>Show severities</FilterHeading>
+              {SEVERITIES.map((sev: Severity) => (
+                <FilterCheckRow
+                  key={sev}
                   checked={filters.severities.length === 0 || filters.severities.includes(sev)}
+                  count={sevCount(sev)}
                   onChange={() => {
                     const base = filters.severities.length === 0 ? [...SEVERITIES] : filters.severities;
                     const next = toggle(base, sev);
                     setFilters({ severities: next.length === SEVERITIES.length ? [] : next });
                   }}
-                />
-                <span className={`sev-dot sev-${sev}`} aria-hidden="true" />
-                {sev}
-              </label>
-            ))}
-          </fieldset>
-        </Popover>
+                >
+                  <span className={`sev-dot sev-${sev}`} aria-hidden="true" />
+                  {sev}
+                </FilterCheckRow>
+              ))}
+            </fieldset>
+          }
+        >
+          {sevLabel}
+        </FilterMenu>
 
-        <Popover label={catLabel} ariaLabel={`${catLabel}, open category filter`} align="left">
-          <fieldset>
-            <legend className="mb-1 text-xs font-semibold text-slate-800">Category</legend>
-            {CATEGORY_ORDER.filter((c) => presentCategories.has(c)).map((cat) => (
-              <label key={cat} className="flex items-center gap-2 py-0.5 text-sm text-slate-800">
-                <input
-                  type="checkbox"
+        <FilterMenu
+          ariaLabel={`${catLabel}, open category filter`}
+          className="min-w-24 flex-1"
+          panelClassName="w-60"
+          panel={
+            <fieldset>
+              <FilterHeading>Show categories</FilterHeading>
+              {CATEGORY_ORDER.filter((c) => presentCategories.has(c)).map((cat) => (
+                <FilterCheckRow
+                  key={cat}
                   checked={filters.categories.length === 0 || filters.categories.includes(cat)}
+                  count={catCount(cat)}
                   onChange={() => {
                     const all = CATEGORY_ORDER.filter((c) => presentCategories.has(c));
                     const base = filters.categories.length === 0 ? all : filters.categories;
                     const next = toggle(base, cat);
                     setFilters({ categories: next.length === all.length ? [] : next });
                   }}
-                />
-                {cat}
-              </label>
-            ))}
-          </fieldset>
-        </Popover>
+                >
+                  {cat}
+                </FilterCheckRow>
+              ))}
+            </fieldset>
+          }
+        >
+          {catLabel}
+        </FilterMenu>
 
         {filters.sources.length > 0 && (
           <button
@@ -120,19 +154,26 @@ export function Filters() {
           </button>
         )}
 
-        <Popover label={statusLabel} ariaLabel={`${statusLabel}, open status filter`} align="left">
-          <fieldset>
-            <legend className="mb-1 text-xs font-semibold text-slate-800">Status</legend>
-            {STATUS_OPTIONS.map((o) => {
-              const all = STATUS_OPTIONS.map((x) => x.value);
-              const checked = filters.statuses.length === 0 || filters.statuses.includes(o.value);
-              return (
-                <label key={o.value} className="flex items-start gap-2 py-0.5 text-sm text-slate-800">
-                  <input
-                    type="checkbox"
-                    className="mt-1"
+        <FilterMenu
+          ariaLabel={`Status: ${statusSel}, ${shownByStatus} ${shownByStatus === 1 ? "issue" : "issues"}, open status filter`}
+          align="right"
+          className="min-w-24 flex-1"
+          panelClassName="w-72"
+          panel={
+            <fieldset>
+              <FilterHeading>Show issues that are</FilterHeading>
+              {STATUS_OPTIONS.map((o) => {
+                const all = STATUS_OPTIONS.map((x) => x.value);
+                const checked = filters.statuses.length === 0 || filters.statuses.includes(o.value);
+                const locked = checked && lastStatus;
+                return (
+                  <FilterCheckRow
+                    key={o.value}
                     checked={checked}
-                    aria-describedby={checked && (filters.statuses.length === 1) ? `${id}-last-status` : undefined}
+                    dimmed={locked}
+                    hint={o.hint}
+                    count={statusCount(o.value)}
+                    describedBy={locked ? `${id}-last-status` : undefined}
                     onChange={() => {
                       const base = filters.statuses.length === 0 ? all : filters.statuses;
                       const next = toggle(base, o.value);
@@ -140,33 +181,35 @@ export function Filters() {
                       if (next.length === 0) return;
                       setFilters({ statuses: next.length === all.length ? [] : next });
                     }}
-                  />
-                  <span>
-                    {o.label} <span className="tabular-nums text-slate-600">({statusCount(o.value)})</span>
-                    <span className="block text-[11px] text-slate-600">{o.hint}</span>
-                  </span>
-                </label>
-              );
-            })}
-            {filters.statuses.length === 1 && (
-              <p id={`${id}-last-status`} className="text-[11px] text-slate-600">
-                Tick another status before unticking this one.
+                  >
+                    {o.label}
+                  </FilterCheckRow>
+                );
+              })}
+              <p id={`${id}-last-status`} className="mt-1 flex items-start gap-1.5 border-t border-slate-200 px-1 pt-2 text-[11px] text-slate-600">
+                <InfoCircleIcon size={14} className="mt-px" />
+                At least one status stays selected. Tick another to untick this one.
               </p>
-            )}
-            <div className="mt-1.5 flex flex-wrap gap-1 border-t border-slate-200 pt-1.5">
-              <button type="button" className="rounded px-1.5 py-0.5 text-xs text-blue-800 underline hover:bg-blue-50" onClick={() => setFilters({ statuses: ["new"] })}>
-                Open only
-              </button>
-              <button
-                type="button"
-                className="rounded px-1.5 py-0.5 text-xs text-blue-800 underline hover:bg-blue-50"
-                onClick={() => setFilters({ statuses: ["ignored", "baselined"] })}
-              >
-                Excluded only
-              </button>
-            </div>
-          </fieldset>
-        </Popover>
+              <div className="mt-2 flex flex-wrap gap-1 border-t border-slate-200 pt-2">
+                <button type="button" className={LINK_BUTTON} onClick={() => setFilters({ statuses: ["new"] })}>
+                  Open only
+                </button>
+                <button type="button" className={LINK_BUTTON} onClick={() => setFilters({ statuses: ["ignored", "baselined"] })}>
+                  Excluded only
+                </button>
+                <button type="button" className={LINK_BUTTON} onClick={() => setFilters({ statuses: [] })}>
+                  All
+                </button>
+              </div>
+            </fieldset>
+          }
+        >
+          <FilterIcon size={14} className="text-slate-700" />
+          <span className="truncate">
+            Status: <strong className="font-bold text-slate-900">{statusSel}</strong>
+          </span>
+          <span className="rounded-full bg-blue-100 px-1.5 text-[11px] font-semibold tabular-nums text-blue-900">{shownByStatus}</span>
+        </FilterMenu>
       </div>
     </section>
   );

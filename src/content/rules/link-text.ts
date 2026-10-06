@@ -21,7 +21,7 @@
  */
 import rulesJson from "@shared/a11y-rules.json";
 import type { RuleDefinition, RulesFile } from "@shared/types";
-import { accessibleName } from "@src/content/dom-utils";
+import { accessibleName, queryAllIncludingRoot } from "@src/content/dom-utils";
 import { isExtensionElement } from "./contrast";
 import type { CustomRule, RuleContext, RuleFinding } from "./types";
 
@@ -37,6 +37,8 @@ const PRIMARY = ruleDef("LNK-03");
 const NEW_WINDOW = ruleDef("LNK-05");
 const CHUNK = 200;
 
+// Short action words that are legitimate standalone link/button text ("Continue", "Download", "Open",
+// "View", "Go", "Page", "Website") are deliberately absent: they name an action or a target on their own.
 export const VAGUE_LINK_TEXT = new Set([
   "click here",
   "click",
@@ -53,19 +55,12 @@ export const VAGUE_LINK_TEXT = new Set([
   "this",
   "this link",
   "this page",
-  "continue",
   "continue reading",
-  "go",
-  "view",
   "view more",
   "see more",
   "see details",
   "find out more",
   "show more",
-  "open",
-  "download",
-  "page",
-  "website",
   "url",
   "http",
   "https",
@@ -142,7 +137,7 @@ export const rule: CustomRule = {
     const doc = ctx.root.ownerDocument ?? (ctx.root as Document);
     let links: Element[] = [];
     try {
-      links = Array.from(ctx.root.querySelectorAll("a[href], [role='link']"));
+      links = Array.from(queryAllIncludingRoot(ctx.root, "a[href], [role='link']"));
     } catch {
       return findings;
     }

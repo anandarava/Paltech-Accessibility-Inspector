@@ -38,7 +38,11 @@ export async function restoreLastResult(tabId: number): Promise<void> {
   const store = useStore.getState();
   // The tab may have changed while we were waiting.
   if (store.tabId !== tabId) return;
-  if (res.ok && isScanResult(res.data)) store.setResult(res.data);
+  if (res.ok && isScanResult(res.data)) {
+    store.setResult(res.data);
+    // setResult marks the scan finished; a rescan of this tab may still be running.
+    if (store.scanningTabs.includes(tabId)) store.setScanning(true);
+  }
 }
 
 export function isScanResult(value: unknown): value is ScanResult {

@@ -4,6 +4,7 @@ import {
   getFocusableElements,
   isVisible,
   outerHtmlSnippet,
+  queryAllIncludingRoot,
   uniqueSelector,
   xpath,
   yieldToMain,
@@ -217,5 +218,19 @@ describe("yieldToMain", () => {
     expect(flag).toBe(false);
     await p;
     expect(flag).toBe(true);
+  });
+});
+
+describe("queryAllIncludingRoot", () => {
+  it("returns the root itself when it matches, then its descendants", () => {
+    setBody('<div id="r" role="link"><span role="link">x</span></div>');
+    const root = document.getElementById("r")!;
+    expect(queryAllIncludingRoot(root, "[role='link']")).toHaveLength(2);
+    expect(queryAllIncludingRoot(root, "[role='link']")[0]).toBe(root);
+  });
+  it("does not add a non-matching root or a Document", () => {
+    setBody('<div id="r"><a href="/b">x</a></div>');
+    expect(queryAllIncludingRoot(document.getElementById("r")!, "a[href]")).toHaveLength(1);
+    expect(queryAllIncludingRoot(document, "a[href]")).toHaveLength(1);
   });
 });

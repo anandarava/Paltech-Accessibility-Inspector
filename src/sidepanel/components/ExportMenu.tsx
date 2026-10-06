@@ -3,6 +3,7 @@ import type { ExportFormat } from "@shared/types";
 import { sendToBackground } from "@shared/messages";
 import { useStore } from "@src/sidepanel/store";
 import { Popover } from "./Popover";
+import { DownloadIcon } from "./icons";
 
 interface ExportOption {
   id: string;
@@ -51,15 +52,16 @@ export function ExportMenu() {
   };
 
   return (
-    <Popover side="top" label={<><span aria-hidden="true">⤓</span> Export</>} ariaLabel="Export report" disabled={!hasResult || (tabId === null && !saved)}>
+    <Popover side="top" label={<><DownloadIcon /> Export</>} ariaLabel="Export report" disabled={!hasResult || (tabId === null && !saved)}>
       <ul aria-label="Export formats">
         {OPTIONS.filter((f) => !(f.live && saved)).map((f) => (
           <li key={f.id}>
             <button
               type="button"
               onClick={() => void exportAs(f)}
-              disabled={busy !== null}
-              className="w-full rounded px-2 py-1 text-left text-sm text-slate-900 hover:bg-slate-100 disabled:text-slate-500"
+              // aria-disabled (not disabled) so the focused item keeps focus while an export runs; exportAs ignores clicks when busy.
+              aria-disabled={busy !== null ? true : undefined}
+              className="w-full rounded px-2 py-1 text-left text-sm text-slate-900 hover:bg-slate-100 aria-disabled:cursor-not-allowed aria-disabled:text-slate-500"
             >
               {busy === f.id ? `${f.label}…` : f.label}
               <span className="block text-[11px] text-slate-600">{f.hint}</span>

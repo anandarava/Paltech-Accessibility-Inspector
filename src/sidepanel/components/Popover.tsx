@@ -12,13 +12,17 @@ interface Props {
   align?: "left" | "right";
   /** Open below the trigger (default) or above it, e.g. for buttons in a bottom bar. */
   side?: "bottom" | "top";
+  /** "sm" is the compact dropdown button used by the filters. */
+  size?: "sm" | "md";
+  /** Replaces the default no-wrap on the trigger, e.g. "whitespace-normal" so a long label can wrap. */
+  wrap?: string;
 }
 
 /**
  * Disclosure popover: a button with aria-expanded/aria-controls that toggles a
  * panel. Escape or an outside click closes it and focus returns to the trigger.
  */
-export function Popover({ label, ariaLabel, children, disabled = false, className = "", align = "right", side = "bottom" }: Props) {
+export function Popover({ label, ariaLabel, children, disabled = false, className = "", align = "right", side = "bottom", size = "md", wrap = "whitespace-nowrap" }: Props) {
   const id = useId();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -56,11 +60,13 @@ export function Popover({ label, ariaLabel, children, disabled = false, classNam
         ref={triggerRef}
         type="button"
         aria-expanded={open}
-        aria-controls={`${id}-panel`}
+        aria-controls={open ? `${id}-panel` : undefined}
         aria-label={ariaLabel}
         disabled={disabled}
         onClick={() => setOpen((o) => !o)}
-        className="inline-flex w-full items-center justify-center gap-1 whitespace-nowrap rounded border border-slate-500 bg-white px-3 py-1.5 text-sm font-medium text-slate-800 hover:bg-slate-100 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-500"
+        className={`inline-flex h-full w-full items-center justify-center gap-1 rounded-md border border-slate-500 bg-white font-medium leading-tight text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-500 ${
+          size === "sm" ? "px-2.5 py-1 text-xs" : "px-2 py-1.5 text-xs"
+        } ${wrap}`}
       >
         {label}
         <span aria-hidden="true" className="text-xs">
@@ -70,7 +76,7 @@ export function Popover({ label, ariaLabel, children, disabled = false, classNam
       {open && (
         <div
           id={`${id}-panel`}
-          className={`absolute ${align === "left" ? "left-0" : "right-0"} ${side === "top" ? "bottom-full mb-1" : "top-full mt-1"} z-20 min-w-48 rounded border border-slate-400 bg-white p-2 shadow-lg`}
+          className={`absolute ${align === "left" ? "left-0" : "right-0"} ${side === "top" ? "bottom-full mb-1" : "top-full mt-1"} z-20 min-w-48 rounded-md border border-slate-400 bg-white p-2 shadow-lg`}
         >
           {children}
         </div>

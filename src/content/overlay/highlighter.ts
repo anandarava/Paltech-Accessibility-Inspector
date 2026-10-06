@@ -27,11 +27,33 @@ export const INFO_COLOR = "#0b7285";
 
 export const ZERO_ORIGIN: Origin = { x: 0, y: 0 };
 
-/** querySelector that never throws on an invalid selector. */
+/** Upper bound on shadow roots visited when a selector is not found in the light DOM. */
+const MAX_SHADOW_ROOTS = 200;
+
+/**
+ * querySelector that never throws on an invalid selector. Selectors built by
+ * uniqueSelector() are relative to their own root, so when the document has no
+ * match the open shadow roots are searched too (breadth-first, first match wins).
+ */
 export function resolveElement(selector: string): Element | null {
   if (!selector) return null;
   try {
-    return document.querySelector(selector);
+    const direct = document.querySelector(selector);
+    if (direct) return direct;
+    const queue: ParentNode[] = [document];
+    let visited = 0;
+    while (queue.length > 0 && visited < MAX_SHADOW_ROOTS) {
+      const root = queue.shift()!;
+      for (const host of Array.from(root.querySelectorAll("*"))) {
+        const shadow = host.shadowRoot;
+        if (!shadow || isExtensionNode(host)) continue;
+        visited++;
+        const hit = shadow.querySelector(selector);
+        if (hit) return hit;
+        queue.push(shadow);
+      }
+    }
+    return null;
   } catch {
     return null;
   }

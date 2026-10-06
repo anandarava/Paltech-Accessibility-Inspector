@@ -4,6 +4,8 @@ import { useStore } from "@src/sidepanel/store";
 import { sendToPage } from "@src/sidepanel/hooks/messaging";
 import { useFocusHeading } from "@src/sidepanel/hooks/useFocusHeading";
 import { Button } from "./Button";
+import { ArrowLeftIcon, KeyboardIcon, LightbulbIcon, PlayOutlineIcon } from "./icons";
+import { EmptyState, KeyboardIllustration } from "./EmptyState";
 
 /** The recording stops after this many focus changes. */
 const MAX_TABS = 200;
@@ -29,6 +31,8 @@ export function KeyboardTest({ onBack }: { onBack(): void }) {
     setRunning(true);
     setProgress(null);
     const res = await sendToBackground<unknown>({ type: "KEYBOARD_TEST_START", tabId, maxTabs: MAX_TABS, mode: "guided" });
+    // The user may have switched tabs while waiting; the state now belongs to another tab.
+    if (useStore.getState().tabId !== tabId) return;
     if (!res.ok) {
       setRunning(false);
       setProgress(null);
@@ -46,6 +50,7 @@ export function KeyboardTest({ onBack }: { onBack(): void }) {
   const stop = async () => {
     if (tabId === null) return;
     const res = await sendToBackground<unknown>({ type: "KEYBOARD_TEST_STOP", tabId });
+    if (useStore.getState().tabId !== tabId) return;
     if (!res.ok) {
       showToast({ kind: "error", message: `Could not stop the test: ${res.error ?? "unknown error"}` });
       return;
@@ -70,35 +75,47 @@ export function KeyboardTest({ onBack }: { onBack(): void }) {
   };
 
   return (
-    <section aria-labelledby="keyboard-heading" className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-      <div className="flex items-center gap-2 border-b border-slate-300 px-3 py-2">
-        <Button onClick={onBack} size="sm" aria-label="Back to issue list">
-          ← Back
+    <section aria-labelledby="keyboard-heading" className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-gradient-to-b from-blue-50/60 to-white">
+      <div className="px-3 pt-3">
+        <Button onClick={onBack} size="sm" aria-label="Back to issue list" className="bg-white">
+          <ArrowLeftIcon size={13} />
+          Back
         </Button>
-        <h2 id="keyboard-heading" ref={headingRef} tabIndex={-1} className="text-base font-semibold text-slate-900">
-          Keyboard test
-        </h2>
       </div>
 
-      <div className="px-3 py-2 text-sm text-slate-800">
-        <p>
-          Records where focus lands while you press <kbd className="rounded border border-slate-400 bg-slate-100 px-1 font-mono text-xs">Tab</kbd>{" "}
-          through the page, and reports keyboard traps and elements that are never reached (WCAG 2.1.1, 2.1.2, 2.4.3).
-        </p>
-        <ol className="mt-2 list-decimal space-y-0.5 pl-5 text-xs text-slate-700">
-          <li>Press <strong>Start test</strong>.</li>
-          <li>Click into the page, then press Tab repeatedly (Shift+Tab goes back).</li>
-          <li>The test ends by itself when focus comes back to the first element or a trap is found. Press <strong>Stop</strong> to end it early.</li>
-        </ol>
-        <div className="mt-2 flex gap-2">
-          <Button variant="primary" onClick={() => void start()} disabled={tabId === null || running}>
-            {running ? "Recording…" : "Start test"}
-          </Button>
-          {running && (
-            <Button variant="danger" onClick={() => void stop()}>
-              Stop
+      <div className="px-3 py-3 text-sm text-slate-800">
+        <div className="rounded-xl border border-blue-200 bg-blue-50 p-3.5">
+          <div className="flex items-center gap-2.5">
+            <span aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-700">
+              <KeyboardIcon size={18} />
+            </span>
+            <h2 id="keyboard-heading" ref={headingRef} tabIndex={-1} className="text-xl font-bold text-slate-900">
+              Keyboard test
+            </h2>
+          </div>
+          <p className="mt-2.5 text-slate-700">
+            Records where focus lands while you press <kbd className="rounded border border-slate-400 bg-white px-1 font-mono text-xs">Tab</kbd>{" "}
+            through the page, and reports keyboard traps and elements that are never reached (WCAG 2.1.1, 2.1.2, 2.4.3).
+          </p>
+          <div className="mt-3 flex gap-2.5 rounded-lg border border-blue-200 bg-blue-100/70 p-3">
+            <LightbulbIcon size={18} className="mt-0.5 text-blue-700" />
+            <ol className="list-decimal space-y-1 pl-4 text-xs text-slate-800">
+              <li>Press <strong>Start test</strong>.</li>
+              <li>Click into the page, then press Tab repeatedly (Shift+Tab goes back).</li>
+              <li>The test ends by itself when focus comes back to the first element or a trap is found. Press <strong>Stop</strong> to end it early.</li>
+            </ol>
+          </div>
+          <div className="mt-3 flex gap-2">
+            <Button variant="primary" onClick={() => void start()} disabled={tabId === null || running} className="flex-1 py-2">
+              <PlayOutlineIcon size={14} />
+              {running ? "Recording…" : "Start test"}
             </Button>
-          )}
+            {running && (
+              <Button variant="danger" onClick={() => void stop()}>
+                Stop
+              </Button>
+            )}
+          </div>
         </div>
 
         <div aria-live="polite" className="mt-2 text-xs text-slate-800">
@@ -115,22 +132,28 @@ export function KeyboardTest({ onBack }: { onBack(): void }) {
           )}
         </div>
 
+        {!running && !result && (
+          <EmptyState illustration={<KeyboardIllustration />} heading="Ready to test keyboard navigation?">
+            Click the Start test button above to begin.
+          </EmptyState>
+        )}
+
         {result && !running && (
-          <div className="mt-3">
+          <div className="mt-3 rounded-xl border border-blue-200 bg-white p-3.5">
             <h3 className="text-sm font-semibold text-slate-900">Result</h3>
             {result.trapDetected ? (
-              <p className="mt-1 rounded border border-red-700 bg-red-50 p-2 text-sm text-red-900">
+              <p className="mt-1 rounded-md border border-red-700 bg-red-50 p-2 text-sm text-red-900">
                 <strong>Keyboard trap detected (KBD-02).</strong> Focus cycled within {result.trapElements.length} element
                 {result.trapElements.length === 1 ? "" : "s"}{" "}
                 while you pressed Tab and never reached the rest of the page. Check whether Escape or Shift+Tab lets you out.
               </p>
             ) : result.cycleCompleted ? (
-              <p className="mt-1 rounded border border-green-700 bg-green-50 p-2 text-sm text-green-900">
+              <p className="mt-1 rounded-md border border-green-700 bg-green-50 p-2 text-sm text-green-900">
                 No keyboard trap: focus returned to the starting element after {result.path.length} step
                 {result.path.length === 1 ? "" : "s"}.
               </p>
             ) : (
-              <p className="mt-1 rounded border border-amber-700 bg-amber-50 p-2 text-sm text-amber-900">
+              <p className="mt-1 rounded-md border border-amber-700 bg-amber-50 p-2 text-sm text-amber-900">
                 Stopped after {result.path.length} step{result.path.length === 1 ? "" : "s"} without completing a full cycle.{" "}
                 Keep pressing Tab until focus comes back to the first element, or check the unreached elements below.
               </p>

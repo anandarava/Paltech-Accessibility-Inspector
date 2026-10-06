@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type JSX } from "react";
 import type { BaselineEntry, RuleConfig, RulesFile, Settings } from "@shared/types";
-import { DEFAULT_RULE_CONFIG, DEFAULT_SETTINGS } from "@shared/constants";
+import { DEFAULT_RULE_CONFIG, DEFAULT_SETTINGS, STORAGE_KEYS } from "@shared/constants";
 import { sendToBackground } from "@shared/messages";
 import rulesJson from "@shared/a11y-rules.json";
-import { addBaseline, addIgnored, getRuleConfig, getSettings, saveRuleConfig, saveSettings } from "@src/background/storage";
+import { addBaseline, addIgnored, getBaseline, getIgnored, getRuleConfig, getSettings, saveRuleConfig, saveSettings } from "@src/background/storage";
 import { GeneralSection } from "./components/GeneralSection";
 import { CategoriesSection } from "./components/CategoriesSection";
 import { RulesSection } from "./components/RulesSection";
@@ -74,11 +74,17 @@ export function Options(): JSX.Element {
   const [settings, setSettings] = useState<Settings>(() => cloneSettings(DEFAULT_SETTINGS));
   const [redactText, setRedactText] = useState(DEFAULT_SETTINGS.redactSelectors.join("\n"));
   const [ruleConfig, setRuleConfig] = useState<RuleConfig>(() => cloneRuleConfig(DEFAULT_RULE_CONFIG));
+  /** The rule configuration as persisted; Export uses this, not the unsaved draft. */
+  const [savedRuleConfig, setSavedRuleConfig] = useState<RuleConfig>(() => cloneRuleConfig(DEFAULT_RULE_CONFIG));
   const [store, setStore] = useState<BaselineStore>({});
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<StatusMessage | null>(null);
   const savedRef = useRef<LoadedState | null>(null);
+  /** Settings fields edited on this page since the last load/save; only these are written on save. */
+  const editedRef = useRef<Set<keyof Settings>>(new Set());
+  const dirtyRef = useRef(false);
+  dirtyRef.current = dirty;
 
   const reloadBaselines = useCallback(async (): Promise<void> => {
     try {
@@ -90,9 +96,11 @@ export function Options(): JSX.Element {
 
   const applyLoaded = useCallback((loaded: LoadedState): void => {
     savedRef.current = loaded;
+    setSavedRuleConfig(cloneRuleConfig(loaded.ruleConfig));
     setSettings(cloneSettings(loaded.settings));
     setRedactText(loaded.settings.redactSelectors.join("\n"));
     setRuleConfig(cloneRuleConfig(loaded.ruleConfig));
+    editedRef.current = new Set();
     setDirty(false);
   }, []);
 
@@ -113,6 +121,23 @@ export function Options(): JSX.Element {
     return () => {
       cancelled = true;
     };
+  }, [applyLoaded, reloadBaselines]);
+
+  // Keep baselines (and, when nothing is being edited, the settings form) in step with storage
+  // changes made elsewhere, e.g. the side panel adding a baseline or changing a setting.
+  useEffect(() => {
+    const onChanged = (changes: Record<string, chrome.storage.StorageChange>, area: string): void => {
+      if (area !== "local") return;
+      const keys = Object.keys(changes);
+      if (keys.some((k) => k.startsWith("baseline:") || k.startsWith("ignored:"))) void reloadBaselines();
+      if (keys.includes(STORAGE_KEYS.settings) && !dirtyRef.current) {
+        void loadAll().then((loaded) => {
+          if (!dirtyRef.current) applyLoaded(loaded);
+        }, () => undefined);
+      }
+    };
+    chrome.storage.onChanged.addListener(onChanged);
+    return () => chrome.storage.onChanged.removeListener(onChanged);
   }, [applyLoaded, reloadBaselines]);
 
   // Warn before closing the tab with unsaved changes.
@@ -141,6 +166,7 @@ export function Options(): JSX.Element {
 
   const patchSettings = (patch: Partial<Settings>): void => {
     setSettings((s) => ({ ...s, ...patch }));
+    for (const k of Object.keys(patch) as Array<keyof Settings>) editedRef.current.add(k);
     markDirty();
   };
 
@@ -157,13 +183,16 @@ export function Options(): JSX.Element {
     setSaving(true);
     setStatus({ kind: "info", text: "Saving…" });
     try {
-      const nextSettings: Settings = {
-        ...settings,
-        environment: settings.environment.trim(),
-        reportOrganisation: settings.reportOrganisation.trim(),
-        reportPreparedBy: settings.reportPreparedBy.trim(),
-        redactSelectors: parseSelectorLines(redactText),
-      };
+      // Re-read the stored settings and overwrite only the fields edited on this page, so changes
+      // made in the side panel since this page was opened are not reverted.
+      const nextSettings = cloneSettings(withDefaults(DEFAULT_SETTINGS, await getSettings()));
+      const edited = editedRef.current;
+      const target = nextSettings as unknown as Record<string, unknown>;
+      for (const key of edited) {
+        const v = (settings as unknown as Record<string, unknown>)[key];
+        target[key] = typeof v === "string" ? v.trim() : v;
+      }
+      if (edited.has("redactSelectors")) nextSettings.redactSelectors = parseSelectorLines(redactText);
       const nextRuleConfig = cloneRuleConfig(ruleConfig);
       await saveSettings(nextSettings);
       await saveRuleConfig(nextRuleConfig);
@@ -205,13 +234,19 @@ export function Options(): JSX.Element {
 
     const addNew = async (
       lists: Record<string, BaselineEntry[]>,
-      existing: (origin: string) => BaselineEntry[],
+      existing: (origin: string) => Promise<BaselineEntry[]>,
       add: (origin: string, entries: BaselineEntry[]) => Promise<void>,
     ): Promise<number> => {
       let n = 0;
       for (const [origin, entries] of Object.entries(lists)) {
-        const known = new Set(existing(origin).map((e) => e.fingerprint));
-        const fresh = entries.filter((e) => !known.has(e.fingerprint));
+        // Read the persisted list per origin (not the page-load snapshot) and dedupe within the payload too.
+        const known = new Set((await existing(origin)).map((e) => e.fingerprint));
+        const fresh: BaselineEntry[] = [];
+        for (const e of entries) {
+          if (known.has(e.fingerprint)) continue;
+          known.add(e.fingerprint);
+          fresh.push(e);
+        }
         if (fresh.length) {
           await add(origin, fresh);
           n += fresh.length;
@@ -219,8 +254,8 @@ export function Options(): JSX.Element {
       }
       return n;
     };
-    const baselinesAdded = await addNew(payload.baselines, (o) => store[o]?.baseline ?? [], addBaseline);
-    const ignoredAdded = await addNew(payload.ignored, (o) => store[o]?.ignored ?? [], addIgnored);
+    const baselinesAdded = await addNew(payload.baselines, getBaseline, addBaseline);
+    const ignoredAdded = await addNew(payload.ignored, getIgnored, addIgnored);
 
     // Reflect the merge in the draft: keep any unsaved disables/thresholds too.
     setRuleConfig((draft) => {
@@ -230,6 +265,7 @@ export function Options(): JSX.Element {
       return next;
     });
     if (savedRef.current) savedRef.current = { ...savedRef.current, ruleConfig: merged };
+    setSavedRuleConfig(cloneRuleConfig(merged));
     await reloadBaselines();
     await notifySettingsChanged();
     return { disabledAdded, thresholdsMerged, baselinesAdded, ignoredAdded };
@@ -323,6 +359,7 @@ export function Options(): JSX.Element {
               redactText={redactText}
               onRedactTextChange={(t) => {
                 setRedactText(t);
+                editedRef.current.add("redactSelectors");
                 markDirty();
               }}
               onChange={patchSettings}
@@ -340,7 +377,8 @@ export function Options(): JSX.Element {
           <BaselinesSection store={store} onReload={reloadBaselines} />
           <ImportExportSection
             rulesFile={rulesFile}
-            ruleConfig={ruleConfig}
+            ruleConfig={savedRuleConfig}
+            hasUnsavedRuleChanges={JSON.stringify(ruleConfig) !== JSON.stringify(savedRuleConfig)}
             store={store}
             onImport={importConfig}
             onResetRules={() => {

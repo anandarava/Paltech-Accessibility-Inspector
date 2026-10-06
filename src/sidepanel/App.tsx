@@ -1,14 +1,13 @@
 import { useCallback, useEffect, useId, useRef, useState, type RefObject } from "react";
-import type { Settings, WcagLevel, WcagVersion } from "@shared/types";
-import { sendToBackground } from "@shared/messages";
-import { saveSettings } from "@src/background/storage";
 import { useStore } from "./store";
 import { useActiveTab } from "./hooks/useActiveTab";
 import { useBackgroundEvents, useLastResult, useSettings } from "./hooks/useBackgroundEvents";
 import { usePanelConnection } from "./hooks/usePanelConnection";
+import { useChangeSettings } from "./hooks/useChangeSettings";
 import { Button } from "./components/Button";
 import { ScanButton, ScanProgressBar, useStartScan } from "./components/ScanButton";
 import { ScopeControl } from "./components/ScopeControl";
+import { LandingView } from "./components/LandingView";
 import { ScoreCard } from "./components/ScoreCard";
 import { ResultTabs } from "./components/ResultTabs";
 import { Filters } from "./components/Filters";
@@ -19,8 +18,11 @@ import { SavedScans } from "./components/SavedScans";
 import { CompareView } from "./components/CompareView";
 import { OverlayMenu } from "./components/OverlayMenu";
 import { ExportMenu } from "./components/ExportMenu";
+import { ResetButton } from "./components/ResetButton";
 import { Toast } from "./components/Toast";
 import { PageChangedBanner } from "./components/PageChangedBanner";
+import { SelectMenu, WCAG_LEVEL_OPTIONS, WCAG_VERSION_OPTIONS } from "./components/SelectMenu";
+import { BookmarkIcon, ClockIcon, KeyboardIcon } from "./components/icons";
 
 export interface AppProps {
   /** DevTools passes chrome.devtools.inspectedWindow.tabId; the side panel resolves the active tab itself. */
@@ -33,8 +35,6 @@ export interface AppProps {
   getInspectedSelector?(): Promise<string | null>;
 }
 
-const LEVELS: WcagLevel[] = ["A", "AA", "AAA"];
-const VERSIONS: WcagVersion[] = ["2.2", "2.1", "2.0"];
 /** Panel width from which the list and the issue detail are shown side by side. */
 const TWO_PANE_MIN_WIDTH = 760;
 
@@ -74,7 +74,8 @@ export function App({ tabIdOverride, inspectable = false, onInspect, getInspecte
   const id = useId();
   useActiveTab(tabIdOverride);
   useBackgroundEvents();
-  useLastResult();
+  // The real side panel (not DevTools, not a pinned-tab page) starts empty each time it is opened.
+  useLastResult(tabIdOverride === undefined);
   useSettings();
   usePanelConnection();
 
@@ -84,12 +85,11 @@ export function App({ tabIdOverride, inspectable = false, onInspect, getInspecte
   const selectedIssueId = useStore((s) => s.selectedIssueId);
   const selectIssue = useStore((s) => s.selectIssue);
   const settings = useStore((s) => s.settings);
-  const setSettings = useStore((s) => s.setSettings);
   const result = useStore((s) => s.result);
   const scanning = useStore((s) => s.scanning);
   const readOnly = useStore((s) => s.viewingSaved !== null);
   const setInspectable = useStore((s) => s.setInspectable);
-  const showToast = useStore((s) => s.showToast);
+  const changeSettings = useChangeSettings();
   const startScan = useStartScan();
   const [rootRef, width] = useWidth<HTMLDivElement>();
   const wide = width >= TWO_PANE_MIN_WIDTH;
@@ -97,18 +97,6 @@ export function App({ tabIdOverride, inspectable = false, onInspect, getInspecte
   useEffect(() => {
     setInspectable(inspectable);
   }, [inspectable, setInspectable]);
-
-  const changeSettings = async (patch: Partial<Settings>, what: string) => {
-    const next = { ...settings, ...patch };
-    setSettings(next);
-    try {
-      await saveSettings(next);
-      // Let other extension pages (options, other panels) refresh.
-      void sendToBackground({ type: "SETTINGS_CHANGED" });
-    } catch (e) {
-      showToast({ kind: "error", message: `Could not save the ${what}: ${e instanceof Error ? e.message : String(e)}` });
-    }
-  };
 
   const openIssue = useCallback(
     (issueId: string) => {
@@ -124,13 +112,15 @@ export function App({ tabIdOverride, inspectable = false, onInspect, getInspecte
   }, [setView, selectIssue, wide]);
 
   const resultsView = view === "list" || view === "detail";
+  // No scan yet for this tab: show the landing view instead of the (empty) results UI.
+  const landing = view === "list" && !result && !readOnly;
 
   const listPane = (
     <>
       <ScoreCard />
       <ResultTabs />
       <Filters />
-      <IssueList onOpen={openIssue} />
+      <IssueList onOpen={openIssue} wide={wide} />
     </>
   );
 
@@ -154,42 +144,33 @@ export function App({ tabIdOverride, inspectable = false, onInspect, getInspecte
   );
 
   return (
-    <div ref={rootRef} className="flex h-full flex-col bg-white text-slate-900">
-      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-300 px-3 py-2">
+    <div ref={rootRef} className="relative flex h-full flex-col overflow-hidden bg-white text-slate-900">
+      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-3 py-2">
         <h1 className="text-base font-bold">PalTech A11y Inspector</h1>
         <div className="flex flex-wrap items-center gap-x-1 gap-y-1">
-          <label htmlFor={`${id}-version`} className="text-xs text-slate-700">
+          <span id={`${id}-version-lbl`} className="text-xs text-slate-700">
             WCAG
-          </label>
-          <select
+          </span>
+          <SelectMenu
             id={`${id}-version`}
+            label="WCAG version"
+            labelledBy={`${id}-version-lbl`}
             value={settings.wcagVersion}
-            onChange={(e) => void changeSettings({ wcagVersion: e.target.value as WcagVersion }, "WCAG version")}
+            options={WCAG_VERSION_OPTIONS}
+            onChange={(v) => void changeSettings({ wcagVersion: v }, "WCAG version")}
             disabled={scanning}
-            className="rounded border border-slate-500 bg-white px-1 py-0.5 text-sm text-slate-900"
-          >
-            {VERSIONS.map((v) => (
-              <option key={v} value={v}>
-                {v}
-              </option>
-            ))}
-          </select>
-          <label htmlFor={`${id}-level`} className="sr-only">
-            Conformance level
-          </label>
-          <select
+            align="right"
+          />
+          <SelectMenu
             id={`${id}-level`}
+            label="Conformance level"
             value={settings.wcagLevel}
-            onChange={(e) => void changeSettings({ wcagLevel: e.target.value as WcagLevel }, "WCAG level")}
+            options={WCAG_LEVEL_OPTIONS}
+            triggerContent={`Level ${settings.wcagLevel}`}
+            onChange={(v) => void changeSettings({ wcagLevel: v }, "WCAG level")}
             disabled={scanning}
-            className="rounded border border-slate-500 bg-white px-1 py-0.5 text-sm text-slate-900"
-          >
-            {LEVELS.map((l) => (
-              <option key={l} value={l}>
-                {l}
-              </option>
-            ))}
-          </select>
+            align="right"
+          />
           <label className="ml-1 flex items-center gap-1 whitespace-nowrap text-xs text-slate-700" title="Include best-practice rules in scans">
             <input
               type="checkbox"
@@ -214,7 +195,7 @@ export function App({ tabIdOverride, inspectable = false, onInspect, getInspecte
       <SavedBanner />
       <PageChangedBanner onRescan={() => void startScan()} />
 
-      {tabId === null && (
+      {tabId === null && !landing && (
         <p role="status" className="border-b border-slate-300 bg-slate-50 px-3 py-2 text-xs text-slate-700">
           No active tab detected. Open a regular web page in this window to scan it.
         </p>
@@ -222,42 +203,47 @@ export function App({ tabIdOverride, inspectable = false, onInspect, getInspecte
 
       {/* Every control keeps its label on one line and grows to fill its row, so the
           row stays even at any width and wraps into full rows instead of ragged ones. */}
-      <nav aria-label="Actions" className="flex flex-wrap gap-1.5 border-b border-slate-300 px-3 py-2">
+      {!landing && (
+      <nav aria-label="Actions" className="flex flex-wrap gap-1.5 border-b border-slate-200 px-3 py-2">
         <ScanButton />
         <ScopeControl getInspectedSelector={getInspectedSelector} />
-        <Button onClick={() => setView("keyboard")} disabled={tabId === null} aria-pressed={view === "keyboard"} className="flex-auto">
-          <span aria-hidden="true">⌨</span> Keyboard test
+        <Button onClick={() => setView("keyboard")} disabled={tabId === null} aria-pressed={view === "keyboard"} size="action" className="flex-1 basis-[5.5rem] whitespace-normal leading-tight">
+          <KeyboardIcon /> Keyboard test
         </Button>
-        <Button onClick={() => setView("saved")} aria-pressed={view === "saved" || view === "compare"} className="flex-auto">
-          <span aria-hidden="true">🗂</span> Saved
+        <Button onClick={() => setView("saved")} aria-pressed={view === "saved" || view === "compare"} size="action" className="flex-1 basis-[5.5rem] whitespace-normal leading-tight">
+          <BookmarkIcon /> Saved
         </Button>
         <OverlayMenu />
       </nav>
+      )}
 
       <ScanProgressBar />
 
       <main className="flex min-h-0 flex-1 flex-col">
-        {resultsView && wide && (
+        {landing && <LandingView getInspectedSelector={getInspectedSelector} />}
+        {!landing && resultsView && wide && (
           <div className="flex min-h-0 flex-1">
             <div className="flex min-h-0 w-[45%] min-w-80 flex-col border-r border-slate-300">{listPane}</div>
             <div className="flex min-h-0 flex-1 flex-col">{detailPane}</div>
           </div>
         )}
-        {resultsView && !wide && (view === "list" ? listPane : detailPane)}
+        {!landing && resultsView && !wide && (view === "list" ? listPane : detailPane)}
         {view === "keyboard" && <KeyboardTest onBack={backToList} />}
         {view === "saved" && <SavedScans onBack={backToList} />}
         {view === "compare" && <CompareView onBack={() => setView("saved")} />}
       </main>
 
       {/* The single-column issue view has its own action bar; the scan bar returns with the list. */}
-      {resultsView && (wide || view === "list") && (
-        <footer className="flex flex-wrap items-center gap-1.5 border-t border-slate-300 px-3 py-2">
-          <span className="flex-1" />
+      {!landing && resultsView && (wide || view === "list") && (
+        <footer className="sticky bottom-0 flex shrink-0 flex-wrap items-center gap-1.5 border-t border-slate-200 bg-white px-3 py-2">
           {!readOnly && (
-            <Button onClick={() => setView("saved")} disabled={!result}>
-              Save scan
+            <Button variant="ghost" size="action" onClick={() => setView("saved")} disabled={!result}>
+              <ClockIcon /> Saved scans
             </Button>
           )}
+          <ResetButton />
+          <span className="flex-1" />
+          <ScanButton icon="refresh" className="" />
           <ExportMenu />
         </footer>
       )}

@@ -152,7 +152,7 @@ export function IssueDetail({ issueId, onBack, onInspect, wide = false }: Props)
   const readOnly = useStore((s) => s.viewingSaved !== null);
   const autoHighlight = useStore((s) => s.autoHighlight);
   const setAutoHighlight = useStore((s) => s.setAutoHighlight);
-  const headingRef = useFocusHeading<HTMLHeadingElement>([issueId]);
+  const headingRef = useFocusHeading<HTMLHeadingElement>([]); // first open only: stepping Prev/Next must keep focus on the stepper
   const [form, setForm] = useState<PendingForm>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -312,7 +312,14 @@ export function IssueDetail({ issueId, onBack, onInspect, wide = false }: Props)
         </Button>
         {siblings.length > 1 && (
           <span className="flex items-center gap-1 text-xs text-slate-700" role="group" aria-label="Instances of this rule">
-            <Button size="sm" onClick={() => position > 0 && selectIssue(siblings[position - 1].id)} disabled={position <= 0} aria-label="Previous instance">
+            {/* aria-disabled (not disabled) keeps the button focusable so a keyboard user stepping to the end does not lose focus. */}
+            <Button
+              size="sm"
+              onClick={() => position > 0 && selectIssue(siblings[position - 1].id)}
+              aria-disabled={position <= 0 ? true : undefined}
+              className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+              aria-label="Previous instance"
+            >
               ‹
             </Button>
             <span className="min-w-14 text-center tabular-nums" aria-live="polite">
@@ -321,7 +328,8 @@ export function IssueDetail({ issueId, onBack, onInspect, wide = false }: Props)
             <Button
               size="sm"
               onClick={() => position < siblings.length - 1 && selectIssue(siblings[position + 1].id)}
-              disabled={position >= siblings.length - 1}
+              aria-disabled={position >= siblings.length - 1 ? true : undefined}
+              className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
               aria-label="Next instance"
             >
               ›

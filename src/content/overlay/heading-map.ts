@@ -55,11 +55,8 @@ export class HeadingLayer {
       if (isExtensionNode(el)) continue;
       const level = headingLevel(el);
       if (level === 0) continue;
-      if (!isRendered(el)) {
-        // Hidden headings still count in the outline order for AT, but we cannot draw them.
-        previous = level;
-        continue;
-      }
+      // display:none / visibility:hidden headings are not exposed to AT: they neither get drawn nor take part in the level-skip check.
+      if (!isRendered(el)) continue;
       const skipped = previous > 0 && level > previous + 1;
       const color = skipped ? this.colors.colors.Critical : INFO_COLOR;
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   blend,
   contrastRatio,
+  contrastRatioExact,
   isLargeText,
   luminance,
   parseColor,
@@ -199,5 +200,39 @@ describe("isLargeText", () => {
     expect(isLargeText(18.66, 600)).toBe(false);
     expect(isLargeText(18.5, 700)).toBe(false);
     expect(isLargeText(18.66, 900)).toBe(true);
+  });
+});
+
+describe("modern colour syntaxes", () => {
+  const near = (c: RGBA | null, rgb: [number, number, number], tol = 2): void => {
+    expect(c).not.toBeNull();
+    for (let i = 0; i < 3; i++) expect(Math.abs((c as RGBA)[i]! - rgb[i]!)).toBeLessThanOrEqual(tol);
+  };
+
+  it("parses oklch (Tailwind v4 slate-900)", () => {
+    near(parseColor("oklch(0.208 0.042 265.755)"), [15, 23, 42]);
+  });
+  it("parses oklab, lab and lch whites and blacks", () => {
+    near(parseColor("oklab(1 0 0)"), [255, 255, 255]);
+    near(parseColor("oklch(0 0 0)"), [0, 0, 0]);
+    near(parseColor("lab(100 0 0)"), [255, 255, 255]);
+    near(parseColor("lch(0% 0 0)"), [0, 0, 0]);
+  });
+  it("parses color(display-p3) and srgb-linear", () => {
+    near(parseColor("color(display-p3 1 1 1)"), [255, 255, 255]);
+    near(parseColor("color(srgb-linear 1 1 1 / 0.5)"), [255, 255, 255]);
+    expect(parseColor("color(srgb-linear 1 1 1 / 0.5)")![3]).toBe(0.5);
+  });
+  it("still rejects unknown colour spaces", () => {
+    expect(parseColor("color(rec2020 1 1 1)")).toBeNull();
+  });
+});
+
+describe("contrastRatioExact", () => {
+  it("does not round a failing ratio up to the threshold", () => {
+    // #777777 on white is 4.478: displayed as 4.48 but still below 4.5.
+    const grey: RGB = [0x77, 0x77, 0x77];
+    expect(contrastRatioExact(grey, [255, 255, 255])).toBeLessThan(4.5);
+    expect(contrastRatioExact(grey, [255, 255, 255])).toBeCloseTo(4.4778, 3);
   });
 });

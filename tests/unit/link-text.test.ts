@@ -46,6 +46,25 @@ describe("link-text rule", () => {
     expect(idsFor(findings, "LNK-03")).toEqual(["a", "b"]);
   });
 
+  it("does not flag short action words that are legitimate standalone link text", async () => {
+    const findings = await run(`
+      <a id="a" href="/next">Continue</a>
+      <a id="b" href="/file.pdf">Download</a>
+      <a id="c" href="/doc">Open</a>
+      <a id="d" href="/order">View</a>
+      <a id="e" href="/start">Go</a>
+      <a id="f" href="/p2">Page</a>
+      <a id="g" href="/site">Website</a>`);
+    expect(idsFor(findings, "LNK-03")).toEqual([]);
+  });
+
+  it("still flags vague multi-word variants", async () => {
+    const findings = await run(`
+      <a id="a" href="/1">Continue reading</a>
+      <a id="b" href="/2">View more</a>`);
+    expect(idsFor(findings, "LNK-03")).toEqual(["a", "b"]);
+  });
+
   it("does not flag descriptive link text", async () => {
     const findings = await run(`
       <a id="a" href="/pricing">Compare pricing plans</a>

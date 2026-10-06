@@ -41,7 +41,7 @@
  */
 import rulesJson from "@shared/a11y-rules.json";
 import type { RuleDefinition, RulesFile } from "@shared/types";
-import { accessibleName } from "@src/content/dom-utils";
+import { accessibleName, queryAllIncludingRoot } from "@src/content/dom-utils";
 import { isExtensionElement } from "./contrast";
 import type { CustomRule, RuleContext, RuleFinding } from "./types";
 
@@ -159,7 +159,7 @@ export const rule: CustomRule = {
     // --- KBD-01 ---------------------------------------------------------------
     let all: Element[] = [];
     try {
-      all = Array.from(ctx.root.querySelectorAll("*")).slice(0, MAX_ELEMENTS);
+      all = Array.from(queryAllIncludingRoot(ctx.root, "*")).slice(0, MAX_ELEMENTS);
     } catch {
       all = [];
     }

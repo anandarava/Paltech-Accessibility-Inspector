@@ -41,6 +41,21 @@ function weightSeverity(i: Issue): Severity {
  * - Weights: Critical 10, Serious 7, Moderate 3, Minor 1 (best practices count as Minor).
  * - A page with no applicable rules scores 100.
  */
+/**
+ * Rules that passed and have no open finding. A rule that passed in one frame but
+ * failed in another is not passed; this is the set the score weighs.
+ */
+export function effectivePassedRules(issues: Issue[], passedRules: string[] = []): string[] {
+  const failedIds = new Set<string>();
+  for (const i of issues) {
+    if (!isActive(i) || !isDefinite(i)) continue;
+    failedIds.add(i.ruleId);
+    const axeId = i.data?.axeRuleId;
+    if (typeof axeId === "string") failedIds.add(axeId);
+  }
+  return [...new Set(passedRules)].filter((id) => !failedIds.has(id));
+}
+
 export function computeScore(
   issues: Issue[],
   passedRules: string[] = [],
@@ -70,7 +85,7 @@ export function computeScore(
 }
 
 export function summarize(issues: Issue[], passedRules: string[]): ScanSummary {
-  const s: ScanSummary = { critical: 0, serious: 0, moderate: 0, minor: 0, bestPractice: 0, passed: passedRules.length };
+  const s: ScanSummary = { critical: 0, serious: 0, moderate: 0, minor: 0, bestPractice: 0, passed: effectivePassedRules(issues, passedRules).length };
   for (const i of issues) {
     if (!isActive(i)) continue;
     if (isBestPractice(i)) { s.bestPractice++; continue; }

@@ -34,9 +34,9 @@
  */
 import rulesJson from "@shared/a11y-rules.json";
 import type { RuleDefinition, RulesFile } from "@shared/types";
-import { blend, contrastRatio, parseColor, suggestPassingColor, toHex, type RGB, type RGBA } from "@shared/color";
+import { contrastRatio, contrastRatioExact, parseColor, suggestPassingColor, toHex, type RGB, type RGBA } from "@shared/color";
 import { getFocusableElements } from "@src/content/dom-utils";
-import { isExtensionElement, resolveBackground, type BackgroundCache } from "./contrast";
+import { isExtensionElement, paintOver, resolveBackground, type BackgroundCache } from "./contrast";
 import type { CustomRule, RuleContext, RuleFinding } from "./types";
 
 const RULES: RuleDefinition[] = (rulesJson as unknown as RulesFile).rules;
@@ -96,16 +96,49 @@ function changedKeys(a: StyleSnapshot, b: StyleSnapshot): Array<keyof StyleSnaps
   return keys.filter((k) => a[k] !== b[k]);
 }
 
+/** Split a box-shadow list on top-level commas (commas inside rgba(...) do not separate shadows). */
+function splitShadows(boxShadow: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < boxShadow.length; i++) {
+    const ch = boxShadow[i];
+    if (ch === "(") depth++;
+    else if (ch === ")") depth = Math.max(0, depth - 1);
+    else if (ch === "," && depth === 0) {
+      parts.push(boxShadow.slice(start, i).trim());
+      start = i + 1;
+    }
+  }
+  parts.push(boxShadow.slice(start).trim());
+  return parts.filter(Boolean);
+}
+
+/** Spread radius (4th length) of one shadow entry; 0 when absent. */
+function shadowSpread(entry: string): number {
+  const lengths = entry.replace(/(rgba?|hsla?|color)\([^)]*\)/gi, "").match(/-?[\d.]+(?:px)?(?=\s|$)/g) ?? [];
+  return lengths.length >= 4 ? parseFloat(lengths[3] ?? "0") || 0 : 0;
+}
+
 /**
- * Extract the first colour token from a box-shadow list (Chromium serialises colour first).
+ * Extract the indicator colour from a box-shadow list. A page often carries a
+ * decorative shadow (e.g. `rgba(0,0,0,.075) 0 1px 1px inset`) before the focus
+ * ring, so the entry that is new on focus (absent from `before`) is preferred,
+ * then a non-inset entry with positive spread (a ring), then the first entry.
  * The alpha channel is preserved: a translucent ring such as Bootstrap's
  * `rgba(13, 110, 253, 0.25)` must be blended with the page background before its
  * contrast is measured, otherwise a ring that renders as a pale tint is judged as
  * if it were the opaque brand colour.
  */
-function shadowColor(boxShadow: string): RGBA | null {
+export function shadowColor(boxShadow: string, before = "none"): RGBA | null {
   if (!boxShadow || boxShadow === "none") return null;
-  const m = /(rgba?\([^)]*\)|color\([^)]*\)|#[0-9a-f]{3,8}\b|\b[a-z]+\b)/i.exec(boxShadow);
+  const entries = splitShadows(boxShadow);
+  const previous = new Set(splitShadows(before === "none" ? "" : before));
+  const isRing = (e: string): boolean => !/\binset\b/i.test(e) && shadowSpread(e) > 0;
+  const added = entries.filter((e) => !previous.has(e));
+  const chosen = added.find(isRing) ?? added[0] ?? entries.find(isRing) ?? entries[0];
+  if (!chosen) return null;
+  const m = /(rgba?\([^)]*\)|color\([^)]*\)|#[0-9a-f]{3,8}\b|\b(?!inset\b)[a-z]+\b)/i.exec(chosen);
   if (!m) return null;
   return parseColor(m[1] ?? "");
 }
@@ -174,10 +207,23 @@ export const rule: CustomRule = {
         const el = focusables[i];
         if (!el) continue;
         try {
-          const before = snapshot(view.getComputedStyle(el));
-          el.focus({ preventScroll: true });
-          if (doc.activeElement !== el) continue; // not actually focusable, or focus was redirected
-          const after = snapshot(view.getComputedStyle(el));
+          // A CSS transition would leave computed style at its old value right after focus(),
+          // reading as "no visual change". Suspend transitions on the element while measuring.
+          const styleDecl = (el as HTMLElement).style;
+          const prevTransition = styleDecl.getPropertyValue("transition");
+          const prevPriority = styleDecl.getPropertyPriority("transition");
+          let before: StyleSnapshot;
+          let after: StyleSnapshot;
+          try {
+            styleDecl.setProperty("transition", "none", "important");
+            before = snapshot(view.getComputedStyle(el));
+            el.focus({ preventScroll: true });
+            if (doc.activeElement !== el) continue; // not actually focusable, or focus was redirected
+            after = snapshot(view.getComputedStyle(el));
+          } finally {
+            if (prevTransition) styleDecl.setProperty("transition", prevTransition, prevPriority);
+            else styleDecl.removeProperty("transition");
+          }
           const focusVisible = (() => {
             try {
               return el.matches(":focus-visible");
@@ -209,7 +255,7 @@ export const rule: CustomRule = {
           // Alpha <= 0.01 is treated as fully transparent, i.e. not a visible indicator.
           const composeRgba = (c: RGBA | null): RGB | null => {
             if (!c || c[3] <= 0.01) return null;
-            return blend([c[0], c[1], c[2], c[3] * surrounding.cumulativeOpacity], surrounding.color);
+            return paintOver(surrounding, c);
           };
           const compose = (css: string): RGB | null => composeRgba(parseColor(css));
 
@@ -219,7 +265,7 @@ export const rule: CustomRule = {
             if (!indicator) transparentOnly = true;
           } else if (diff.includes("boxShadow") && after.boxShadow !== "none") {
             indicatorKind = "box-shadow";
-            indicator = composeRgba(shadowColor(after.boxShadow));
+            indicator = composeRgba(shadowColor(after.boxShadow, before.boxShadow));
             if (!indicator) transparentOnly = true;
           } else if (diff.includes("borderColor") || diff.includes("borderWidth") || diff.includes("borderStyle")) {
             indicatorKind = "border";
@@ -232,7 +278,7 @@ export const rule: CustomRule = {
             if (b) {
               // A background change must contrast with the *previous* state to be perceivable.
               const changeRatio = contrastRatio(b, a);
-              if (changeRatio < 3) {
+              if (contrastRatioExact(b, a) < 3) {
                 findings.push(contrastFinding(el, indicatorKind, b, a, changeRatio));
               }
             }
@@ -255,7 +301,7 @@ export const rule: CustomRule = {
           if (indicator && surrounding.hasImage) continue; // cannot judge contrast against an image
           if (indicator) {
             const ratio = contrastRatio(indicator, surrounding.color);
-            if (ratio < 3) findings.push(contrastFinding(el, indicatorKind, indicator, surrounding.color, ratio));
+            if (contrastRatioExact(indicator, surrounding.color) < 3) findings.push(contrastFinding(el, indicatorKind, indicator, surrounding.color, ratio));
           }
         } catch {
           // continue with the next element

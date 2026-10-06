@@ -3,6 +3,7 @@ import type { ColorBlindnessMode, OverlayMode } from "@shared/types";
 import { useStore } from "@src/sidepanel/store";
 import { sendToPage } from "@src/sidepanel/hooks/messaging";
 import { Popover } from "./Popover";
+import { EyeIcon } from "./icons";
 
 const MODES: Array<{ value: OverlayMode; label: string; hint: string }> = [
   { value: "off", label: "Off", hint: "Hide the overlay" },
@@ -88,7 +89,13 @@ export function OverlayMenu() {
   const current = MODES.find((m) => m.value === overlayMode)?.label ?? "Off";
 
   return (
-    <Popover label={<><span aria-hidden="true">👁</span> Overlay: {current}</>} ariaLabel={`Overlay: ${current}, open overlay menu`} disabled={tabId === null} className="flex-auto">
+    <Popover
+      label={<><EyeIcon /> Overlay: {current}</>}
+      ariaLabel={`Overlay: ${current}, open overlay menu`}
+      disabled={tabId === null}
+      className="flex-1 basis-[5.5rem]"
+      wrap="whitespace-normal"
+    >
       <fieldset>
         <legend className="mb-1 text-xs font-semibold text-slate-800">Overlay mode</legend>
         {MODES.map((m) => (

@@ -120,16 +120,45 @@ export function uniqueSelector(el: Element): string {
   return parts.join(" > ");
 }
 
-/** Absolute XPath (/html/body/div[2]/p); indexes only when a sibling shares the tag. */
+/**
+ * Selector used as the identity part of an issue fingerprint. uniqueSelector()
+ * is only unique within the element's own root, so the same selector inside two
+ * shadow roots (repeated web components) would collide. For elements in shadow
+ * trees the host path is prefixed ("host >>> inner"); light-DOM elements keep
+ * their plain selector, so existing fingerprints and baselines stay valid.
+ */
+export function fingerprintSelector(el: Element, selector: string): string {
+  const hosts: string[] = [];
+  let root = el.getRootNode();
+  for (let guard = 0; root instanceof ShadowRoot && guard < 50; guard++) {
+    try {
+      hosts.unshift(uniqueSelector(root.host));
+    } catch {
+      hosts.unshift(root.host.localName);
+    }
+    root = root.host.getRootNode();
+  }
+  return hosts.length > 0 ? `${hosts.join(" >>> ")} >>> ${selector}` : selector;
+}
+
+const HTML_NS = "http://www.w3.org/1999/xhtml";
+
+/**
+ * Absolute XPath (/html/body/div[2]/p); indexes only when a sibling shares the tag.
+ * Elements outside the HTML namespace (SVG, MathML) cannot be matched by a bare
+ * name in XPath 1.0, so they use `*[local-name(.)='svg']` steps.
+ */
 export function xpath(el: Element): string {
   const parts: string[] = [];
   let node: Node | null = el;
   while (node && node.nodeType === Node.ELEMENT_NODE) {
     const element = node as Element;
     const parent: Node | null = element.parentNode;
-    let seg = element.localName || element.tagName.toLowerCase();
+    const foreign = !!element.namespaceURI && element.namespaceURI !== HTML_NS;
+    let seg = foreign ? `*[local-name(.)='${element.localName}']` : element.localName || element.tagName.toLowerCase();
     if (parent && (parent.nodeType === Node.ELEMENT_NODE || parent.nodeType === Node.DOCUMENT_FRAGMENT_NODE)) {
-      const siblings = Array.from((parent as ParentNode).children).filter((c) => c.localName === element.localName);
+      // The index counts only siblings the step itself matches (same name and namespace).
+      const siblings = Array.from((parent as ParentNode).children).filter((c) => c.localName === element.localName && c.namespaceURI === element.namespaceURI);
       if (siblings.length > 1) seg += `[${siblings.indexOf(element) + 1}]`;
     }
     parts.unshift(seg);
@@ -562,4 +591,15 @@ export function resolveSelector(selector: string, root: ParentNode = document): 
   } catch {
     return null;
   }
+}
+
+/**
+ * `root.querySelectorAll(selector)` that also returns `root` itself when it matches.
+ * Scoped scans (picker, "scan this element") use an element as the root, and plain
+ * `querySelectorAll` never matches the element it is called on.
+ */
+export function queryAllIncludingRoot(root: Document | Element, selector: string): Element[] {
+  const found = Array.from(root.querySelectorAll(selector));
+  if (root.nodeType === 1 && (root as Element).matches(selector)) found.unshift(root as Element);
+  return found;
 }

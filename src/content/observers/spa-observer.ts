@@ -66,6 +66,8 @@ export function startSpaObserver(onChange: (reason: ChangeReason) => void): () =
   let timer: ReturnType<typeof setTimeout> | null = null;
   let pending: ChangeReason | null = null;
   let observer: MutationObserver | null = null;
+  let observedBody: HTMLElement | null = null;
+  let rootWatcher: MutationObserver | null = null;
   let warmupTimer: ReturnType<typeof setTimeout> | null = null;
   let baseline = 0;
   let changed = 0;
@@ -94,7 +96,10 @@ export function startSpaObserver(onChange: (reason: ChangeReason) => void): () =
     }, SPA_DEBOUNCE_MS);
   };
 
-  const onRoute = (): void => schedule("route");
+  const onRoute = (): void => {
+    ensureBodyObserved();
+    schedule("route");
+  };
 
   const snapshotDialogs = (): WeakSet<Element> => {
     const set = new WeakSet<Element>();
@@ -177,6 +182,7 @@ export function startSpaObserver(onChange: (reason: ChangeReason) => void): () =
     if (!body) return;
     baseline = bodyElementCount();
     visibleDialogs = snapshotDialogs();
+    observedBody = body;
     observer = new MutationObserver(onMutations);
     observer.observe(body, {
       childList: true,
@@ -184,6 +190,20 @@ export function startSpaObserver(onChange: (reason: ChangeReason) => void): () =
       attributes: true,
       attributeFilter: ["open", "role", "aria-modal", "hidden", "aria-hidden", "style", "class"],
     });
+    // Turbo / htmx style navigations can replace <body> wholesale, orphaning the observer above.
+    if (!rootWatcher && document.documentElement) {
+      rootWatcher = new MutationObserver(() => ensureBodyObserved(true));
+      rootWatcher.observe(document.documentElement, { childList: true });
+    }
+  };
+
+  /** Re-attach the body observer when document.body is no longer the element being observed. */
+  const ensureBodyObserved = (report = false): void => {
+    if (stopped || !observer || document.body === observedBody || !document.body) return;
+    observer.disconnect();
+    observer = null;
+    observeBody();
+    if (report) schedule("dom");
   };
 
   const onReady = (): void => {
@@ -216,6 +236,10 @@ export function startSpaObserver(onChange: (reason: ChangeReason) => void): () =
     if (observer) {
       observer.disconnect();
       observer = null;
+    }
+    if (rootWatcher) {
+      rootWatcher.disconnect();
+      rootWatcher = null;
     }
     if (timer !== null) {
       clearTimeout(timer);

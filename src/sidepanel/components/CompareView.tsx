@@ -1,9 +1,10 @@
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { Issue, SavedScan, ScanResult, ScanSummary } from "@shared/types";
 import { sendToBackground } from "@shared/messages";
 import { SEVERITIES, useStore, type CompareSide } from "@src/sidepanel/store";
 import { useFocusHeading } from "@src/sidepanel/hooks/useFocusHeading";
 import { Button } from "./Button";
+import { ArrowLeftIcon, CompareIcon } from "./icons";
 import { SeverityLabel } from "./SeverityLabel";
 
 interface Loaded {
@@ -18,6 +19,10 @@ const SUMMARY_ROWS: Array<{ key: keyof ScanSummary; label: string }> = [
   { key: "minor", label: "Minor" },
   { key: "bestPractice", label: "Best practice" },
 ];
+
+function sideKey(side: CompareSide): string {
+  return side.kind === "current" ? "current" : `saved:${side.id}`;
+}
 
 function delta(n: number): string {
   if (n === 0) return "±0";
@@ -34,8 +39,8 @@ function IssueRows({ issues }: { issues: Issue[] }) {
   const sorted = [...issues].sort((a, b) => SEVERITIES.indexOf(a.severity) - SEVERITIES.indexOf(b.severity) || a.title.localeCompare(b.title));
   return (
     <ul className="text-xs">
-      {sorted.map((i) => (
-        <li key={i.fingerprint} className="border-b border-slate-100 px-1 py-1">
+      {sorted.map((i, idx) => (
+        <li key={`${i.fingerprint}:${idx}`} className="border-b border-slate-100 px-1 py-1">
           <span className="block text-slate-900">
             <span className="font-mono text-slate-700">{i.ruleId}</span> {i.title}
           </span>
@@ -58,13 +63,23 @@ export function CompareView({ onBack }: { onBack(): void }) {
   const [sides, setSides] = useState<[Loaded, Loaded] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Stable keys: reload only when the compared scans change, not whenever the store hands out a new object.
+  const compareKey = compare ? `${sideKey(compare.a)}|${sideKey(compare.b)}` : "";
+  const liveScanId = live?.scanId;
+  const liveRef = useRef(live);
+  liveRef.current = live;
+
   useEffect(() => {
+    // Drop whatever the previous comparison produced so stale sides / errors never show.
+    setSides(null);
+    setError(null);
     if (!compare) return;
     let cancelled = false;
     const load = async (side: CompareSide): Promise<Loaded> => {
       if (side.kind === "current") {
-        if (!live) throw new Error("There is no current scan to compare.");
-        return { label: "Current scan", result: live };
+        const current = liveRef.current;
+        if (!current) throw new Error("There is no current scan to compare.");
+        return { label: "Current scan", result: current };
       }
       const res = await sendToBackground<SavedScan>({ type: "SAVED_SCAN_GET", id: side.id });
       if (!res.ok || !res.data) throw new Error(res.error ?? "Saved scan not found.");
@@ -81,29 +96,49 @@ export function CompareView({ onBack }: { onBack(): void }) {
     return () => {
       cancelled = true;
     };
-  }, [compare, live]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `compare` and `live` are read via compareKey / liveScanId / liveRef
+  }, [compareKey, liveScanId]);
 
   const diff = useMemo(() => {
     if (!sides) return null;
     const [a, b] = sides;
     const aIssues = activeIssues(a.result);
     const bIssues = activeIssues(b.result);
-    const aFp = new Set(aIssues.map((i) => i.fingerprint));
-    const bFp = new Set(bIssues.map((i) => i.fingerprint));
-    return {
-      added: bIssues.filter((i) => !aFp.has(i.fingerprint)),
-      fixed: aIssues.filter((i) => !bFp.has(i.fingerprint)),
-      unchanged: bIssues.filter((i) => aFp.has(i.fingerprint)),
-    };
+    // Match by occurrence: two issues sharing a fingerprint need two on the other side to be "unchanged".
+    const unmatchedA = new Map<string, Issue[]>();
+    for (const i of aIssues) {
+      const list = unmatchedA.get(i.fingerprint);
+      if (list) list.push(i);
+      else unmatchedA.set(i.fingerprint, [i]);
+    }
+    const added: Issue[] = [];
+    const unchanged: Issue[] = [];
+    for (const i of bIssues) {
+      const list = unmatchedA.get(i.fingerprint);
+      if (list && list.length > 0) {
+        list.pop();
+        unchanged.push(i);
+      } else {
+        added.push(i);
+      }
+    }
+    const left = new Set([...unmatchedA.values()].flat());
+    return { added, fixed: aIssues.filter((i) => left.has(i)), unchanged };
   }, [sides]);
 
   return (
     <section aria-labelledby={`${id}-h`} className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-      <div className="flex items-center gap-2 border-b border-slate-300 px-3 py-2">
-        <Button size="sm" onClick={onBack} aria-label="Back to saved scans">
-          ← Back
+      <div className="px-3 pt-3">
+        <Button size="sm" onClick={onBack} aria-label="Back to saved scans" className="bg-white">
+          <ArrowLeftIcon size={13} />
+          Back
         </Button>
-        <h2 id={`${id}-h`} ref={headingRef} tabIndex={-1} className="text-base font-semibold text-slate-900">
+      </div>
+      <div className="flex items-center gap-2.5 px-3 py-3">
+        <span aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-700">
+          <CompareIcon size={18} />
+        </span>
+        <h2 id={`${id}-h`} ref={headingRef} tabIndex={-1} className="text-xl font-bold text-slate-900">
           Compare scans
         </h2>
       </div>
@@ -157,7 +192,7 @@ export function CompareView({ onBack }: { onBack(): void }) {
             </tbody>
           </table>
           {sides[0].result.url !== sides[1].result.url && (
-            <p className="mx-3 mb-2 rounded border border-amber-700 bg-amber-50 px-2 py-1 text-xs text-amber-900">
+            <p className="mx-3 mb-2 rounded-md border border-amber-700 bg-amber-50 px-2 py-1 text-xs text-amber-900">
               These scans are of different URLs, so most issues will show as new / fixed.
             </p>
           )}

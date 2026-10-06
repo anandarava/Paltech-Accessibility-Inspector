@@ -161,7 +161,7 @@ export const rule: CustomRule = {
         try {
           const cs = view.getComputedStyle(el);
           if (cs.position === "fixed" || cs.position === "sticky") continue; // it is itself the sticky content
-          el.scrollIntoView({ block: "nearest", inline: "nearest" });
+          el.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" });
           const r = el.getBoundingClientRect();
           if (r.width <= 0 || r.height <= 0) continue;
           const vw = view.innerWidth;
@@ -234,7 +234,7 @@ export const rule: CustomRule = {
       }
     } finally {
       try {
-        if (view.scrollX !== scrollX || view.scrollY !== scrollY) view.scrollTo(scrollX, scrollY);
+        if (view.scrollX !== scrollX || view.scrollY !== scrollY) view.scrollTo({ left: scrollX, top: scrollY, behavior: "instant" });
       } catch {
         // ignore
       }

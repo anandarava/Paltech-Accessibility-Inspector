@@ -47,7 +47,7 @@
  */
 import rulesJson from "@shared/a11y-rules.json";
 import type { RuleDefinition, RulesFile } from "@shared/types";
-import { accessibleName } from "@src/content/dom-utils";
+import { accessibleName, queryAllIncludingRoot } from "@src/content/dom-utils";
 import { isExtensionElement } from "./contrast";
 import type { CustomRule, RuleContext, RuleFinding } from "./types";
 
@@ -153,7 +153,7 @@ function hasGroupLabel(el: Element): boolean {
 }
 
 async function checkGroups(ctx: RuleContext, findings: RuleFinding[]): Promise<void> {
-  const inputs = Array.from(ctx.root.querySelectorAll("input[type='radio'][name], input[type='checkbox'][name]")) as HTMLInputElement[];
+  const inputs = Array.from(queryAllIncludingRoot(ctx.root, "input[type='radio'][name], input[type='checkbox'][name]")) as HTMLInputElement[];
   const groups = new Map<string, HTMLInputElement[]>();
   for (let i = 0; i < inputs.length; i++) {
     if (i > 0 && i % CHUNK === 0) await ctx.yieldToMain();
@@ -235,7 +235,7 @@ async function checkPlaceholderOnly(ctx: RuleContext, findings: RuleFinding[]): 
   const doc = docOf(ctx.root);
   let controls: Element[] = [];
   try {
-    controls = Array.from(ctx.root.querySelectorAll(PLACEHOLDER_SELECTOR));
+    controls = Array.from(queryAllIncludingRoot(ctx.root, PLACEHOLDER_SELECTOR));
   } catch {
     return;
   }
@@ -295,7 +295,7 @@ function isProgrammaticallyRequired(control: Element): boolean {
 
 async function checkRequired(ctx: RuleContext, findings: RuleFinding[]): Promise<void> {
   const doc = docOf(ctx.root);
-  const controls = Array.from(ctx.root.querySelectorAll(CONTROL_SELECTOR));
+  const controls = Array.from(queryAllIncludingRoot(ctx.root, CONTROL_SELECTOR));
   for (let i = 0; i < controls.length; i++) {
     if (i > 0 && i % CHUNK === 0) await ctx.yieldToMain();
     const control = controls[i];
@@ -369,7 +369,7 @@ function referencesId(control: Element, attr: string, id: string): boolean {
 async function checkErrors(ctx: RuleContext, findings: RuleFinding[]): Promise<void> {
   let candidates: Element[] = [];
   try {
-    candidates = Array.from(ctx.root.querySelectorAll(ERROR_SELECTOR));
+    candidates = Array.from(queryAllIncludingRoot(ctx.root, ERROR_SELECTOR));
   } catch {
     return;
   }

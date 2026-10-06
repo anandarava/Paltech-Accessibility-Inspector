@@ -46,8 +46,9 @@
 import rulesJson from "@shared/a11y-rules.json";
 import type { RuleDefinition, RulesFile } from "@shared/types";
 import { EXT_MARKER_ATTR } from "@shared/constants";
-import { blend, contrastRatio, isLargeText, parseColor, suggestPassingColor, toHex, type RGB, type RGBA } from "@shared/color";
+import { blend, contrastRatio, contrastRatioExact, isLargeText, parseColor, suggestPassingColor, toHex, type RGB, type RGBA } from "@shared/color";
 import type { CustomRule, RuleContext, RuleFinding } from "./types";
+import { queryAllIncludingRoot } from "@src/content/dom-utils";
 
 const RULES: RuleDefinition[] = (rulesJson as unknown as RulesFile).rules;
 
@@ -79,6 +80,12 @@ export interface BackgroundResolution {
   hasImage: boolean;
   /** Product of `opacity` from this element up to the root (1 = fully opaque group). */
   cumulativeOpacity: number;
+  /**
+   * Backdrop as seen from inside the innermost `opacity < 1` group (that group's own fade not applied).
+   * Text and borders painted in the group are faded by `cumulativeOpacity` relative to THIS colour,
+   * not relative to `color`, so each opacity is applied exactly once (see `paintOver`).
+   */
+  inner: RGB;
   /** True when at least one layer (own or ancestor) was fully opaque before reaching the canvas. */
   reachedOpaque: boolean;
   /** Canvas colour scheme the walk fell back on when no opaque layer was reached ("light" = white canvas). */
@@ -137,7 +144,7 @@ export function canvasScheme(doc: Document): CanvasScheme {
 
 function canvasResolution(doc: Document | null): BackgroundResolution {
   const scheme: CanvasScheme = doc ? canvasScheme(doc) : "light";
-  return { color: scheme === "dark" ? DARK_CANVAS : WHITE, hasImage: false, cumulativeOpacity: 1, reachedOpaque: false, canvas: scheme };
+  return { color: scheme === "dark" ? DARK_CANVAS : WHITE, hasImage: false, cumulativeOpacity: 1, inner: scheme === "dark" ? DARK_CANVAS : WHITE, reachedOpaque: false, canvas: scheme };
 }
 
 function parentOf(el: Element): Element | null {
@@ -172,27 +179,46 @@ export function resolveBackground(el: Element | null, cache: BackgroundCache = n
     const parent = parentEl ? resolveBackground(parentEl, cache) : canvasResolution(el.ownerDocument);
     const view = el.ownerDocument.defaultView ?? window;
     const cs = view.getComputedStyle(el);
-    const cumulativeOpacity = parent.cumulativeOpacity * readOpacity(cs);
+    const ownOpacity = readOpacity(cs);
+    const cumulativeOpacity = parent.cumulativeOpacity * ownOpacity;
     const own = parseColor(cs.backgroundColor) ?? [0, 0, 0, 0];
+    // A new opacity group starts here: its content is composited unfaded over the parent's final colour.
+    const innerBase = ownOpacity < 1 ? parent.color : parent.inner;
+    const ownRaw = Math.min(1, Math.max(0, own[3]));
+    const inner: RGB = ownRaw > 0 ? blend([own[0], own[1], own[2], ownRaw], innerBase) : innerBase;
     const alpha = Math.min(1, Math.max(0, own[3])) * cumulativeOpacity;
     const ownImage = cs.backgroundImage !== "none" && cs.backgroundImage !== "";
     if (alpha >= 0.999) {
-      result = { color: [own[0], own[1], own[2]], hasImage: ownImage, cumulativeOpacity, reachedOpaque: true, canvas: parent.canvas };
+      result = { color: [own[0], own[1], own[2]], hasImage: ownImage, cumulativeOpacity, inner, reachedOpaque: true, canvas: parent.canvas };
     } else {
       const layer: RGBA = [own[0], own[1], own[2], alpha];
       result = {
         color: alpha > 0 ? blend(layer, parent.color) : parent.color,
         hasImage: ownImage || parent.hasImage,
         cumulativeOpacity,
+        inner,
         reachedOpaque: parent.reachedOpaque,
         canvas: parent.canvas,
       };
     }
   } catch {
-    result = { color: WHITE, hasImage: false, cumulativeOpacity: 1, reachedOpaque: false, canvas: "light" };
+    result = { color: WHITE, hasImage: false, cumulativeOpacity: 1, inner: WHITE, reachedOpaque: false, canvas: "light" };
   }
   cache.set(el, result);
   return result;
+}
+
+/**
+ * Composite a (possibly translucent) foreground painted inside `bg`'s opacity
+ * group onto the resolved backdrop. The group's fade applies once, to the
+ * difference between the painted colour and the group's own backdrop:
+ * `color + K * alpha * (fg - inner)`. With no `opacity < 1` ancestor this is
+ * plain source-over blending.
+ */
+export function paintOver(bg: BackgroundResolution, fg: RGBA): RGB {
+  const k = Math.min(1, Math.max(0, fg[3])) * bg.cumulativeOpacity;
+  const ch = (i: 0 | 1 | 2): number => Math.min(255, Math.max(0, Math.round(bg.color[i] + k * (fg[i] - bg.inner[i]))));
+  return [ch(0), ch(1), ch(2)];
 }
 
 /** Parse a computed font-weight ("400", "bold", "normal", "bolder"). */
@@ -478,9 +504,9 @@ async function checkText(ctx: RuleContext, findings: RuleFinding[], cache: Backg
         continue;
       }
 
-      const fgOpaque = blend([fg[0], fg[1], fg[2], textAlpha], bg.color);
+      const fgOpaque = paintOver(bg, fg);
       const ratio = contrastRatio(fgOpaque, bg.color);
-      if (ratio >= required) continue;
+      if (contrastRatioExact(fgOpaque, bg.color) >= required) continue;
 
       const suggested = suggestPassingColor(fgOpaque, bg.color, required);
       const def = large ? LARGE : PRIMARY;
@@ -551,7 +577,7 @@ function paintedBorder(cs: CSSStyleDeclaration): BorderInfo | null {
 async function checkControls(ctx: RuleContext, findings: RuleFinding[], cache: BackgroundCache): Promise<void> {
   let controls: Element[] = [];
   try {
-    controls = Array.from(ctx.root.querySelectorAll(CONTROL_SELECTOR));
+    controls = Array.from(queryAllIncludingRoot(ctx.root, CONTROL_SELECTOR));
   } catch {
     return;
   }
@@ -583,19 +609,19 @@ async function checkControls(ctx: RuleContext, findings: RuleFinding[], cache: B
       const surrounding = resolveBackground(parentOf(el), cache);
       if (surrounding.hasImage) continue; // cannot compare against an image
 
-      const borderRgb = blend([border.color[0], border.color[1], border.color[2], border.color[3] * surrounding.cumulativeOpacity], surrounding.color);
+      const borderRgb = paintOver(surrounding, border.color);
       const borderRatio = contrastRatio(borderRgb, surrounding.color);
-      if (borderRatio >= 3) continue;
+      if (contrastRatioExact(borderRgb, surrounding.color) >= 3) continue;
 
       // A strongly contrasting fill also identifies the component boundary.
       const ownBg = parseColor(cs.backgroundColor);
       let fillRatio = 1;
       let fillHex: string | null = null;
       if (ownBg && ownBg[3] > 0) {
-        const fill = blend([ownBg[0], ownBg[1], ownBg[2], ownBg[3] * surrounding.cumulativeOpacity], surrounding.color);
+        const fill = paintOver(surrounding, ownBg);
         fillRatio = contrastRatio(fill, surrounding.color);
         fillHex = toHex(fill);
-        if (fillRatio >= 3) continue;
+        if (contrastRatioExact(fill, surrounding.color) >= 3) continue;
       }
 
       const suggested = suggestPassingColor(borderRgb, surrounding.color, 3);

@@ -62,6 +62,8 @@ export interface Toast {
   id: number;
   kind: ToastKind;
   message: string;
+  /** Bold lead-in shown before the message, e.g. "Scan complete". */
+  title?: string;
   link?: { href: string; label: string };
   /** When false the toast stays until dismissed. Defaults to true. */
   autoDismiss?: boolean;
@@ -75,6 +77,8 @@ export interface PanelState {
   inspectable: boolean;
   result: ScanResult | undefined;
   scanning: boolean;
+  /** Tabs with a scan in flight, so switching tabs does not lose track of a running scan. */
+  scanningTabs: number[];
   progress: ScanProgress | null;
   selectedIssueId: string | null;
   filters: Filters;
@@ -108,6 +112,8 @@ export interface PanelState {
   setInspectable(v: boolean): void;
   setResult(result: ScanResult | undefined): void;
   setScanning(v: boolean): void;
+  /** Record that a scan started / finished for a specific tab (independent of the visible tab). */
+  markScanning(tabId: number, v: boolean): void;
   setProgress(p: ScanProgress | null): void;
   selectIssue(id: string | null): void;
   setView(view: View): void;
@@ -166,6 +172,7 @@ export const useStore = create<PanelState>()((set, get) => ({
   inspectable: false,
   result: undefined,
   scanning: false,
+  scanningTabs: [],
   progress: null,
   selectedIssueId: null,
   filters: DEFAULT_FILTERS,
@@ -205,6 +212,12 @@ export const useStore = create<PanelState>()((set, get) => ({
       };
     }),
   setScanning: (scanning) => set({ scanning }),
+  markScanning: (tabId, v) =>
+    set((s) => {
+      const has = s.scanningTabs.includes(tabId);
+      if (v === has) return {};
+      return { scanningTabs: v ? [...s.scanningTabs, tabId] : s.scanningTabs.filter((t) => t !== tabId) };
+    }),
   setProgress: (progress) => set({ progress }),
   selectIssue: (selectedIssueId) => set({ selectedIssueId }),
   setView: (view) => set({ view }),
@@ -263,9 +276,10 @@ export const useStore = create<PanelState>()((set, get) => ({
     set({ result: withIssues(result, result.issues.map(fn)) });
   },
   resetForTab: () =>
-    set({
+    set((s) => ({
       result: undefined,
-      scanning: false,
+      // A scan may still be running for the tab we switched to.
+      scanning: s.tabId !== null && s.scanningTabs.includes(s.tabId),
       progress: null,
       selectedIssueId: null,
       keyboardResult: undefined,
@@ -280,7 +294,7 @@ export const useStore = create<PanelState>()((set, get) => ({
       viewingSaved: null,
       liveResult: undefined,
       compare: null,
-    }),
+    })),
 }));
 
 // ---------- Pure selectors / helpers ----------

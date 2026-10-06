@@ -26,10 +26,12 @@ interface Props {
 }
 
 /**
- * Donut of open issues by severity with the total in the centre. Hovering or
- * focusing a segment swaps the centre to that severity's count. Identity is
- * never colour-only: the severity rows next to the chart carry the labels, and
- * the SVG has a text summary for screen readers.
+ * Donut of open issues by severity with the total in the centre. Hovering a
+ * segment swaps the centre to that severity's count and clicking it filters.
+ * The segments are a pointer-only convenience (the SVG is role="img", so they
+ * are not focusable or exposed); the keyboard / screen-reader path to the same
+ * filters is the severity tiles next to the chart. Identity is never
+ * colour-only: those tiles carry the labels, and the SVG has a text summary.
  */
 export function SeverityDonut({ counts, total, onSelectTotal, onSelectSeverity }: Props) {
   const [hover, setHover] = useState<Severity | null>(null);

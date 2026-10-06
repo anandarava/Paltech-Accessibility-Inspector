@@ -1,4 +1,4 @@
-import { useState, type JSX } from "react";
+import { useEffect, useRef, useState, type JSX } from "react";
 import type { BaselineEntry } from "@shared/types";
 import { STORAGE_KEYS } from "@shared/constants";
 import { sendToBackground } from "@shared/messages";
@@ -89,6 +89,27 @@ function EntryTable(props: {
   onRemove: (kind: ListKind, fingerprints: string[]) => void;
 }): JSX.Element {
   const { kind, entries, busy, onRemove } = props;
+  const wrapRef = useRef<HTMLDivElement>(null);
+  /** Row index of the entry just removed; focus moves to the neighbouring Remove button once the list reloads. */
+  const pendingFocus = useRef<number | null>(null);
+  useEffect(() => {
+    const index = pendingFocus.current;
+    // Buttons are disabled while busy, so wait until the removal has fully finished.
+    if (index === null || busy) return;
+    pendingFocus.current = null;
+    const buttons = wrapRef.current?.querySelectorAll<HTMLButtonElement>("button[data-remove-entry]");
+    const target = buttons && buttons.length > 0 ? buttons[Math.min(index, buttons.length - 1)] : null;
+    if (target) {
+      target.focus();
+      return;
+    }
+    // The list is now empty: land on the section heading so focus is not lost to <body>.
+    const heading = document.getElementById("baselines-heading");
+    if (heading) {
+      heading.setAttribute("tabindex", "-1");
+      heading.focus();
+    }
+  }, [entries, busy]);
   const title = kind === "baseline" ? "Baselined issues" : "Ignored issues";
   const description =
     kind === "baseline"
@@ -100,7 +121,7 @@ function EntryTable(props: {
         <p className="text-sm text-slate-500">Nothing recorded for this origin.</p>
       ) : (
         <>
-          <div className="overflow-x-auto rounded-md border border-slate-200">
+          <div ref={wrapRef} className="overflow-x-auto rounded-md border border-slate-200">
             <table className="w-full min-w-[52rem] border-collapse text-left text-sm">
               <caption className="sr-only">
                 {title} for {props.origin}
@@ -131,8 +152,8 @@ function EntryTable(props: {
                 </tr>
               </thead>
               <tbody>
-                {entries.map((e) => (
-                  <tr key={e.fingerprint} className="border-t border-slate-200 align-top">
+                {entries.map((e, i) => (
+                  <tr key={`${e.fingerprint}:${i}`}className="border-t border-slate-200 align-top">
                     <th scope="row" className="px-3 py-2 font-mono text-xs font-normal">
                       {e.fingerprint}
                     </th>
@@ -145,7 +166,11 @@ function EntryTable(props: {
                       <Button
                         variant="danger"
                         disabled={busy}
-                        onClick={() => onRemove(kind, [e.fingerprint])}
+                        data-remove-entry=""
+                        onClick={() => {
+                          pendingFocus.current = i;
+                          onRemove(kind, [e.fingerprint]);
+                        }}
                         aria-label={`Remove ${kind === "baseline" ? "baseline" : "ignore"} entry ${e.ruleId} ${e.fingerprint}`}
                       >
                         Remove
@@ -162,6 +187,7 @@ function EntryTable(props: {
               disabled={busy}
               onClick={() => {
                 if (window.confirm(`Remove all ${entries.length} ${kind === "baseline" ? "baselined" : "ignored"} entries for ${props.origin}?`)) {
+                  pendingFocus.current = 0;
                   onRemove(
                     kind,
                     entries.map((e) => e.fingerprint),

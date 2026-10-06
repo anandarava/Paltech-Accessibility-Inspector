@@ -6,7 +6,7 @@
  */
 import type { BoundingBox, Issue, ScanResult, Settings } from "@shared/types";
 import { SCREENSHOT_PADDING } from "@shared/constants";
-import { sendToTab } from "@shared/messages";
+import { issueFrameTarget, sendToTab } from "@shared/messages";
 import { cropImage } from "./offscreen-client";
 
 /** chrome.tabs.captureVisibleTab is limited to 2 calls per second. */
@@ -150,9 +150,10 @@ export async function captureIssueEvidence(
 
   for (const issue of issues) {
     let prepared = false;
+    const target = issueFrameTarget(issue);
     try {
       const prep = await withTimeout(
-        sendToTab<unknown>(tabId, { type: "CS_PREPARE_SCREENSHOT", tabId, issueId: issue.id }, 0),
+        sendToTab<unknown>(tabId, { type: "CS_PREPARE_SCREENSHOT", tabId, issueId: target.issueId }, target.frameId),
         PREPARE_TIMEOUT_MS,
         "Timed out preparing the element for a screenshot.",
       );
@@ -193,7 +194,7 @@ export async function captureIssueEvidence(
       errors.push(`${issue.id}: ${describeError(e)}`);
     } finally {
       if (prepared) {
-        await sendToTab(tabId, { type: "CS_RESTORE_AFTER_SCREENSHOT", tabId }, 0);
+        await sendToTab(tabId, { type: "CS_RESTORE_AFTER_SCREENSHOT", tabId }, target.frameId);
       }
     }
     // Once the tab is no longer visible every further capture would be of the

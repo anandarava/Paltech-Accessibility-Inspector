@@ -5,7 +5,8 @@
  *   service worker, React pages and unit tests.
  * - Luminance/contrast follow WCAG 2.2 (sRGB, 0.04045 linearisation threshold).
  * - `parseColor` understands everything `getComputedStyle` can hand back in
- *   Chromium (`rgb()`, `rgba()`, modern space-separated syntax, `color(srgb ...)`)
+ *   Chromium (`rgb()`, `rgba()`, modern space-separated syntax, `color(srgb|srgb-linear|display-p3 ...)`,
+ *   `oklab()`, `oklch()`, `lab()`, `lch()`)
  *   plus the author-side forms that show up in inline styles and tests
  *   (`#hex` in 3/4/6/8 digits, `hsl()`, `transparent`, common named colours).
  */
@@ -138,6 +139,70 @@ function hueToken(token: string): number | null {
   }
 }
 
+type Vec3 = [number, number, number];
+type Mat3 = [Vec3, Vec3, Vec3];
+
+const P3_TO_XYZ: Mat3 = [
+  [0.4865709486482162, 0.26566769316909306, 0.1982172852343625],
+  [0.2289745640697488, 0.6917385218365064, 0.079286914093745],
+  [0, 0.04511338185890264, 1.043944368900976],
+];
+const XYZ_TO_SRGB: Mat3 = [
+  [3.2409699419045226, -1.537383177570094, -0.4986107602930034],
+  [-0.9692436362808796, 1.8759675015077202, 0.04155505740717559],
+  [0.05563007969699366, -0.20397695888897652, 1.0569715142428786],
+];
+const D50_TO_D65: Mat3 = [
+  [0.9554734527042182, -0.023098536874261423, 0.0632593086610217],
+  [-0.028369706963208136, 1.0099954580058226, 0.021041398966943008],
+  [0.012314001688319899, -0.020507696433477912, 1.3303659366080753],
+];
+
+function mul3(m: Mat3, v: Vec3): Vec3 {
+  return [
+    m[0][0] * v[0] + m[0][1] * v[1] + m[0][2] * v[2],
+    m[1][0] * v[0] + m[1][1] * v[1] + m[1][2] * v[2],
+    m[2][0] * v[0] + m[2][1] * v[1] + m[2][2] * v[2],
+  ];
+}
+
+function decodeSrgb(c: number): number {
+  const a = Math.abs(c);
+  return Math.sign(c) * (a <= 0.04045 ? a / 12.92 : Math.pow((a + 0.055) / 1.055, 2.4));
+}
+
+/** Linear-light channel (clipped to the sRGB gamut) -> gamma-encoded 0..255. */
+function encode255(lin: number): number {
+  const c = Math.min(1, Math.max(0, lin));
+  const v = c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
+  return clamp255(v * 255);
+}
+
+function oklabToLinear(L: number, a: number, b: number): Vec3 {
+  const l = Math.pow(L + 0.3963377774 * a + 0.2158037573 * b, 3);
+  const m = Math.pow(L - 0.1055613458 * a - 0.0638541728 * b, 3);
+  const s = Math.pow(L - 0.0894841775 * a - 1.291485548 * b, 3);
+  return [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ];
+}
+
+/** CIE Lab (D50, as in CSS) -> linear sRGB. */
+function labToLinear(L: number, a: number, b: number): Vec3 {
+  const eps = 216 / 24389;
+  const kappa = 24389 / 27;
+  const fy = (L + 16) / 116;
+  const fx = a / 500 + fy;
+  const fz = fy - b / 200;
+  const x = fx ** 3 > eps ? fx ** 3 : (116 * fx - 16) / kappa;
+  const y = L > kappa * eps ? fy ** 3 : L / kappa;
+  const z = fz ** 3 > eps ? fz ** 3 : (116 * fz - 16) / kappa;
+  const xyz50: Vec3 = [(x * 0.3457) / 0.3585, y, (z * (1 - 0.3457 - 0.3585)) / 0.3585];
+  return mul3(XYZ_TO_SRGB, mul3(D50_TO_D65, xyz50));
+}
+
 /**
  * Parse a CSS colour into [r, g, b, a] (channels 0-255, alpha 0-1).
  * Returns null for values that cannot be resolved without context
@@ -188,15 +253,48 @@ export function parseColor(css: string): RGBA | null {
     return [rgb[0], rgb[1], rgb[2], a];
   }
 
+  if (name === "oklab" || name === "oklch" || name === "lab" || name === "lch") {
+    if (tokens.length < 3) return null;
+    const a = alphaToken(tokens[3]);
+    if (a === null) return null;
+    const polar = name === "oklch" || name === "lch";
+    const ok = name.startsWith("ok");
+    const l = channel(tokens[0] ?? "", ok ? 1 : 100);
+    // 100% of a/b is 0.4 (oklab) or 125 (lab); 100% of chroma is 0.4 (oklch) or 150 (lch).
+    const second = channel(tokens[1] ?? "", ok ? 0.4 : polar ? 150 : 125);
+    if (l === null || second === null) return null;
+    let c1: number;
+    let c2: number;
+    if (polar) {
+      const h = hueToken(tokens[2] ?? "");
+      if (h === null) return null;
+      const rad = (h * Math.PI) / 180;
+      c1 = second * Math.cos(rad);
+      c2 = second * Math.sin(rad);
+    } else {
+      const third = channel(tokens[2] ?? "", ok ? 0.4 : 125);
+      if (third === null) return null;
+      c1 = second;
+      c2 = third;
+    }
+    const lin = ok ? oklabToLinear(l, c1, c2) : labToLinear(l, c1, c2);
+    return [encode255(lin[0]), encode255(lin[1]), encode255(lin[2]), a];
+  }
+
   if (name === "color") {
-    // color(srgb r g b [/ a]) with channels in 0..1 (or percentages).
-    if (tokens.length < 4 || tokens[0] !== "srgb") return null;
+    // color(<space> r g b [/ a]) with channels in 0..1 (or percentages).
+    const space = tokens[0] ?? "";
+    if (tokens.length < 4 || !["srgb", "srgb-linear", "display-p3"].includes(space)) return null;
     const r = channel(tokens[1] ?? "", 1);
     const g = channel(tokens[2] ?? "", 1);
     const b = channel(tokens[3] ?? "", 1);
     const a = alphaToken(tokens[4]);
     if (r === null || g === null || b === null || a === null) return null;
-    return [clamp255(r * 255), clamp255(g * 255), clamp255(b * 255), a];
+    if (space === "srgb") return [clamp255(r * 255), clamp255(g * 255), clamp255(b * 255), a];
+    const toLinear = (v: number): number => (space === "srgb-linear" ? v : decodeSrgb(v));
+    let lin: Vec3 = [toLinear(r), toLinear(g), toLinear(b)];
+    if (space === "display-p3") lin = mul3(XYZ_TO_SRGB, mul3(P3_TO_XYZ, lin));
+    return [encode255(lin[0]), encode255(lin[1]), encode255(lin[2]), a];
   }
 
   return null;
@@ -211,14 +309,18 @@ export function luminance(rgb: RGB): number {
   return 0.2126 * lin(rgb[0]) + 0.7152 * lin(rgb[1]) + 0.0722 * lin(rgb[2]);
 }
 
-/** Contrast ratio between two opaque colours, rounded to 2 decimals (1..21). */
-export function contrastRatio(a: RGB, b: RGB): number {
+/** Unrounded contrast ratio between two opaque colours (1..21). Compare thresholds against this one. */
+export function contrastRatioExact(a: RGB, b: RGB): number {
   const la = luminance(a);
   const lb = luminance(b);
   const light = Math.max(la, lb);
   const dark = Math.min(la, lb);
-  const ratio = (light + 0.05) / (dark + 0.05);
-  return Math.round(ratio * 100) / 100;
+  return (light + 0.05) / (dark + 0.05);
+}
+
+/** Contrast ratio rounded to 2 decimals, for display only: WCAG does not allow rounding up, so compare with `contrastRatioExact`. */
+export function contrastRatio(a: RGB, b: RGB): number {
+  return Math.round(contrastRatioExact(a, b) * 100) / 100;
 }
 
 /** Composite a translucent colour over an opaque one ("source over"). */
@@ -286,7 +388,7 @@ export function hslToRgb(h: number, s: number, l: number): RGB {
  */
 export function suggestPassingColor(fg: RGB, bg: RGB, target: number): RGB {
   const start: RGB = [clamp255(fg[0]), clamp255(fg[1]), clamp255(fg[2])];
-  if (contrastRatio(start, bg) >= target) return start;
+  if (contrastRatioExact(start, bg) >= target) return start;
   const [h, s, l] = rgbToHsl(start);
   // Luminance ~0.179 is where black and white contrast equally against bg.
   const bgIsLight = luminance(bg) > 0.179;
@@ -296,12 +398,12 @@ export function suggestPassingColor(fg: RGB, bg: RGB, target: number): RGB {
       const nl = l + dir * step;
       if (nl < 0 || nl > 100) break;
       const candidate = hslToRgb(h, s, nl);
-      if (contrastRatio(candidate, bg) >= target) return candidate;
+      if (contrastRatioExact(candidate, bg) >= target) return candidate;
     }
   }
   const black: RGB = [0, 0, 0];
   const white: RGB = [255, 255, 255];
-  return contrastRatio(black, bg) >= contrastRatio(white, bg) ? black : white;
+  return contrastRatioExact(black, bg) >= contrastRatioExact(white, bg) ? black : white;
 }
 
 /**

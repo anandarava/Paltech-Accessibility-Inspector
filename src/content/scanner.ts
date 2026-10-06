@@ -231,6 +231,14 @@ export async function runCustomRule(
   return issues.filter((issue) => isAllowed(issue.ruleId, options, disabled));
 }
 
+const LEVEL_RANK = { A: 0, AA: 1, AAA: 2 } as const;
+
+/** True when a finding's WCAG level is within the selected level; best-practice ("BP") findings always are. */
+function levelInScope(level: Issue["wcag"]["level"], selected: keyof typeof LEVEL_RANK): boolean {
+  if (level === "BP") return true;
+  return LEVEL_RANK[level] <= LEVEL_RANK[selected];
+}
+
 export async function scanFrame(options: ScanOptions, rulesFile: RulesFile, ruleConfig: RuleConfig, ctxExtras: ScanContextExtras): Promise<FrameScanOutput> {
   if (scanInProgress) throw new Error("A scan is already running in this frame");
   scanInProgress = true;
@@ -285,7 +293,8 @@ export async function scanFrame(options: ScanOptions, rulesFile: RulesFile, rule
       const ruleProgress = (p: number): void => safeProgress(from + ((to - from) * Math.max(0, Math.min(100, p))) / 100, `Checking ${rule.title}`);
       try {
         const ruleIssues = await runCustomRule(rule, root, options, rulesFile, ruleConfig, ctxExtras, ruleProgress);
-        issues.push(...ruleIssues);
+        // Custom rules know nothing about the selected conformance level: drop findings for stricter levels.
+        issues.push(...ruleIssues.filter((issue) => levelInScope(issue.wcag.level, options.wcagLevel ?? "AA")));
       } catch (err) {
         // One misbehaving rule must not abort the whole scan.
         console.warn(`[a11y-checker] custom rule ${rule.id} failed:`, err);

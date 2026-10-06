@@ -23,7 +23,8 @@ export function ResultTabs() {
   const refs = useRef<Array<HTMLButtonElement | null>>([]);
 
   const counts = useMemo(() => {
-    const base = { ...filters, severities: [], categories: [], search: "", sources: [], showBestPractice: true };
+    // Same rules as the list (IssueList): status and showBestPractice apply, severity / category / search / source do not.
+    const base = { ...filters, severities: [], categories: [], search: "", sources: [] };
     const issues = result?.issues ?? [];
     const count = (t: ResultTab) => issues.filter((i) => matchesFilters(i, base, t)).length;
     return {
@@ -51,7 +52,7 @@ export function ResultTabs() {
   };
 
   return (
-    <div role="tablist" aria-label="Result type" className="flex flex-wrap gap-x-0.5 border-b border-slate-300 px-2 pt-1">
+    <div role="tablist" aria-label="Result type" className="flex flex-nowrap overflow-x-auto border-b border-slate-200 px-2">
       {TABS.map((t, index) => {
         const selected = t.value === tab;
         const n = counts[t.value];
@@ -69,12 +70,12 @@ export function ResultTabs() {
             tabIndex={selected ? 0 : -1}
             onClick={() => setTab(t.value)}
             onKeyDown={(e) => onKeyDown(e, index)}
-            className={`-mb-px whitespace-nowrap rounded-t border-b-2 px-2 py-1 text-xs font-medium ${
-              selected ? "border-blue-700 text-blue-900" : "border-transparent text-slate-700 hover:bg-slate-100"
+            className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap border-b-2 px-2.5 py-2 text-[13px] ${
+              selected ? "border-blue-600 font-bold text-blue-700" : "border-transparent font-medium text-slate-700 hover:bg-slate-50"
             }`}
           >
             {t.label}{" "}
-            <span className="ml-0.5 inline-flex min-w-5 justify-center rounded-full bg-slate-200 px-1 tabular-nums text-slate-800">{n}</span>
+            <span className={`inline-flex min-w-5 justify-center rounded-full px-1.5 text-xs font-semibold tabular-nums ${selected ? "bg-blue-100 text-blue-800" : "bg-slate-100 text-slate-700"}`}>{n}</span>
           </button>
         );
       })}

@@ -15,6 +15,7 @@
  */
 import type { Category, Issue, ScanResult, Severity } from "@shared/types";
 import { SEVERITY_ORDER } from "@shared/constants";
+import { effectivePassedRules } from "@shared/scoring";
 import { wcagDocsUrl } from "@shared/wcag-map";
 import { contrastRatio, parseColor, suggestPassingColor, toHex, type RGB } from "@shared/color";
 import { toolInfo } from "./json-report";
@@ -893,7 +894,7 @@ export function buildHtmlReport(result: ScanResult, meta: ReportMeta = {}): stri
   const issues = result.issues ?? [];
   const active = issues.filter((i) => i.status === "new");
   const excluded = issues.filter((i) => i.status !== "new");
-  const passed = result.passedRules ?? [];
+  const passed = effectivePassedRules(active, result.passedRules ?? []);
   const inapplicable = result.inapplicableRules ?? [];
   const unscanned = result.unscannedFrames ?? [];
 

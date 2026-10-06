@@ -4,6 +4,8 @@ import { sendToBackground } from "@shared/messages";
 import { useStore, type CompareSide } from "@src/sidepanel/store";
 import { useFocusHeading } from "@src/sidepanel/hooks/useFocusHeading";
 import { Button } from "./Button";
+import { ArrowLeftIcon, BookmarkIcon, CompareIcon } from "./icons";
+import { EmptyState, SavedScansIllustration } from "./EmptyState";
 
 /** The name a scan is stored under: what the tester typed plus the moment it was saved. */
 export function savedScanName(typed: string, now: Date = new Date()): string {
@@ -38,6 +40,20 @@ export function SavedScans({ onBack }: { onBack(): void }) {
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
+  const rootRef = useRef<HTMLElement>(null);
+  /** CSS selector of the element to focus once the list/rename form has re-rendered; "heading" means the view heading. */
+  const pendingFocus = useRef<string | null>(null);
+
+  // Keyboard users must not lose focus when the control they used is removed or replaced.
+  useEffect(() => {
+    const sel = pendingFocus.current;
+    if (!sel) return;
+    const el = sel === "heading" ? headingRef.current : rootRef.current?.querySelector<HTMLElement>(sel);
+    if (el) {
+      pendingFocus.current = null;
+      el.focus();
+    }
+  }, [items, renaming, headingRef]);
 
   const load = useCallback(async () => {
     const res = await sendToBackground<SavedScanMeta[]>({ type: "SAVED_SCANS_LIST" });
@@ -86,19 +102,33 @@ export function SavedScans({ onBack }: { onBack(): void }) {
 
   const remove = async (meta: SavedScanMeta) => {
     if (!window.confirm(`Delete the saved scan "${meta.name}"? This cannot be undone.`)) return;
+    // The deleted row disappears (and the focused button is disabled meanwhile): hand focus to a neighbouring row, else the heading.
+    const list = items ?? [];
+    const at = list.findIndex((m) => m.id === meta.id);
+    const neighbour = list[at + 1] ?? list[at - 1];
     setBusy(`del:${meta.id}`);
     const res = await sendToBackground({ type: "SAVED_SCAN_DELETE", id: meta.id });
     setBusy(null);
-    if (!res.ok) showToast({ kind: "error", message: `Could not delete: ${res.error ?? "unknown error"}` });
+    if (!res.ok) {
+      showToast({ kind: "error", message: `Could not delete: ${res.error ?? "unknown error"}` });
+      pendingFocus.current = `[data-delete-id="${CSS.escape(meta.id)}"]`;
+    } else {
+      pendingFocus.current = neighbour ? `[data-open-id="${CSS.escape(neighbour.id)}"]` : "heading";
+    }
     setSelected((s) => s.filter((x) => x !== meta.id));
     void load();
+  };
+
+  const closeRename = (meta: SavedScanMeta) => {
+    pendingFocus.current = `[data-rename-id="${CSS.escape(meta.id)}"]`;
+    setRenaming(null);
   };
 
   const rename = async (e: FormEvent, meta: SavedScanMeta) => {
     e.preventDefault();
     const res = await sendToBackground({ type: "SAVED_SCAN_RENAME", id: meta.id, name: renameValue });
     if (!res.ok) showToast({ kind: "error", message: `Could not rename: ${res.error ?? "unknown error"}` });
-    setRenaming(null);
+    closeRename(meta);
     void load();
   };
 
@@ -124,21 +154,27 @@ export function SavedScans({ onBack }: { onBack(): void }) {
   const canCompare = selected.length === 2 || (selected.length === 1 && Boolean(result));
 
   return (
-    <section aria-labelledby={`${id}-h`} className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-      <div className="flex items-center gap-2 border-b border-slate-300 px-3 py-2">
-        <Button size="sm" onClick={onBack} aria-label="Back to results">
-          ← Back
+    <section ref={rootRef} aria-labelledby={`${id}-h`} className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <div className="px-3 pt-3">
+        <Button size="sm" onClick={onBack} aria-label="Back to results" className="bg-white">
+          <ArrowLeftIcon size={13} />
+          Back
         </Button>
-        <h2 id={`${id}-h`} ref={headingRef} tabIndex={-1} className="text-base font-semibold text-slate-900">
+      </div>
+      <div className="flex items-center gap-2.5 px-3 py-3">
+        <span aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-700">
+          <BookmarkIcon size={18} />
+        </span>
+        <h2 id={`${id}-h`} ref={headingRef} tabIndex={-1} className="text-xl font-bold text-slate-900">
           Saved scans
         </h2>
       </div>
 
-      <form onSubmit={(e) => void save(e)} className="border-b border-slate-300 px-3 py-2">
-        <label htmlFor={`${id}-name`} className="block text-xs font-medium text-slate-800">
+      <form onSubmit={(e) => void save(e)} className="mx-3 rounded-xl border border-slate-200 bg-white p-3">
+        <label htmlFor={`${id}-name`} className="block text-xs font-bold text-slate-900">
           Save the current scan as
         </label>
-        <div className="mt-0.5 flex gap-1">
+        <div className="mt-1.5 flex gap-2">
           <input
             id={`${id}-name`}
             ref={nameRef}
@@ -151,9 +187,9 @@ export function SavedScans({ onBack }: { onBack(): void }) {
             placeholder="e.g. Checkout page"
             aria-invalid={nameError ? "true" : undefined}
             aria-describedby={`${id}-name-hint${nameError ? ` ${id}-name-err` : ""}`}
-            className="min-w-0 flex-1 rounded border border-slate-500 bg-white px-2 py-1 text-sm text-slate-900 placeholder:text-slate-500"
+            className="min-w-0 flex-1 rounded-md border border-slate-500 bg-white px-2.5 py-1.5 text-sm text-slate-900 placeholder:text-slate-500"
           />
-          <Button type="submit" variant="primary" size="sm" disabled={!result || tabId === null || busy === "save"}>
+          <Button type="submit" variant="primary" size="md"disabled={!result || tabId === null || busy === "save"}>
             {busy === "save" ? "Saving…" : "Save"}
           </Button>
         </div>
@@ -162,29 +198,36 @@ export function SavedScans({ onBack }: { onBack(): void }) {
             {nameError}
           </p>
         )}
-        <p id={`${id}-name-hint`} className="mt-1 text-xs text-slate-700">
+        <p id={`${id}-name-hint`} className="mt-1.5 text-xs text-slate-700">
           {result ? "The date and time are added when you save." : "Run a scan first to save it."}
         </p>
       </form>
 
-      <div className="flex items-center justify-between gap-2 px-3 py-2">
-        <p className="text-xs text-slate-700">
-          {selected.length === 0
-            ? "Tick two scans (or one to compare with the current scan)."
-            : `${selected.length} selected${selected.length === 1 && result ? " – compares with the current scan" : ""}.`}
-        </p>
-        <Button size="sm" onClick={compare} disabled={!canCompare}>
-          Compare
-        </Button>
+      <div className="mx-3 mt-3 rounded-xl border border-blue-200 bg-blue-50 p-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <span aria-hidden="true" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white">
+              <CompareIcon size={16} />
+            </span>
+            <p className="text-xs text-slate-800">
+              {selected.length === 0
+                ? "Tick two scans (or one to compare with the current scan)."
+                : `${selected.length} selected${selected.length === 1 && result ? " – compares with the current scan" : ""}.`}
+            </p>
+          </div>
+          <Button size="md" onClick={compare} disabled={!canCompare} className="bg-white">
+            Compare
+          </Button>
+        </div>
+        {items === null && <p className="mt-2 text-xs text-slate-700">Loading…</p>}
+        {items?.length === 0 && <p className="mt-2 text-xs text-slate-700">No saved scans yet.</p>}
       </div>
 
-      {items === null && <p className="px-3 text-sm text-slate-700">Loading…</p>}
-      {items?.length === 0 && <p className="px-3 text-sm text-slate-700">No saved scans yet.</p>}
-      <ul className="px-2 pb-3">
+      <ul className="px-3 pt-3 pb-3">
         {items?.map((meta) => {
           const checked = selected.includes(meta.id);
           return (
-            <li key={meta.id} className={`mb-1.5 rounded border p-2 ${checked ? "border-blue-700 bg-blue-50" : "border-slate-300"}`}>
+            <li key={meta.id} className={`mb-2 rounded-lg border p-2.5 ${checked ? "border-blue-700 bg-blue-50" : "border-slate-200 bg-white"}`}>
               <div className="flex items-start gap-2">
                 <input
                   type="checkbox"
@@ -203,7 +246,7 @@ export function SavedScans({ onBack }: { onBack(): void }) {
                         id={`${id}-rn-${meta.id}`}
                         value={renameValue}
                         onChange={(e) => setRenameValue(e.target.value)}
-                        onKeyDown={(e) => e.key === "Escape" && setRenaming(null)}
+                        onKeyDown={(e) => e.key === "Escape" && closeRename(meta)}
                         autoFocus
                         className="min-w-0 flex-1 rounded border border-slate-500 px-1 py-0.5 text-sm"
                       />
@@ -223,11 +266,12 @@ export function SavedScans({ onBack }: { onBack(): void }) {
                   </p>
                   <p className="text-[11px] text-slate-600">{counts(meta)}</p>
                   <div className="mt-1 flex flex-wrap gap-1">
-                    <Button size="sm" variant="primary" onClick={() => void open(meta)} disabled={busy === `open:${meta.id}`}>
+                    <Button size="sm" variant="primary" data-open-id={meta.id} onClick={() => void open(meta)} disabled={busy === `open:${meta.id}`}>
                       Open
                     </Button>
                     <Button
                       size="sm"
+                      data-rename-id={meta.id}
                       onClick={() => {
                         setRenaming(meta.id);
                         setRenameValue(meta.name);
@@ -240,7 +284,7 @@ export function SavedScans({ onBack }: { onBack(): void }) {
                         {f.toUpperCase()}
                       </Button>
                     ))}
-                    <Button size="sm" variant="danger" onClick={() => void remove(meta)} disabled={busy === `del:${meta.id}`} aria-label={`Delete "${meta.name}"`}>
+                    <Button size="sm" variant="danger" data-delete-id={meta.id} onClick={() => void remove(meta)} disabled={busy === `del:${meta.id}`} aria-label={`Delete "${meta.name}"`}>
                       Delete
                     </Button>
                   </div>
@@ -250,6 +294,12 @@ export function SavedScans({ onBack }: { onBack(): void }) {
           );
         })}
       </ul>
+
+      {items?.length === 0 && (
+        <EmptyState illustration={<SavedScansIllustration />} heading="No saved scans yet">
+          Save a scan to view it here and compare with other scans.
+        </EmptyState>
+      )}
     </section>
   );
 }

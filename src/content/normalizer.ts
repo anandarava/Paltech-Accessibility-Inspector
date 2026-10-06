@@ -8,7 +8,7 @@ import type { Category, CheckType, Issue, RuleDefinition, RulesFile, Severity, W
 import { AXE_TO_RULE, BEST_PRACTICE_RULES, criterionFromAxeTag, wcagDocsUrl, wcagRef } from "@shared/wcag-map";
 import type { CustomRule, RuleFinding } from "./rules/types";
 import { fingerprint, textSnippet } from "./fingerprint";
-import { boundingBoxes, outerHtmlSnippet, resolveSelector, uniqueSelector, xpath } from "./dom-utils";
+import { boundingBoxes, fingerprintSelector, outerHtmlSnippet, resolveSelector, uniqueSelector, xpath } from "./dom-utils";
 
 // ---------------------------------------------------------------------------
 // Issue ids: unique within a browsing context, and (via the random token)
@@ -330,7 +330,7 @@ function normalizeAxeGroup(results: axe.Result[], rulesFile: RulesFile, incomple
       const messages = checkMessages(node);
       const ref = elementRef(element, axeTargetToString(node.target), node.html);
       const snippet = element ? textSnippet(element) : collapse(node.html).slice(0, 40);
-      const fp = fingerprint(mapping.ruleId, ref.selector, snippet);
+      const fp = fingerprint(mapping.ruleId, element ? fingerprintSelector(element, ref.selector) : ref.selector, snippet);
       const summary = failureSummaryText(node);
       const descriptionParts = [sentence(result.description)];
       if (messages.length) descriptionParts.push(messages.map(sentence).join(" "));
@@ -404,7 +404,7 @@ export function normalizeCustomFindings(rule: CustomRule, findings: RuleFinding[
     const severity: Severity = finding.severity ?? def?.severity ?? rule.severity;
     const ref = elementRef(finding.element, "", "");
     const snippet = textSnippet(finding.element);
-    const fp = fingerprint(ruleId, ref.selector, snippet);
+    const fp = fingerprint(ruleId, fingerprintSelector(finding.element, ref.selector), snippet);
     const data = finding.data ? (jsonSafe(finding.data) as Record<string, unknown> | undefined) : undefined;
     const fixSummary = collapse(finding.fix?.summary) || collapse(rule.defaultFix.summary);
     const docsUrl = finding.fix?.docsUrl ?? rule.defaultFix.docsUrl ?? wcagDocsUrl(wcag.criterion) ?? def?.docsUrl;
