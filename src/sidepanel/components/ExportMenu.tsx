@@ -11,14 +11,17 @@ interface ExportOption {
   screenshots?: boolean;
   label: string;
   hint: string;
+  /** Icon chip text, and whether it is highlighted. */
+  chip: string;
+  featured?: boolean;
   /** Needs the live page (not available for saved scans). */
   live?: boolean;
 }
 
 const OPTIONS: ExportOption[] = [
-  { id: "html-shots", format: "html", screenshots: true, live: true, label: "HTML report with screenshots", hint: "Best for clients: captures each problem (the page scrolls)" },
-  { id: "html", format: "html", label: "HTML report", hint: "Summary and developer details" },
-  { id: "json", format: "json", label: "JSON", hint: "Raw result for tooling / CI" },
+  { id: "html-shots", format: "html", screenshots: true, live: true, label: "HTML report with screenshots", hint: "Captures each problem. The page scrolls while it runs.", chip: "HTML", featured: true },
+  { id: "html", format: "html", label: "HTML report", hint: "Summary and developer details", chip: "HTML" },
+  { id: "json", format: "json", label: "JSON", hint: "Raw results for tooling and CI", chip: "JSON" },
 ];
 
 export function ExportMenu() {
@@ -52,7 +55,8 @@ export function ExportMenu() {
   };
 
   return (
-    <Popover side="top" label={<><DownloadIcon /> Export</>} ariaLabel="Export report" disabled={!hasResult || (tabId === null && !saved)}>
+    <Popover side="top" label={<><DownloadIcon /> Export</>} ariaLabel="Export report" disabled={!hasResult || (tabId === null && !saved)} panelClassName="w-72 max-w-[calc(100vw-1.5rem)] rounded-xl border border-slate-300 p-2">
+      <p className="px-2 pt-1 pb-1.5 text-[11px] font-semibold tracking-wide text-slate-600 uppercase">Export as</p>
       <ul aria-label="Export formats">
         {OPTIONS.filter((f) => !(f.live && saved)).map((f) => (
           <li key={f.id}>
@@ -61,10 +65,24 @@ export function ExportMenu() {
               onClick={() => void exportAs(f)}
               // aria-disabled (not disabled) so the focused item keeps focus while an export runs; exportAs ignores clicks when busy.
               aria-disabled={busy !== null ? true : undefined}
-              className="w-full rounded px-2 py-1 text-left text-sm text-slate-900 hover:bg-slate-100 aria-disabled:cursor-not-allowed aria-disabled:text-slate-500"
+              className="flex w-full cursor-pointer items-start gap-2.5 rounded-md px-2 py-2 text-left text-sm text-slate-900 hover:bg-slate-50 aria-disabled:cursor-not-allowed aria-disabled:text-slate-500"
             >
-              {busy === f.id ? `${f.label}…` : f.label}
-              <span className="block text-[11px] text-slate-600">{f.hint}</span>
+              <span
+                aria-hidden="true"
+                className={`flex h-7 w-9 shrink-0 items-center justify-center rounded-md text-[11px] font-bold ${f.featured ? "bg-blue-50 text-blue-800" : "bg-slate-100 text-slate-700"}`}
+              >
+                {f.chip}
+              </span>
+              <span className="min-w-0">
+                <span className="block font-semibold">{busy === f.id ? `${f.label}…` : f.label}</span>
+                {f.featured && (
+                  <span className="my-0.5 inline-flex items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-[11px] font-medium text-green-800">
+                    <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-green-600" />
+                    Best for clients
+                  </span>
+                )}
+                <span className="block text-xs text-slate-600">{f.hint}</span>
+              </span>
             </button>
           </li>
         ))}

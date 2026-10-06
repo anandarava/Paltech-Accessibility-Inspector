@@ -39,6 +39,13 @@ export async function restoreLastResult(tabId: number): Promise<void> {
   // The tab may have changed while we were waiting.
   if (store.tabId !== tabId) return;
   if (res.ok && isScanResult(res.data)) {
+    // This tab's own view state may already hold it (switching back to a tab): leave that untouched.
+    if (store.result?.scanId === res.data.scanId || store.liveResult?.scanId === res.data.scanId) return;
+    // A saved scan is open for this tab: keep showing it and park the live result behind it.
+    if (store.viewingSaved) {
+      useStore.setState({ liveResult: res.data });
+      return;
+    }
     store.setResult(res.data);
     // setResult marks the scan finished; a rescan of this tab may still be running.
     if (store.scanningTabs.includes(tabId)) store.setScanning(true);

@@ -4,7 +4,13 @@ import { sendToBackground } from "@shared/messages";
 import { useStore, type CompareSide } from "@src/sidepanel/store";
 import { useFocusHeading } from "@src/sidepanel/hooks/useFocusHeading";
 import { Button } from "./Button";
-import { ArrowLeftIcon, BookmarkIcon, CompareIcon } from "./icons";
+import { BackButton } from "./BackButton";
+import { BookmarkIcon, CheckIcon, ChevronDownIcon, CompareIcon, DownloadIcon, MoreVerticalIcon, PencilIcon, RefreshIcon, TrashIcon } from "./icons";
+import { RowMenu } from "./RowMenu";
+import { ScoreRing } from "./ScoreRing";
+import { displayUrl, sameUrlIgnoringHash, splitScanName } from "./scanRowHelpers";
+import { useChangeSettings } from "@src/sidepanel/hooks/useChangeSettings";
+import { useStartScan } from "./ScanButton";
 import { EmptyState, SavedScansIllustration } from "./EmptyState";
 
 /** The name a scan is stored under: what the tester typed plus the moment it was saved. */
@@ -13,9 +19,18 @@ export function savedScanName(typed: string, now: Date = new Date()): string {
   return `${typed.trim()} – ${when}`;
 }
 
-function counts(meta: SavedScanMeta): string {
-  const s = meta.summary;
-  return `${s.critical} critical · ${s.serious} serious · ${s.moderate} moderate · ${s.minor} minor · ${s.bestPractice} best practice`;
+const ACTION_BTN =
+  "inline-flex h-8 items-center justify-center rounded-md border border-slate-500 bg-white font-medium text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-500";
+
+/** Small rounded chip; with `n` it is tinted (and gets a dot) only while the count is above zero. */
+function Chip({ children, n, tone, dot }: { children: string; n?: number; tone?: string; dot?: string }) {
+  const tinted = n !== undefined && n > 0 && tone;
+  return (
+    <li className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${tinted ? tone : "border-slate-200 bg-slate-100 text-slate-700"}`}>
+      {tinted && <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${dot}`} />}
+      {children}
+    </li>
+  );
 }
 
 /**
@@ -41,6 +56,11 @@ export function SavedScans({ onBack }: { onBack(): void }) {
   const [renameValue, setRenameValue] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const rootRef = useRef<HTMLElement>(null);
+  const scanning = useStore((s) => s.scanning);
+  const changeSettings = useChangeSettings();
+  const startScan = useStartScan();
+  /** URL of the active tab, read when a row's More menu opens (used to enable "Rescan this page"). */
+  const [activeUrl, setActiveUrl] = useState<string | null>(null);
   /** CSS selector of the element to focus once the list/rename form has re-rendered; "heading" means the view heading. */
   const pendingFocus = useRef<string | null>(null);
 
@@ -111,7 +131,7 @@ export function SavedScans({ onBack }: { onBack(): void }) {
     setBusy(null);
     if (!res.ok) {
       showToast({ kind: "error", message: `Could not delete: ${res.error ?? "unknown error"}` });
-      pendingFocus.current = `[data-delete-id="${CSS.escape(meta.id)}"]`;
+      pendingFocus.current = `[data-more-id="${CSS.escape(meta.id)}"]`;
     } else {
       pendingFocus.current = neighbour ? `[data-open-id="${CSS.escape(neighbour.id)}"]` : "heading";
     }
@@ -120,7 +140,7 @@ export function SavedScans({ onBack }: { onBack(): void }) {
   };
 
   const closeRename = (meta: SavedScanMeta) => {
-    pendingFocus.current = `[data-rename-id="${CSS.escape(meta.id)}"]`;
+    pendingFocus.current = `[data-more-id="${CSS.escape(meta.id)}"]`;
     setRenaming(null);
   };
 
@@ -140,6 +160,23 @@ export function SavedScans({ onBack }: { onBack(): void }) {
     else showToast({ kind: "error", message: `Export failed: ${res.error ?? "unknown error"}`, autoDismiss: false });
   };
 
+  const refreshActiveUrl = async () => {
+    try {
+      if (tabId === null) return setActiveUrl(null);
+      const tab = await chrome.tabs.get(tabId);
+      setActiveUrl(tab.url ?? null);
+    } catch {
+      setActiveUrl(null);
+    }
+  };
+
+  /** Re-scan the page the saved scan was taken on, using that scan's WCAG version and level. */
+  const rescan = async (meta: SavedScanMeta) => {
+    await changeSettings({ wcagVersion: meta.wcagVersion, wcagLevel: meta.wcagLevel }, "settings");
+    onBack();
+    void startScan();
+  };
+
   const compare = () => {
     const sides: CompareSide[] = selected.map((sid) => ({ kind: "saved", id: sid }));
     if (sides.length === 1 && result) sides.push({ kind: "current" });
@@ -156,10 +193,7 @@ export function SavedScans({ onBack }: { onBack(): void }) {
   return (
     <section ref={rootRef} aria-labelledby={`${id}-h`} className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       <div className="px-3 pt-3">
-        <Button size="sm" onClick={onBack} aria-label="Back to results" className="bg-white">
-          <ArrowLeftIcon size={13} />
-          Back
-        </Button>
+        <BackButton onClick={onBack} ariaLabel="Back to results" />
       </div>
       <div className="flex items-center gap-2.5 px-3 py-3">
         <span aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-700">
@@ -171,13 +205,15 @@ export function SavedScans({ onBack }: { onBack(): void }) {
       </div>
 
       <form onSubmit={(e) => void save(e)} className="mx-3 rounded-xl border border-slate-200 bg-white p-3">
-        <label htmlFor={`${id}-name`} className="block text-xs font-bold text-slate-900">
+        {/* aria-labelledby (not htmlFor): clicking the caption must not move focus into the field. */}
+        <p id={`${id}-name-label`} className="block text-xs font-bold text-slate-900">
           Save the current scan as
-        </label>
+        </p>
         <div className="mt-1.5 flex gap-2">
           <input
             id={`${id}-name`}
             ref={nameRef}
+            aria-labelledby={`${id}-name-label`}
             value={name}
             onChange={(e) => {
               setName(e.target.value);
@@ -226,68 +262,118 @@ export function SavedScans({ onBack }: { onBack(): void }) {
       <ul className="px-3 pt-3 pb-3">
         {items?.map((meta) => {
           const checked = selected.includes(meta.id);
+          const { title, when } = splitScanName(meta.name);
+          const sameTab = sameUrlIgnoringHash(activeUrl, meta.url);
+          const s = meta.summary;
           return (
-            <li key={meta.id} className={`mb-2 rounded-lg border p-2.5 ${checked ? "border-blue-700 bg-blue-50" : "border-slate-200 bg-white"}`}>
-              <div className="flex items-start gap-2">
-                <input
-                  type="checkbox"
-                  className="mt-1"
-                  checked={checked}
-                  onChange={() => toggle(meta.id)}
-                  aria-label={`Select "${meta.name}" for comparison`}
-                />
-                <div className="min-w-0 flex-1">
-                  {renaming === meta.id ? (
-                    <form onSubmit={(e) => void rename(e, meta)} className="flex gap-1">
-                      <label htmlFor={`${id}-rn-${meta.id}`} className="sr-only">
-                        New name
-                      </label>
-                      <input
-                        id={`${id}-rn-${meta.id}`}
-                        value={renameValue}
-                        onChange={(e) => setRenameValue(e.target.value)}
-                        onKeyDown={(e) => e.key === "Escape" && closeRename(meta)}
-                        autoFocus
-                        className="min-w-0 flex-1 rounded border border-slate-500 px-1 py-0.5 text-sm"
-                      />
-                      <Button type="submit" size="sm" variant="primary">
-                        Rename
-                      </Button>
-                    </form>
-                  ) : (
-                    <h3 className="truncate text-sm font-semibold text-slate-900">{meta.name}</h3>
-                  )}
-                  <p className="truncate text-[11px] text-slate-700" title={meta.url}>
-                    {meta.url}
-                  </p>
-                  <p className="text-[11px] text-slate-700">
-                    Score <strong>{meta.score}</strong> · {meta.issueCount} issues · WCAG {meta.wcagVersion} {meta.wcagLevel}
-                    {meta.scope?.kind === "selector" ? " · part of page" : ""} · {new Date(meta.timestamp).toLocaleString()}
-                  </p>
-                  <p className="text-[11px] text-slate-600">{counts(meta)}</p>
-                  <div className="mt-1 flex flex-wrap gap-1">
-                    <Button size="sm" variant="primary" data-open-id={meta.id} onClick={() => void open(meta)} disabled={busy === `open:${meta.id}`}>
-                      Open
-                    </Button>
-                    <Button
-                      size="sm"
-                      data-rename-id={meta.id}
-                      onClick={() => {
-                        setRenaming(meta.id);
-                        setRenameValue(meta.name);
-                      }}
+            <li key={meta.id} className={`mb-2 rounded-xl border p-3 ${checked ? "border-blue-600 bg-blue-50" : "border-slate-200 bg-white"}`}>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2.5">
+                <div className="flex min-w-0 flex-1 basis-56 items-start gap-3">
+                  <label className="flex h-11 shrink-0 cursor-pointer items-center">
+                    <input type="checkbox" className="peer sr-only" checked={checked} onChange={() => toggle(meta.id)} aria-label={`Select "${meta.name}" for comparison`} />
+                    <span
+                      aria-hidden="true"
+                      className={`flex h-4 w-4 items-center justify-center rounded border text-white peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-blue-700 ${
+                        checked ? "border-blue-600 bg-blue-600" : "border-slate-500 bg-white"
+                      }`}
                     >
-                      Rename
-                    </Button>
-                    {(["html", "json"] as ExportFormat[]).map((f) => (
-                      <Button key={f} size="sm" onClick={() => void exportAs(meta, f)} disabled={busy === `exp:${meta.id}`} aria-label={`Export "${meta.name}" as ${f.toUpperCase()}`}>
-                        {f.toUpperCase()}
-                      </Button>
-                    ))}
-                    <Button size="sm" variant="danger" data-delete-id={meta.id} onClick={() => void remove(meta)} disabled={busy === `del:${meta.id}`} aria-label={`Delete "${meta.name}"`}>
-                      Delete
-                    </Button>
+                      {checked && <CheckIcon size={12} />}
+                    </span>
+                  </label>
+                  <ScoreRing score={meta.score} />
+                  <div className="min-w-0 flex-1">
+                    {renaming === meta.id ? (
+                      <form onSubmit={(e) => void rename(e, meta)} className="flex gap-1">
+                        <label htmlFor={`${id}-rn-${meta.id}`} className="sr-only">
+                          New name
+                        </label>
+                        <input
+                          id={`${id}-rn-${meta.id}`}
+                          value={renameValue}
+                          onChange={(e) => setRenameValue(e.target.value)}
+                          onKeyDown={(e) => e.key === "Escape" && closeRename(meta)}
+                          autoFocus
+                          className="min-w-0 flex-1 rounded border border-slate-500 bg-white px-1.5 py-0.5 text-sm text-slate-900"
+                        />
+                        <Button type="submit" size="sm" variant="primary">
+                          Rename
+                        </Button>
+                      </form>
+                    ) : (
+                      <h3 className="flex min-w-0 items-baseline gap-2 text-sm">
+                        <span className="truncate font-bold text-slate-900" title={title}>
+                          {title}
+                        </span>
+                        <span className="shrink-0 text-xs font-normal text-slate-600">{when ?? new Date(meta.timestamp).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}</span>
+                      </h3>
+                    )}
+                    <p className="truncate font-mono text-[11px] text-slate-600" title={meta.url}>
+                      {displayUrl(meta.url)}
+                    </p>
+                    <ul aria-label="Scan summary" className="mt-1.5 flex flex-wrap gap-1">
+                      <Chip>{`WCAG ${meta.wcagVersion} · ${meta.wcagLevel}`}</Chip>
+                      {meta.scope?.kind === "selector" && <Chip>Part of page</Chip>}
+                      <Chip n={s.critical} tone="border-red-200 bg-red-50 text-red-800" dot="bg-red-600">{`${s.critical} critical`}</Chip>
+                      <Chip n={s.serious} tone="border-orange-200 bg-orange-50 text-orange-900" dot="bg-orange-600">{`${s.serious} serious`}</Chip>
+                      <Chip n={s.moderate} tone="border-amber-200 bg-amber-100 text-amber-900" dot="bg-amber-600">{`${s.moderate} moderate`}</Chip>
+                      <Chip n={s.minor} tone="border-slate-300 bg-slate-200 text-slate-800" dot="bg-slate-500">{`${s.minor} minor`}</Chip>
+                      <Chip n={s.bestPractice} tone="border-purple-200 bg-purple-50 text-purple-900" dot="bg-purple-600">{`${s.bestPractice} best practice`}</Chip>
+                    </ul>
                   </div>
+                </div>
+                <div className="ml-auto flex shrink-0 items-center gap-1.5">
+                  <Button size="sm" variant="primary" data-open-id={meta.id} onClick={() => void open(meta)} disabled={busy === `open:${meta.id}`}>
+                    Open
+                  </Button>
+                  <RowMenu
+                    ariaLabel={`Export "${meta.name}"`}
+                    triggerClassName={`${ACTION_BTN} gap-1 px-2.5 text-xs`}
+                    trigger={
+                      <>
+                        Export
+                        <ChevronDownIcon size={14} className="text-slate-700" />
+                      </>
+                    }
+                    items={[
+                      { key: "html", label: "HTML report", icon: <DownloadIcon />, disabled: busy === `exp:${meta.id}`, onSelect: () => void exportAs(meta, "html") },
+                      { key: "json", label: "JSON", icon: <DownloadIcon />, disabled: busy === `exp:${meta.id}`, onSelect: () => void exportAs(meta, "json") },
+                    ]}
+                  />
+                  <RowMenu
+                    ariaLabel={`More actions for "${meta.name}"`}
+                    triggerClassName={`${ACTION_BTN} w-8`}
+                    triggerProps={{ "data-more-id": meta.id }}
+                    trigger={<MoreVerticalIcon size={16} />}
+                    onOpen={() => void refreshActiveUrl()}
+                    items={[
+                      {
+                        key: "rename",
+                        label: "Rename",
+                        icon: <PencilIcon />,
+                        onSelect: () => {
+                          setRenaming(meta.id);
+                          setRenameValue(meta.name);
+                        },
+                      },
+                      {
+                        key: "rescan",
+                        label: "Rescan this page",
+                        icon: <RefreshIcon />,
+                        disabled: !sameTab || scanning,
+                        hint: sameTab ? undefined : "Open this page in the current tab to rescan it",
+                        onSelect: () => void rescan(meta),
+                      },
+                      {
+                        key: "delete",
+                        label: "Delete…",
+                        icon: <TrashIcon />,
+                        danger: true,
+                        separatorBefore: true,
+                        disabled: busy === `del:${meta.id}`,
+                        onSelect: () => void remove(meta),
+                      },
+                    ]}
+                  />
                 </div>
               </div>
             </li>
