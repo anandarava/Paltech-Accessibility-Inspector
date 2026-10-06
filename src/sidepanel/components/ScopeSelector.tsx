@@ -3,6 +3,7 @@ import { useStore } from "@src/sidepanel/store";
 import { sendToPage } from "@src/sidepanel/hooks/messaging";
 import { PICKED_EVENT } from "@src/sidepanel/hooks/useBackgroundEvents";
 import { Button } from "./Button";
+import { CrosshairIcon } from "./icons";
 import { useStartScan } from "./ScanButton";
 
 /**
@@ -105,61 +106,39 @@ export function useScopeSelector(getInspectedSelector?: () => Promise<string | n
 
 export type ScopeSelectorState = ReturnType<typeof useScopeSelector>;
 
-/** The selector input, picker buttons and status text for "Part of page". */
-export function ScopeSelectorFields({ id, state, className = "" }: { id: string; state: ScopeSelectorState; className?: string }) {
-  const { scope, draft, setDraft, error, picking, applySelector, pick, cancelPick, useInspected, hasInspected } = state;
+/** The element picker and status text for "Part of page" (there is no selector field: the picker is the way to choose). */
+export function ScopeSelectorFields({ state, className = "" }: { state: ScopeSelectorState; className?: string }) {
+  const { scope, picking, pick, cancelPick, useInspected, hasInspected } = state;
   return (
     <div className={className}>
-      <label htmlFor={`${id}-sel`} className="block text-xs font-medium text-slate-800">
-        CSS selector
-      </label>
-      <div className="mt-0.5 flex gap-1">
-        <input
-          id={`${id}-sel`}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              applySelector(draft);
-            }
-          }}
-          placeholder="e.g. main, #checkout-form"
-          aria-invalid={error ? "true" : undefined}
-          aria-describedby={error ? `${id}-err` : undefined}
-          className="min-w-0 flex-1 rounded border border-slate-500 bg-white px-2 py-1 font-mono text-xs text-slate-900"
-        />
-        <Button size="sm" onClick={() => applySelector(draft)}>
-          Use
-        </Button>
-      </div>
-      {error && (
-        <p id={`${id}-err`} role="alert" className="mt-1 text-xs text-red-700">
-          {error}
-        </p>
+      {picking ? (
+        <button
+          type="button"
+          onClick={cancelPick}
+          className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-red-700 bg-red-50 px-3 py-2 text-sm font-medium text-red-800 hover:bg-red-100"
+        >
+          <CrosshairIcon size={16} /> Cancel picking
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={() => void pick()}
+          className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-blue-600 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-800 hover:bg-blue-100"
+        >
+          <CrosshairIcon size={16} /> Pick an element on the page
+        </button>
       )}
-      <div className="mt-2 flex flex-wrap gap-1">
-        {picking ? (
-          <Button size="sm" variant="danger" onClick={cancelPick}>
-            Cancel picking
-          </Button>
-        ) : (
-          <Button size="sm" variant="primary" onClick={() => void pick()}>
-            <span aria-hidden="true">⌖</span> Pick element on page
-          </Button>
-        )}
-        {hasInspected && (
-          <Button size="sm" onClick={() => void useInspected()}>
-            Scan selected element ($0)
-          </Button>
-        )}
-      </div>
+      {hasInspected && (
+        <Button className="mt-1.5 w-full rounded-lg" onClick={() => void useInspected()}>
+          Scan selected element ($0)
+        </Button>
+      )}
       {scope.selector ? (
-        <p className="mt-2 text-[11px] text-slate-700">
+        <p className="mt-2 text-xs text-slate-700">
           Scanning only <code className="break-all font-mono">{scope.selector}</code> and everything inside it.
         </p>
       ) : (
-        <p className="mt-2 text-[11px] text-slate-700">Type a CSS selector or pick an element on the page to choose what to scan.</p>
+        <p className="mt-2 text-xs text-slate-700">Pick an element on the page to choose what to scan.</p>
       )}
     </div>
   );

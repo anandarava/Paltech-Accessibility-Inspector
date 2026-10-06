@@ -74,6 +74,15 @@ export function EyeIcon(p: IconProps) {
   );
 }
 
+export function CrosshairIcon(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <circle cx="8" cy="8" r="4.5" />
+      <path d="M8 1.5v3M8 11.5v3M1.5 8h3M11.5 8h3" />
+    </Svg>
+  );
+}
+
 export function ScopeIcon(p: IconProps) {
   return (
     <Svg {...p}>
@@ -213,6 +222,63 @@ export function FilterIcon(p: IconProps) {
   return (
     <Svg {...p}>
       <path d="M2 3h12l-4.6 5.4V13l-2.8-1.4V8.4L2 3Z" />
+    </Svg>
+  );
+}
+
+/** Monitor with a highlighted region: "Part of page". */
+export function PartOfPageIcon({ size = 16, className = "" }: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+      className={`shrink-0 ${className}`}
+    >
+      <rect x="2" y="3" width="20" height="14" rx="2" />
+      <path d="M8 21h8M12 17v4" />
+      <rect x="6" y="6.5" width="8" height="6" rx="1" fill="currentColor" fillOpacity="0.2" />
+    </svg>
+  );
+}
+
+export function ChevronLeftIcon(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path d="M10 3.5 5.5 8l4.5 4.5" />
+    </Svg>
+  );
+}
+
+export function MoreVerticalIcon(p: IconProps) {
+  return (
+    <Svg {...p} filled>
+      <circle cx="8" cy="3.5" r="1.3" />
+      <circle cx="8" cy="8" r="1.3" />
+      <circle cx="8" cy="12.5" r="1.3" />
+    </Svg>
+  );
+}
+
+export function PencilIcon(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path d="M2.5 13.5 3 10l7.3-7.3a1.2 1.2 0 0 1 1.7 0l1.3 1.3a1.2 1.2 0 0 1 0 1.7L6 13l-3.5.5ZM9.3 3.7l3 3" />
+    </Svg>
+  );
+}
+
+export function TrashIcon(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path d="M2.5 4.5h11M6 4.5V3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1.5M4 4.5l.6 8.2a1 1 0 0 0 1 .8h4.8a1 1 0 0 0 1-.8l.6-8.2M6.7 7v4M9.3 7v4" />
     </Svg>
   );
 }

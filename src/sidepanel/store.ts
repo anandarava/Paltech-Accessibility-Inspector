@@ -108,6 +108,9 @@ export interface PanelState {
   /** Scroll to and outline the element whenever an issue is opened. */
   autoHighlight: boolean;
 
+  /** UI state of the tabs the panel has shown before, restored when the panel returns to them. */
+  tabStates: Record<number, TabViewState>;
+  /** Switch to another tab: park this tab's view state and restore (or start) the other tab's. */
   setTabId(tabId: number | null): void;
   setInspectable(v: boolean): void;
   setResult(result: ScanResult | undefined): void;
@@ -145,6 +148,29 @@ export interface PanelState {
   resetForTab(): void;
 }
 
+/**
+ * Everything the panel shows for one tab. Live things that belong to the page itself (the overlay,
+ * a running keyboard test, the element picker) are not kept: the page clears those when the panel
+ * leaves the tab.
+ */
+export type TabViewState = Pick<
+  PanelState,
+  | "result"
+  | "selectedIssueId"
+  | "filters"
+  | "pageChanged"
+  | "view"
+  | "collapsedCategories"
+  | "expandedRules"
+  | "resultTab"
+  | "groupBy"
+  | "scope"
+  | "viewingSaved"
+  | "liveResult"
+  | "compare"
+  | "keyboardResult"
+>;
+
 export const DEFAULT_FILTERS: Filters = {
   severities: [],
   categories: [],
@@ -155,6 +181,45 @@ export const DEFAULT_FILTERS: Filters = {
 };
 
 let toastCounter = 0;
+
+function snapshotTab(s: PanelState): TabViewState {
+  return {
+    result: s.result,
+    selectedIssueId: s.selectedIssueId,
+    filters: s.filters,
+    pageChanged: s.pageChanged,
+    view: s.view,
+    collapsedCategories: s.collapsedCategories,
+    expandedRules: s.expandedRules,
+    resultTab: s.resultTab,
+    groupBy: s.groupBy,
+    scope: s.scope,
+    viewingSaved: s.viewingSaved,
+    liveResult: s.liveResult,
+    compare: s.compare,
+    keyboardResult: s.keyboardResult,
+  };
+}
+
+/** A tab the panel has not shown before: the landing view with default filters. */
+function blankTab(): TabViewState {
+  return {
+    result: undefined,
+    selectedIssueId: null,
+    filters: DEFAULT_FILTERS,
+    pageChanged: null,
+    view: "list",
+    collapsedCategories: [],
+    expandedRules: [],
+    resultTab: "all",
+    groupBy: "rule",
+    scope: { kind: "page" },
+    viewingSaved: null,
+    liveResult: undefined,
+    compare: null,
+    keyboardResult: undefined,
+  };
+}
 
 /** Recompute derived fields of a ScanResult after issue statuses change. */
 export function withIssues(result: ScanResult, issues: Issue[]): ScanResult {
@@ -196,7 +261,29 @@ export const useStore = create<PanelState>()((set, get) => ({
   compare: null,
   autoHighlight: true,
 
-  setTabId: (tabId) => set({ tabId }),
+  tabStates: {},
+  setTabId: (tabId) =>
+    set((s) => {
+      if (s.tabId === tabId) return {};
+      const tabStates = { ...s.tabStates };
+      if (s.tabId !== null) tabStates[s.tabId] = snapshotTab(s);
+      const saved = tabId !== null ? tabStates[tabId] : undefined;
+      // The best-practice switch is a global setting, not part of a tab's own filters.
+      const base: TabViewState = saved ?? blankTab();
+      const view: TabViewState = { ...base, filters: { ...base.filters, showBestPractice: s.settings.includeBestPractices } };
+      return {
+        ...view,
+        tabId,
+        tabStates,
+        scanning: tabId !== null && s.scanningTabs.includes(tabId),
+        progress: null,
+        keyboardRunning: false,
+        keyboardProgress: null,
+        overlayMode: "off",
+        colorBlindness: "none",
+        picking: false,
+      };
+    }),
   setInspectable: (inspectable) => set({ inspectable }),
   setResult: (result) =>
     set((s) => {

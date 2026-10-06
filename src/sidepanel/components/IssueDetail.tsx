@@ -7,6 +7,7 @@ import { issueNumbers, matchesFilters, ruleGroupKey, useStore } from "@src/sidep
 import { sendToPage } from "@src/sidepanel/hooks/messaging";
 import { applyEvidence } from "@src/sidepanel/hooks/useBackgroundEvents";
 import { useFocusHeading } from "@src/sidepanel/hooks/useFocusHeading";
+import { BackButton } from "./BackButton";
 import { Button } from "./Button";
 import { ColorSwatch } from "./ColorSwatch";
 import { ReasonForm } from "./ReasonForm";
@@ -191,9 +192,7 @@ export function IssueDetail({ issueId, onBack, onInspect, wide = false }: Props)
   if (!issue) {
     return (
       <section className="p-3">
-        <Button onClick={onBack} size="sm">
-          ← Back
-        </Button>
+        <BackButton onClick={onBack} />
         <p className="mt-2 text-sm text-slate-700">This issue is no longer in the current result.</p>
       </section>
     );
@@ -307,9 +306,13 @@ export function IssueDetail({ issueId, onBack, onInspect, wide = false }: Props)
     <section aria-labelledby="detail-heading" className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-slate-50">
       {/* Top bar: back, position within the rule, issue number */}
       <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b border-slate-200 bg-white px-3 py-2">
-        <Button onClick={onBack} size="sm" variant="ghost" aria-label={wide ? "Close issue details" : "Back to issue list"}>
-          {wide ? "✕ Close" : "← Back"}
-        </Button>
+        {wide ? (
+          <Button onClick={onBack} size="sm" variant="ghost" aria-label="Close issue details">
+            ✕ Close
+          </Button>
+        ) : (
+          <BackButton onClick={onBack} ariaLabel="Back to issue list" />
+        )}
         {siblings.length > 1 && (
           <span className="flex items-center gap-1 text-xs text-slate-700" role="group" aria-label="Instances of this rule">
             {/* aria-disabled (not disabled) keeps the button focusable so a keyboard user stepping to the end does not lose focus. */}

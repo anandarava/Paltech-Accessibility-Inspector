@@ -4,7 +4,8 @@ import { sendToBackground } from "@shared/messages";
 import { SEVERITIES, useStore, type CompareSide } from "@src/sidepanel/store";
 import { useFocusHeading } from "@src/sidepanel/hooks/useFocusHeading";
 import { Button } from "./Button";
-import { ArrowLeftIcon, CompareIcon } from "./icons";
+import { BackButton } from "./BackButton";
+import { CompareIcon } from "./icons";
 import { SeverityLabel } from "./SeverityLabel";
 
 interface Loaded {
@@ -129,10 +130,7 @@ export function CompareView({ onBack }: { onBack(): void }) {
   return (
     <section aria-labelledby={`${id}-h`} className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       <div className="px-3 pt-3">
-        <Button size="sm" onClick={onBack} aria-label="Back to saved scans" className="bg-white">
-          <ArrowLeftIcon size={13} />
-          Back
-        </Button>
+        <BackButton onClick={onBack} ariaLabel="Back to saved scans" />
       </div>
       <div className="flex items-center gap-2.5 px-3 py-3">
         <span aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-700">

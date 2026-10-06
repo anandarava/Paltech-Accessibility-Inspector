@@ -4,7 +4,8 @@ import { useStore } from "@src/sidepanel/store";
 import { sendToPage } from "@src/sidepanel/hooks/messaging";
 import { useFocusHeading } from "@src/sidepanel/hooks/useFocusHeading";
 import { Button } from "./Button";
-import { ArrowLeftIcon, KeyboardIcon, LightbulbIcon, PlayOutlineIcon } from "./icons";
+import { BackButton } from "./BackButton";
+import { KeyboardIcon, LightbulbIcon, PlayOutlineIcon } from "./icons";
 import { EmptyState, KeyboardIllustration } from "./EmptyState";
 
 /** The recording stops after this many focus changes. */
@@ -77,10 +78,7 @@ export function KeyboardTest({ onBack }: { onBack(): void }) {
   return (
     <section aria-labelledby="keyboard-heading" className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-gradient-to-b from-blue-50/60 to-white">
       <div className="px-3 pt-3">
-        <Button onClick={onBack} size="sm" aria-label="Back to issue list" className="bg-white">
-          <ArrowLeftIcon size={13} />
-          Back
-        </Button>
+        <BackButton onClick={onBack} ariaLabel="Back to issue list" />
       </div>
 
       <div className="px-3 py-3 text-sm text-slate-800">

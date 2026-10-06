@@ -5,7 +5,7 @@ import { Button } from "./Button";
 import { useStartScan } from "./ScanButton";
 import { ScopeSelectorFields, useScopeSelector } from "./ScopeSelector";
 import { LandingIllustration } from "./EmptyState";
-import { KeyboardIcon, LightbulbIcon, MonitorIcon, PlayIcon, ClockIcon } from "./icons";
+import { KeyboardIcon, LightbulbIcon, MonitorIcon, PartOfPageIcon, PlayIcon, ClockIcon } from "./icons";
 import { SelectMenu, WCAG_LEVEL_OPTIONS, WCAG_VERSION_OPTIONS, type SelectOption } from "./SelectMenu";
 
 const SCAN_TYPE_OPTIONS: Array<SelectOption<"page" | "selector">> = [
@@ -15,7 +15,12 @@ const SCAN_TYPE_OPTIONS: Array<SelectOption<"page" | "selector">> = [
     description: "Scan everything on the page",
     leading: <MonitorIcon size={16} className="text-slate-700" />,
   },
-  { value: "selector", label: "Part of page", description: "Scan one element and its contents" },
+  {
+    value: "selector",
+    label: "Part of page",
+    description: "Scan one element and its contents",
+    leading: <PartOfPageIcon size={16} className="text-slate-700" />,
+  },
 ];
 
 /** A visible label above a full-width SelectMenu. */
@@ -102,7 +107,7 @@ export function LandingView({ getInspectedSelector }: { getInspectedSelector?():
             options={SCAN_TYPE_OPTIONS}
             triggerContent={
               <>
-                {!partial && <MonitorIcon size={16} className="text-slate-700" />}
+                {partial ? <PartOfPageIcon size={16} className="text-slate-700" /> : <MonitorIcon size={16} className="text-slate-700" />}
                 {partial ? "Part of page" : "Full page"}
               </>
             }
@@ -110,7 +115,7 @@ export function LandingView({ getInspectedSelector }: { getInspectedSelector?():
             disabled={scanning}
           />
 
-          {partial && <ScopeSelectorFields id={id} state={state} className="rounded-md bg-slate-50 p-2" />}
+          {partial && <ScopeSelectorFields state={state} className="rounded-md bg-slate-50 p-2" />}
 
           <div className="grid grid-cols-2 gap-3">
             <SelectField
@@ -174,7 +179,7 @@ export function LandingView({ getInspectedSelector }: { getInspectedSelector?():
           </Button>
           {needsSelector && (
             <p id={`${id}-need`} className="text-center text-xs text-slate-700">
-              Enter a CSS selector or pick an element to scan part of the page.
+              Pick an element on the page to scan part of it.
             </p>
           )}
         </div>

@@ -4,6 +4,7 @@ import { useActiveTab } from "./hooks/useActiveTab";
 import { useBackgroundEvents, useLastResult, useSettings } from "./hooks/useBackgroundEvents";
 import { usePanelConnection } from "./hooks/usePanelConnection";
 import { useChangeSettings } from "./hooks/useChangeSettings";
+import { BackButton } from "./components/BackButton";
 import { Button } from "./components/Button";
 import { ScanButton, ScanProgressBar, useStartScan } from "./components/ScanButton";
 import { ScopeControl } from "./components/ScopeControl";
@@ -16,13 +17,14 @@ import { IssueDetail } from "./components/IssueDetail";
 import { KeyboardTest } from "./components/KeyboardTest";
 import { SavedScans } from "./components/SavedScans";
 import { CompareView } from "./components/CompareView";
-import { OverlayMenu } from "./components/OverlayMenu";
+import { OverlayMenu, useOverlayModeSync } from "./components/OverlayMenu";
 import { ExportMenu } from "./components/ExportMenu";
 import { ResetButton } from "./components/ResetButton";
+import { SaveScanButton } from "./components/SaveScanButton";
 import { Toast } from "./components/Toast";
 import { PageChangedBanner } from "./components/PageChangedBanner";
 import { SelectMenu, WCAG_LEVEL_OPTIONS, WCAG_VERSION_OPTIONS } from "./components/SelectMenu";
-import { BookmarkIcon, ClockIcon, KeyboardIcon } from "./components/icons";
+import { BookmarkIcon, KeyboardIcon } from "./components/icons";
 
 export interface AppProps {
   /** DevTools passes chrome.devtools.inspectedWindow.tabId; the side panel resolves the active tab itself. */
@@ -74,10 +76,10 @@ export function App({ tabIdOverride, inspectable = false, onInspect, getInspecte
   const id = useId();
   useActiveTab(tabIdOverride);
   useBackgroundEvents();
-  // The real side panel (not DevTools, not a pinned-tab page) starts empty each time it is opened.
-  useLastResult(tabIdOverride === undefined);
+  useLastResult();
   useSettings();
   usePanelConnection();
+  useOverlayModeSync();
 
   const tabId = useStore((s) => s.tabId);
   const view = useStore((s) => s.view);
@@ -136,9 +138,7 @@ export function App({ tabIdOverride, inspectable = false, onInspect, getInspecte
       {wide ? (
         <p className="text-sm text-slate-700">Select an issue to see its details, the element and how to fix it.</p>
       ) : (
-        <Button size="sm" onClick={backToList}>
-          ← Back
-        </Button>
+        <BackButton onClick={backToList} />
       )}
     </div>
   );
@@ -147,49 +147,52 @@ export function App({ tabIdOverride, inspectable = false, onInspect, getInspecte
     <div ref={rootRef} className="relative flex h-full flex-col overflow-hidden bg-white text-slate-900">
       <header className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-3 py-2">
         <h1 className="text-base font-bold">PalTech A11y Inspector</h1>
-        <div className="flex flex-wrap items-center gap-x-1 gap-y-1">
-          <span id={`${id}-version-lbl`} className="text-xs text-slate-700">
-            WCAG
-          </span>
-          <SelectMenu
-            id={`${id}-version`}
-            label="WCAG version"
-            labelledBy={`${id}-version-lbl`}
-            value={settings.wcagVersion}
-            options={WCAG_VERSION_OPTIONS}
-            onChange={(v) => void changeSettings({ wcagVersion: v }, "WCAG version")}
-            disabled={scanning}
-            align="right"
-          />
-          <SelectMenu
-            id={`${id}-level`}
-            label="Conformance level"
-            value={settings.wcagLevel}
-            options={WCAG_LEVEL_OPTIONS}
-            triggerContent={`Level ${settings.wcagLevel}`}
-            onChange={(v) => void changeSettings({ wcagLevel: v }, "WCAG level")}
-            disabled={scanning}
-            align="right"
-          />
-          <label className="ml-1 flex items-center gap-1 whitespace-nowrap text-xs text-slate-700" title="Include best-practice rules in scans">
-            <input
-              type="checkbox"
-              checked={settings.includeBestPractices}
-              onChange={(e) => void changeSettings({ includeBestPractices: e.target.checked }, "best-practice setting")}
+        {/* The landing view has the same settings in its card; the header shows them with the results. */}
+        {!landing && (
+          <div className="flex flex-wrap items-center gap-x-1 gap-y-1">
+            <span id={`${id}-version-lbl`} className="text-xs text-slate-700">
+              WCAG
+            </span>
+            <SelectMenu
+              id={`${id}-version`}
+              label="WCAG version"
+              labelledBy={`${id}-version-lbl`}
+              value={settings.wcagVersion}
+              options={WCAG_VERSION_OPTIONS}
+              onChange={(v) => void changeSettings({ wcagVersion: v }, "WCAG version")}
               disabled={scanning}
+              align="right"
             />
-            Best practices
-          </label>
-          <label className="ml-1 flex items-center gap-1 whitespace-nowrap text-xs text-slate-700" title="Run only axe-core rules, for results comparable with axe DevTools">
-            <input
-              type="checkbox"
-              checked={settings.axeOnly}
-              onChange={(e) => void changeSettings({ axeOnly: e.target.checked }, "axe-core only setting")}
+            <SelectMenu
+              id={`${id}-level`}
+              label="Conformance level"
+              value={settings.wcagLevel}
+              options={WCAG_LEVEL_OPTIONS}
+              triggerContent={`Level ${settings.wcagLevel}`}
+              onChange={(v) => void changeSettings({ wcagLevel: v }, "WCAG level")}
               disabled={scanning}
+              align="right"
             />
-            axe-core only
-          </label>
-        </div>
+            <label className="ml-1 flex items-center gap-1 whitespace-nowrap text-xs text-slate-700" title="Include best-practice rules in scans">
+              <input
+                type="checkbox"
+                checked={settings.includeBestPractices}
+                onChange={(e) => void changeSettings({ includeBestPractices: e.target.checked }, "best-practice setting")}
+                disabled={scanning}
+              />
+              Best practices
+            </label>
+            <label className="ml-1 flex items-center gap-1 whitespace-nowrap text-xs text-slate-700" title="Run only axe-core rules, for results comparable with axe DevTools">
+              <input
+                type="checkbox"
+                checked={settings.axeOnly}
+                onChange={(e) => void changeSettings({ axeOnly: e.target.checked }, "axe-core only setting")}
+                disabled={scanning}
+              />
+              axe-core only
+            </label>
+          </div>
+        )}
       </header>
 
       <SavedBanner />
@@ -211,7 +214,7 @@ export function App({ tabIdOverride, inspectable = false, onInspect, getInspecte
           <KeyboardIcon /> Keyboard test
         </Button>
         <Button onClick={() => setView("saved")} aria-pressed={view === "saved" || view === "compare"} size="action" className="flex-1 basis-[5.5rem] whitespace-normal leading-tight">
-          <BookmarkIcon /> Saved
+          <BookmarkIcon /> Saved Scans
         </Button>
         <OverlayMenu />
       </nav>
@@ -236,14 +239,9 @@ export function App({ tabIdOverride, inspectable = false, onInspect, getInspecte
       {/* The single-column issue view has its own action bar; the scan bar returns with the list. */}
       {!landing && resultsView && (wide || view === "list") && (
         <footer className="sticky bottom-0 flex shrink-0 flex-wrap items-center gap-1.5 border-t border-slate-200 bg-white px-3 py-2">
-          {!readOnly && (
-            <Button variant="ghost" size="action" onClick={() => setView("saved")} disabled={!result}>
-              <ClockIcon /> Saved scans
-            </Button>
-          )}
+          {!readOnly && <SaveScanButton />}
           <ResetButton />
           <span className="flex-1" />
-          <ScanButton icon="refresh" className="" />
           <ExportMenu />
         </footer>
       )}

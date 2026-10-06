@@ -1,7 +1,8 @@
 import { useId } from "react";
 import { useStore } from "@src/sidepanel/store";
 import { Popover } from "./Popover";
-import { ScopeIcon } from "./icons";
+import { RadioRow } from "./RadioRow";
+import { MonitorIcon, PartOfPageIcon } from "./icons";
 import { ScopeSelectorFields, useScopeSelector } from "./ScopeSelector";
 
 interface Props {
@@ -25,27 +26,26 @@ export function ScopeControl({ getInspectedSelector }: Props) {
 
   return (
     <Popover
-      label={<><ScopeIcon /> {label}</>}
+      label={<>{scope.kind === "page" ? <MonitorIcon size={14} /> : <PartOfPageIcon size={14} />} {label}</>}
       ariaLabel={`Scan scope: ${label}. Change scope`}
       align="left"
       disabled={tabId === null}
       className="flex-1 basis-[5.5rem]"
       wrap="whitespace-normal"
+      panelClassName="w-72 max-w-[calc(100vw-1.5rem)] rounded-xl border border-slate-300 p-3"
     >
-      <fieldset className="w-72" disabled={scanning}>
-        <legend className="mb-1 text-xs font-semibold text-slate-800">What to scan</legend>
-        <label className="flex items-center gap-2 py-0.5 text-sm text-slate-800">
-          <input type="radio" name={`${id}-scope`} checked={scope.kind === "page"} onChange={() => setScope({ kind: "page" })} />
-          Full page
-        </label>
-        <label className="flex items-center gap-2 py-0.5 text-sm text-slate-800">
-          <input type="radio" name={`${id}-scope`} checked={scope.kind === "selector"} onChange={choosePart} />
-          Part of page
-        </label>
-
-        {/* Choosing what to scan only matters for "Part of page". */}
-        {scope.kind === "selector" && <ScopeSelectorFields id={id} state={state} className="mt-2 border-t border-slate-200 pt-2" />}
+      <fieldset className="m-0 min-w-0 border-0 p-0" disabled={scanning}>
+        <legend className="mb-1.5 p-0 text-[11px] font-semibold tracking-wide text-slate-600 uppercase">What to scan</legend>
+        <RadioRow name={`${id}-scope`} checked={scope.kind === "page"} onChange={() => setScope({ kind: "page" })} title="Full page" hint="Everything currently rendered" />
+        <RadioRow name={`${id}-scope`} checked={scope.kind === "selector"} onChange={choosePart} title="Part of page" hint="One region or component" />
       </fieldset>
+
+      {/* Choosing what to scan only matters for "Part of page". */}
+      {scope.kind === "selector" && (
+        <fieldset className="m-0 min-w-0 border-0 p-0" disabled={scanning}>
+          <ScopeSelectorFields state={state} className="mt-2 border-t border-slate-200 pt-3" />
+        </fieldset>
+      )}
     </Popover>
   );
 }

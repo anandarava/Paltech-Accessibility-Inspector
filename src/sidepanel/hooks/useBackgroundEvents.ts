@@ -5,7 +5,6 @@ import { isBestPracticeIssue, matchesFilters, matchesTab, ruleGroupKey, useStore
 
 /** Window event fired in the panel when the on-page picker returns a selector (ScopeControl starts the scan). */
 export const PICKED_EVENT = "a11y-checker:picked";
-import { startFresh } from "./freshStart";
 import { refreshSettings, restoreLastResult } from "./messaging";
 
 /**
@@ -165,21 +164,16 @@ function revealIssue(issue: Issue): string {
   return changes.length ? `${changes.join(" and ").replace(/^./, (c) => c.toUpperCase())}.` : "";
 }
 
-/** On mount and whenever the tab changes: reset per-tab state and restore the last result. */
-export function useLastResult(freshStart = false): void {
+/**
+ * On mount and whenever the tab changes: load the tab's last scan. The rest of the tab's view state
+ * (filters, open view, scope...) is swapped by the store's setTabId, so each tab keeps its own.
+ */
+export function useLastResult(): void {
   const tabId = useStore((s) => s.tabId);
   useEffect(() => {
-    useStore.getState().resetForTab();
     if (tabId === null) return;
-    let cancelled = false;
-    // A freshly opened panel starts empty: the previous session's results are dropped before anything is restored.
-    void startFresh(freshStart).then(() => {
-      if (!cancelled) void restoreLastResult(tabId);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [tabId, freshStart]);
+    void restoreLastResult(tabId);
+  }, [tabId]);
 }
 
 /** Fetch settings once on mount. */

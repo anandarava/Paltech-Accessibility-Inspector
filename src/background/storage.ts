@@ -671,34 +671,6 @@ export function clearScanOptions(tabId: number): Promise<void> {
   return sessionRemove(scanOptionsKey(tabId));
 }
 
-/**
- * Drop the stored scan result, evidence and scan options of every tab (session storage only:
- * saved scans, baselines and settings are untouched). Returns the tab ids that had data.
- */
-export async function clearAllTabData(): Promise<number[]> {
-  const items = await new Promise<Record<string, unknown>>((resolve, reject) => {
-    try {
-      sessionArea().get(null, (all) => {
-        const err = chrome.runtime.lastError;
-        if (err) reject(new Error(err.message));
-        else resolve((all ?? {}) as Record<string, unknown>);
-      });
-    } catch (e) {
-      reject(e instanceof Error ? e : new Error(String(e)));
-    }
-  });
-  const tabIds = new Set<number>();
-  for (const key of Object.keys(items)) {
-    const m = /^(?:lastResult|scanOptions):(\d+)$/.exec(key);
-    if (m) tabIds.add(Number(m[1]));
-  }
-  for (const tabId of tabIds) {
-    await clearLastResult(tabId).catch(() => undefined);
-    await clearScanOptions(tabId).catch(() => undefined);
-  }
-  return [...tabIds];
-}
-
 export async function clearLastResult(tabId: number): Promise<void> {
   await sessionRemove(STORAGE_KEYS.lastResult(tabId));
   await withEvidenceLock(async () => {
