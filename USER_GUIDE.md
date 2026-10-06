@@ -116,6 +116,19 @@ Choose what to scan and which rules apply. The settings are the same on the land
 - **Best practices.** Includes recommendations. They count toward the totals but never trigger the *Not conformant* label.
 - **axe-core only.** Skips the extension's own rules and uses axe's own contrast and target-size checks, so results line up with axe DevTools at the same version and level.
 
+**What runs for each combination**
+
+The **Best practices** and **axe-core only** checkboxes together decide which groups of rules run. Pick the row that matches your goal.
+
+| Best practices | axe-core only | axe-core WCAG rules | axe-core best-practice rules | Advanced rules | Use it for |
+| :---: | :---: | :---: | :---: | :---: | --- |
+| ✗ | ✗ | ✓ | ✗ | ✓ | Client WCAG compliance report |
+| ✓ | ✗ | ✓ | ✓ | ✓ | Most thorough QA testing (default) |
+| ✗ | ✓ | ✓ | ✗ | ✗ | Strict axe-core WCAG check only |
+| ✓ | ✓ | ✓ | ✓ | ✗ | Matching axe DevTools results |
+
+*Advanced rules* are the extension's own checks (the ones counted under "advanced" in the results summary). *axe-core best-practice rules* are axe's recommendations that are not WCAG failures.
+
 The reflow check (content at 320 CSS pixels wide) only runs when the browser window is 320 pixels wide or narrower. Narrow the window or zoom to 400 percent before scanning to include it.
 
 ## 7. Overlay and colour-blindness simulation
