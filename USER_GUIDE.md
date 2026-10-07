@@ -195,6 +195,8 @@ Use **Export** in the footer to download the current scan.
 
 The HTML report has two parts. **Part 1** is a plain-language summary for team leads and clients: the verdict, the score, the severity breakdown, the problems to fix first, who is affected, what was tested and the limits of automated testing. **Part 2** is for developers: every affected element with its measurements, a fix, the selector, the HTML and the screenshot.
 
+**Filter by severity.** At the start of Part 2 of the HTML report, a **Show severity** row has one button per severity that occurs in the report (for example *Critical 4*, *Moderate 2*). All are on when you open the report. Click a button, or tab to it and press Space, to hide or show that severity. The *Failed rules* table, the rule cards and the individual elements follow your choice, and a notice appears if you switch every severity off. The filter works in any browser without scripts, and applies if you print the report. The summary in Part 1 always shows the full totals.
+
 The organisation name and the *Prepared by* line shown on the report are set in the Options page.
 
 ## 11. Options page
