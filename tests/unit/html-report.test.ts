@@ -101,3 +101,38 @@ describe("buildHtmlReport", () => {
     expect(html).toContain("Acme &lt;Ltd&gt;");
   });
 });
+
+describe("severity filter in the developer details", () => {
+  const mixed = [
+    makeIssue({ ruleId: "IMG-01", title: "Missing alt", severity: "Critical" }),
+    makeIssue({ ruleId: "IMG-01", title: "Missing alt", severity: "Critical" }),
+    makeIssue({ ruleId: "CLR-01", title: "Text contrast", severity: "Moderate" }),
+  ];
+
+  it("has one toggle per severity that occurs, all ticked, and tags rules and elements", () => {
+    const html = buildHtmlReport(makeScanResult({ issues: mixed }));
+    expect(html).toContain('class="devfilter"');
+    expect(html).toContain('<input type="checkbox" class="sr-only" id="f-Critical" checked>');
+    expect(html).toContain('<input type="checkbox" class="sr-only" id="f-Moderate" checked>');
+    expect(html).not.toContain('id="f-Serious"');
+    expect(html).not.toContain('id="f-Minor"');
+    expect(html).toContain('<label for="f-Critical" class="fchip">');
+    expect(html.match(/<li class="inst" data-sev="Critical">/g)).toHaveLength(2);
+    expect(html.match(/<li class="inst" data-sev="Moderate">/g)).toHaveLength(1);
+    expect(html).toContain('<article id="rule-img-01');
+    expect(html).toMatch(/<article id="rule-img-01[^>]*data-sevs="Critical"/);
+    expect(html).toMatch(/<tr data-sevs="Moderate">/);
+  });
+
+  it("keeps the report script-free and shows a notice only when no severity is ticked", () => {
+    const html = buildHtmlReport(makeScanResult({ issues: mixed }));
+    expect(html).not.toMatch(/<script/i);
+    expect(html).toContain("#f-Critical:not(:checked)~#f-Moderate:not(:checked)~.nothing{display:block}");
+  });
+
+  it("shows no filter when every issue has the same severity", () => {
+    const html = buildHtmlReport(makeScanResult({ issues: [mixed[0], mixed[1]] }));
+    expect(html).not.toContain('class="devfilter"');
+    expect(html).not.toContain('type="checkbox"');
+  });
+});
