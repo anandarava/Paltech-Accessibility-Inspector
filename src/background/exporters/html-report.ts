@@ -19,6 +19,8 @@ import { effectivePassedRules } from "@shared/scoring";
 import { wcagDocsUrl } from "@shared/wcag-map";
 import { contrastRatio, parseColor, suggestPassingColor, toHex, type RGB } from "@shared/color";
 import { toolInfo } from "./json-report";
+import { REPORT_SCRIPT } from "./report-script";
+import { sha256Base64 } from "./sha256";
 import { guidanceFor, SEVERITY_MEANING, type AffectedUsers, type Effort, type RuleGuidance } from "./report-guidance";
 
 /** Optional details about who produced the report, shown on the cover. */
@@ -588,31 +590,44 @@ ${tech}
 }
 
 /** The distinct severities of a rule's elements, space separated (matched by the severity filter in CSS). */
+/** Elements shown before the rest of a long list folds into "Show N more". */
+const SHOWN_ELEMENTS = 5;
+
 function severitiesOf(group: RuleGroup): string {
   return SEVERITY_ORDER.filter((s) => group.issues.some((i) => i.severity === s)).join(" ");
 }
 
 /**
- * Severity filter for Part 2, done in HTML and CSS only (the report stays script-free): one hidden
- * checkbox per severity that occurs, styled labels as toggle chips, and sibling selectors that show
- * the rules, table rows and elements of the ticked severities. Not rendered when everything has the
- * same severity, since there is nothing to filter.
+ * Toolbar and wrapper for Part 2. The severity filter is plain HTML and CSS (one hidden checkbox per
+ * severity that occurs, label chips, sibling selectors), so it works without scripts. A small inline
+ * script, pinned in the page's Content-Security-Policy, adds search, a live count and expand / collapse
+ * buttons; those controls stay hidden when scripts are off. The severity chips are only rendered when
+ * more than one severity occurs.
  */
-function renderSeverityFilter(counts: Record<Severity, number>, body: string): string {
+function renderDeveloperTools(counts: Record<Severity, number>, body: string, hasIssues: boolean): string {
+  if (!hasIssues) return body;
   const present = SEVERITY_ORDER.filter((s) => counts[s] > 0);
-  if (present.length < 2) return body;
-  const inputs = present.map((s) => `<input type="checkbox" class="sr-only" id="f-${s}" checked>`).join("");
-  const chips = present
-    .map(
-      (s) =>
-        `<label for="f-${s}" class="fchip"><span class="dot" style="background:${SEVERITY_COLOR[s]}" aria-hidden="true"></span>${s} <b>${counts[s]}</b></label>`,
-    )
-    .join("");
+  const filterable = present.length >= 2;
+  const inputs = filterable ? present.map((s) => `<input type="checkbox" class="sr-only" id="f-${s}" checked>`).join("") : "";
+  const chips = filterable
+    ? `<div class="filterbar" role="group" aria-labelledby="f-title"><span id="f-title" class="label">Show severity</span>${present
+        .map(
+          (s) =>
+            `<label for="f-${s}" class="fchip"><span class="dot" style="background:${SEVERITY_COLOR[s]}" aria-hidden="true"></span>${s} <b>${counts[s]}</b></label>`,
+        )
+        .join("")}<span class="muted small">Untick a severity to hide it.</span></div>`
+    : "";
   // Shown only when every severity input is unticked (the sibling chain matches only then).
-  const noneTicked = `<style>${present.map((s) => `#f-${s}:not(:checked)`).join("~")}~.nothing{display:block}</style>`;
-  return `<div class="devfilter">${inputs}${noneTicked}
-<div class="filterbar" role="group" aria-labelledby="f-title"><span id="f-title" class="label">Show severity</span>${chips}<span class="muted small">Untick a severity to hide its problems and elements below.</span></div>
+  const noneTicked = filterable ? `<style>${present.map((s) => `#f-${s}:not(:checked)`).join("~")}~.nothing{display:block}</style>` : "";
+  const tools = `<div class="tools js-only">
+<label class="sr-only" for="q">Search the problems and elements</label><input id="q" type="search" placeholder="Search problems, elements or code…" autocomplete="off">
+${filterable ? `<button type="button" id="showall">Show all</button>` : ""}<button type="button" id="expand">Expand all</button><button type="button" id="collapse">Collapse all</button>
+<span id="count" class="small muted" role="status" aria-live="polite"></span>
+</div>`;
+  return `<div class="devfilter${filterable ? " has-sev" : ""}">${inputs}${noneTicked}
+<div class="toolbar">${chips}${tools}</div>
 <p class="nothing" role="status">No severity is selected. Tick at least one to see the problems.</p>
+<p id="nomatch" class="nothing-js" role="status" hidden>No problems match your search.</p>
 <div class="devbody">${body}</div>
 </div>`;
 }
@@ -625,6 +640,12 @@ function renderRuleDetails(group: RuleGroup): string {
   const docs = docsHref ? `<p class="small"><a href="${escapeHtml(docsHref)}" rel="noopener noreferrer">Learn more about this requirement</a></p>` : "";
   const shared = sharedAdviceOf(group);
   const n = group.issues.length;
+  const rendered = group.issues.map((issue, i) => renderInstance(issue, i + 1, n, group, shared));
+  const instancesHtml =
+    rendered.length <= SHOWN_ELEMENTS
+      ? `<ol class="instances" aria-label="Affected elements">${rendered.join("")}</ol>`
+      : `<ol class="instances" aria-label="Affected elements">${rendered.slice(0, SHOWN_ELEMENTS).join("")}</ol>
+<details class="more"><summary>Show ${plural(rendered.length - SHOWN_ELEMENTS, "more element")}</summary><ol class="instances" aria-label="More affected elements" start="${SHOWN_ELEMENTS + 1}">${rendered.slice(SHOWN_ELEMENTS).join("")}</ol></details>`;
   const technicalTitle = group.title !== g.headline ? `<p class="rule-sub">${escapeHtml(group.title)}</p>` : "";
   return `<article id="${groupId(group)}" class="rule" data-sevs="${severitiesOf(group)}" style="--c:${groupColor(group)}" aria-labelledby="${groupId(group)}-h">
 <header class="rule-h">
@@ -633,12 +654,15 @@ function renderRuleDetails(group: RuleGroup): string {
 ${technicalTitle}
 <p class="rule-meta">${severityBadge(group.severity, bp)} <span class="muted">${escapeHtml(SEVERITY_MEANING[group.severity])}</span> · <b>${plural(n, "element")}</b> · ${effortChip(g.effort)}</p>
 </header>
+<details class="rulebody" open><summary>Why it matters, how to fix it and the affected elements</summary>
 <div class="rule-info">
 <div class="info"><h4>Why it matters</h4><p>${escapeHtml(g.impact)}</p>${userChips(g.users)}</div>
 <div class="info info-fix"><h4>How to fix</h4><p>${escapeHtml(g.fix)}</p>${shared ? `<p class="small"><b>For every element below:</b> ${escapeHtml(shared)}</p>` : ""}${docs}</div>
 </div>
 ${patternNote(group)}
-<ol class="instances" aria-label="Affected elements">${group.issues.map((issue, i) => renderInstance(issue, i + 1, n, group, shared)).join("")}</ol>
+${instancesHtml}
+</details>
+<p class="totop"><a href="#top">Back to top</a></p>
 </article>`;
 }
 
@@ -774,17 +798,28 @@ function renderAffected(groups: RuleGroup[]): string {
 
 /** Rules for the severity filter: hide every element, then show those whose severity is ticked. */
 const FILTER_CSS = [
-  `.devfilter>.devbody [data-sevs],.devfilter>.devbody [data-sev]{display:none}`,
-  `.filterbar{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;margin:1rem 0}`,
+  `.devfilter.has-sev>.devbody [data-sevs],.devfilter.has-sev>.devbody [data-sev]{display:none}`,
+  `.filterbar{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem}`,
+  `.toolbar{position:sticky;top:2.9rem;z-index:15;display:grid;gap:.6rem;margin:.8rem 0;padding:.6rem 0;background:var(--bg);border-bottom:1px solid var(--line)}`,
+  `.tools{display:none;flex-wrap:wrap;align-items:center;gap:.5rem}html.js .tools{display:flex}`,
+  `.tools input[type=search]{flex:1 1 15rem;min-width:10rem;padding:.45rem .75rem;border:2px solid var(--muted);border-radius:8px;font:inherit;background:#fff;color:var(--ink)}`,
+  `.tools input[type=search]:focus-visible,.tools button:focus-visible,details>summary:focus-visible{outline:3px solid var(--focus);outline-offset:2px}`,
+  `.tools button{border:2px solid var(--muted);border-radius:8px;background:#fff;color:var(--ink);font:inherit;font-weight:600;padding:.35rem .8rem;cursor:pointer}.tools button:hover{background:#e8eefc}`,
+  `.s-hide{display:none!important}.nothing-js{margin:.5rem 0;padding:.8rem 1rem;border:1px solid var(--line);border-radius:10px;background:var(--card)}`,
+  `details.rulebody>summary,details.more>summary{cursor:pointer;font-weight:600;color:var(--link);padding:.4rem 0}`,
+  `.totop{margin:.7rem 0 0;text-align:right;font-size:.85rem}`,
+  `.toc{position:sticky;top:0;z-index:20}`,
+  `@media (max-width:44rem){.toc{position:static}.toolbar{top:0}.fchip{font-size:.95rem;padding:.35rem .9rem}body{font-size:16px}}`,
+  `@media print{.toolbar,.totop{display:none}}`,
   `.fchip{display:inline-flex;align-items:center;gap:.4rem;border:2px solid var(--muted);border-radius:999px;padding:.2rem .8rem;background:#fff;color:var(--muted);font-weight:600;font-size:.88rem;cursor:pointer;text-decoration:line-through}`,
   `.fchip .dot{opacity:.45}`,
   `.nothing{display:none;margin:.5rem 0;padding:.8rem 1rem;border:1px solid var(--line);border-radius:10px;background:var(--card)}`,
   ...SEVERITY_ORDER.map(
     (s) =>
       `#f-${s}:checked~.devbody [data-sevs~="${s}"],#f-${s}:checked~.devbody [data-sev="${s}"]{display:revert}` +
-      `#f-${s}:checked~.filterbar label[for="f-${s}"]{background:#e8eefc;border-color:var(--accent);color:var(--ink);text-decoration:none}` +
-      `#f-${s}:checked~.filterbar label[for="f-${s}"] .dot{opacity:1}` +
-      `#f-${s}:focus-visible~.filterbar label[for="f-${s}"]{outline:3px solid var(--focus);outline-offset:2px}`,
+      `#f-${s}:checked~.toolbar label[for="f-${s}"]{background:#e8eefc;border-color:var(--accent);color:var(--ink);text-decoration:none}` +
+      `#f-${s}:checked~.toolbar label[for="f-${s}"] .dot{opacity:1}` +
+      `#f-${s}:focus-visible~.toolbar label[for="f-${s}"]{outline:3px solid var(--focus);outline-offset:2px}`,
   ),
 ].join("\n");
 
@@ -995,11 +1030,11 @@ ${unscanned.length ? `<details open><summary>${plural(unscanned.length, "frame")
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'sha256-${sha256Base64(REPORT_SCRIPT)}'; base-uri 'none'; form-action 'none'">
 <title>Accessibility report: ${escapeHtml(pageTitle)}</title>
 <style>${CSS}</style>
 </head>
-<body>
+<body id="top">
 <a class="skip" href="#main">Skip to report</a>
 <header class="cover"><div class="wrap">
 <div class="brand">${logo ? `<img src="${logo}" alt="">` : ""}<div><h1>Accessibility report</h1><p class="page">${escapeHtml(pageTitle)} · ${urlHtml}</p></div></div>
@@ -1053,11 +1088,11 @@ ${renderAffected(groups) || ""}
 </div>
 
 <div class="part" id="part-dev"><h2>Part 2 · Developer details</h2><span>Everything needed to find and fix each issue</span></div>
-<p class="intro">Each problem below explains why it matters and how to fix it, then lists every affected element with its own measurements, suggested fix, code location and HTML.</p>
+<p class="intro">Each problem below explains why it matters and how to fix it, then lists every affected element with its measurements, suggested fix, code location and HTML. Use the severity buttons and the search box to focus on what you need; open or close a problem with its heading.</p>
 
-${renderSeverityFilter(counts, `${renderFailedRulesTable(groups)}
+${renderDeveloperTools(counts, `${renderFailedRulesTable(groups)}
 
-${detailsHtml}`)}
+${detailsHtml}`, groups.length > 0)}
 
 ${renderExcluded(excluded)}
 
@@ -1084,6 +1119,7 @@ ${result.environment ? `<tr><th scope="row">Environment</th><td>${escapeHtml(res
     preparedBy ? `, prepared by ${escapeHtml(preparedBy)}` : ""
   }. The score is a trend indicator, not a compliance certificate.</p></footer>
 </main>
+<script>${REPORT_SCRIPT}</script>
 </body>
 </html>
 `;

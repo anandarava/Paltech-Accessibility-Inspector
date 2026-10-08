@@ -195,43 +195,11 @@ Use **Export** in the footer to download the current scan.
 
 The HTML report has two parts. **Part 1** is a plain-language summary for team leads and clients: the verdict, the score, the severity breakdown, the problems to fix first, who is affected, what was tested and the limits of automated testing. **Part 2** is for developers: every affected element with its measurements, a fix, the selector, the HTML and the screenshot.
 
-**Filter by severity.** At the start of Part 2 of the HTML report, a **Show severity** row has one button per severity that occurs in the report (for example *Critical 4*, *Moderate 2*). All are on when you open the report. Click a button, or tab to it and press Space, to hide or show that severity. The *Failed rules* table, the rule cards and the individual elements follow your choice, and a notice appears if you switch every severity off. The filter works in any browser without scripts, and applies if you print the report. The summary in Part 1 always shows the full totals.
+**Find what you need in the report.** The navigation bar at the top and a toolbar at the start of Part 2 stay on screen while you scroll.
 
-The organisation name and the *Prepared by* line shown on the report are set in the Options page.
+- **Show severity.** One button per severity that occurs (for example *Critical 4*, *Moderate 2*). All are on when you open the report. Click one, or tab to it and press Space, to hide or show that severity. The *Failed rules* table, the rule cards and the individual elements follow your choice. *Show all* switches every severity back on.
+- **Search.** Type a word to show only the problems and elements that contain it: a rule name, a selector or a piece of HTML. Press Esc in the box to clear it. A live count shows how many elements are visible.
+- **Expand and collapse.** Each problem opens and closes with its heading. *Expand all* and *Collapse all* do every problem at once. A problem with more than five elements shows the first five and a *Show N more elements* line.
+- **Back to top.** Each problem ends with a link back to the top of the report.
 
-## 11. Options page
-
-The Options page holds what applies to every scan and report.
-
-- **General settings.** Defaults such as WCAG version and level, best practices and axe-core only.
-- **Rules.** Turn rules on or off and adjust thresholds. The rule filter on this page does not save the form when you press Enter.
-- **Baselines and ignore lists.** Lists per site, with the reason and author of each entry. Remove single entries or all of them for a site.
-- **Report details.** The organisation and *Prepared by* shown on exported reports.
-- **Import and export.** Export your baseline, ignore list and rule configuration as a JSON file, and import one. The export contains the saved configuration, not unsaved edits. Imports are checked: unknown rules are dropped and thresholds are kept within their allowed ranges.
-
-Changes are saved with the **Save** button. Settings changed in the side panel are not overwritten when you save here.
-
-## 12. Limits and troubleshooting
-
-**What the tool cannot do**
-
-- It finds roughly 30 to 40 percent of accessibility problems. Test with a keyboard and a screen reader (NVDA, JAWS, VoiceOver or TalkBack) as well.
-- It cannot judge whether alt text, labels or instructions are accurate. It catches obvious patterns such as filenames and generic words.
-- Contrast over images, gradients and video cannot be decided automatically, so those cases are not reported.
-- Content in cross-origin iframes may not be scanned. Such frames are listed as not scanned.
-- Canvas content (charts, games) cannot be inspected.
-- Issues that only appear after an interaction (hover menus, error messages, later views of a single-page app) are found only if you trigger that state before scanning.
-
-**Common questions**
-
-| Problem | What to do |
-| --- | --- |
-| The panel says it cannot scan the page | Chrome pages, the Web Store and some other pages are off limits. Open a normal web page and try again. |
-| Results look out of date | Press **Rescan page**. A *Page changed* banner appears when the page has changed since the scan. |
-| An element's outline does not show | Use **View element**. If the element is gone, the page has changed: rescan. |
-| Screenshots in the report are missing | Keep the tab visible and active while the report builds. The page scrolls during capture. |
-| A count differs from axe DevTools | Tick **axe-core only** and use the same WCAG version and level. |
-| Cursor or layout looks wrong after an update | Reload the extension on `chrome://extensions` and reload the page. |
-| You want to start over on a tab | Press **Reset** in the footer. |
-
-**Privacy.** Scanning runs entirely in your browser and the extension makes no network requests of its own. Screenshots are taken only when you ask for them, input values are masked and elements matching your redaction selectors (by default password fields and `.pii`) are blurred before an image is stored.
+The severity filter works with no script at all. Search, the count, *Show all* and the expand and collapse buttons need the small script inside the report, which is the only script allowed to run. Part 1, the summary, always shows the full totals, and the toolbar is left out when you print.

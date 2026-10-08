@@ -36,5 +36,7 @@ export default defineConfig({
   projects: [
     { name: "extension", testDir: "./tests/e2e", testMatch: "**/*.spec.ts" },
     { name: "ci-parity", testDir: "./ci", testMatch: "**/*.spec.ts" },
+    // Monkey test: skips itself unless started with `npm run test:monkey` (MONKEY_RUN=1).
+    { name: "monkey", testDir: "./tests/monkey", testMatch: "**/*.spec.ts" },
   ],
 });

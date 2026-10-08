@@ -1,12 +1,20 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { buildHtmlReport } from "@src/background/exporters/html-report";
 import { makeIssue, makeScanResult } from "./support/factories";
 
 describe("buildHtmlReport", () => {
-  it("is a self-contained page: CSP, no scripts, no external resources", () => {
-    const html = buildHtmlReport(makeScanResult());
+  it("is a self-contained page: CSP, one hash-pinned inline script, no external resources", () => {
+    const html = buildHtmlReport(makeScanResult({ issues: [makeIssue()] }));
     expect(html).toContain('http-equiv="Content-Security-Policy"');
-    expect(html).not.toMatch(/<script/i);
+    expect(html).toContain("default-src 'none'");
+    const scripts = html.match(/<script[^>]*>[\s\S]*?<\/script>/gi) ?? [];
+    expect(scripts).toHaveLength(1);
+    expect(scripts[0]).toMatch(/^<script>/);
+    const body = (scripts[0] ?? "").slice("<script>".length, -"</script>".length);
+    expect(html).toContain(`script-src 'sha256-${createHash("sha256").update(body).digest("base64")}'`);
+    expect(html).not.toMatch(/\son[a-z]+=/i);
+    expect(html).not.toMatch(/<script[^>]+src=/i);
     expect(html).not.toMatch(/<link[^>]+stylesheet/i);
     expect(html).not.toMatch(/src="https?:/i);
   });
@@ -111,7 +119,7 @@ describe("severity filter in the developer details", () => {
 
   it("has one toggle per severity that occurs, all ticked, and tags rules and elements", () => {
     const html = buildHtmlReport(makeScanResult({ issues: mixed }));
-    expect(html).toContain('class="devfilter"');
+    expect(html).toContain('class="devfilter has-sev"');
     expect(html).toContain('<input type="checkbox" class="sr-only" id="f-Critical" checked>');
     expect(html).toContain('<input type="checkbox" class="sr-only" id="f-Moderate" checked>');
     expect(html).not.toContain('id="f-Serious"');
@@ -124,15 +132,31 @@ describe("severity filter in the developer details", () => {
     expect(html).toMatch(/<tr data-sevs="Moderate">/);
   });
 
-  it("keeps the report script-free and shows a notice only when no severity is ticked", () => {
+  it("shows a notice only when no severity is ticked", () => {
     const html = buildHtmlReport(makeScanResult({ issues: mixed }));
-    expect(html).not.toMatch(/<script/i);
     expect(html).toContain("#f-Critical:not(:checked)~#f-Moderate:not(:checked)~.nothing{display:block}");
   });
 
-  it("shows no filter when every issue has the same severity", () => {
+  it("shows no severity buttons when every issue has the same severity, but still has search", () => {
     const html = buildHtmlReport(makeScanResult({ issues: [mixed[0], mixed[1]] }));
-    expect(html).not.toContain('class="devfilter"');
-    expect(html).not.toContain('type="checkbox"');
+    expect(html).not.toContain('class="devfilter has-sev"');
+    expect(html).not.toContain('class="sr-only" id="f-');
+    expect(html).toContain('id="q" type="search"');
+  });
+
+  it("folds long element lists and makes each rule collapsible with a way back to the top", () => {
+    const many = Array.from({ length: 8 }, () => makeIssue({ ruleId: "IMG-01", title: "Missing alt", severity: "Critical" }));
+    const html = buildHtmlReport(makeScanResult({ issues: many }));
+    expect(html).toContain('<details class="rulebody" open>');
+    expect(html).toContain("Show 3 more elements");
+    expect(html).toContain('<ol class="instances" aria-label="More affected elements" start="6">');
+    expect(html).toContain('<a href="#top">Back to top</a>');
+    expect(html).toContain('<body id="top">');
+    expect(html.match(/<li class="inst"/g)).toHaveLength(8);
+  });
+
+  it("does not render the tools when there are no issues", () => {
+    const html = buildHtmlReport(makeScanResult({ issues: [] }));
+    expect(html).not.toContain('class="devfilter');
   });
 });

@@ -181,6 +181,60 @@ Playwright's default headless shell cannot load extensions; the test uses the
 window. If you see "chromium distribution not found", run
 `npx playwright install chromium`.
 
+### Monkey test
+
+`tests/monkey/monkey.spec.ts` drives a page with seeded random user actions while the built extension is
+loaded, then reports keyboard problems, page errors and accessibility issues that appeared during the run.
+
+```bash
+npm run build
+npm run test:monkey -- --url keyboard-trap --seed 42     # example: finds the planted trap in fixtures/keyboard-trap.html
+npm run test:monkey -- --url https://staging.example.com/checkout --url https://staging.example.com/profile
+```
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--url <page>` | `keyboard-trap` | Page to test, repeatable. A full http(s) URL, or a fixture name. **Only listed pages are visited.** |
+| `--seed <n>` | random (printed) | Same seed + same page = same action sequence |
+| `--max-actions <n>` | 200 | Action limit |
+| `--max-time <s>` | 120 | Time limit for the action loop (the final scan and Tab sweep still run) |
+| `--scan-every <n>` | 50 | Extension scan every n actions (plus at start and end) |
+| `--sweep-every <n>` / `--sweep-tabs <n>` | 50 / 40 | Tab sweep for the trap check: how often, and how many Tab presses |
+| `--delay <ms>` | 50 | Pause after each action |
+| `--out <file>` | `test-results/monkey/monkey-<host>-<page>-seed<n>.json` | JSON report path |
+| `--headed` | | Show the browser |
+
+**Actions:** click a random visible interactive element, type random text, Tab / Shift+Tab / Enter / Space / Escape /
+arrow keys, scroll, hover, and resize the viewport (320, 360, 375, 768, 1024, 1280, 1920 px wide). All input is real
+Playwright input, and all randomness comes from the seed.
+
+**Safety:** only the listed URLs are visited; main-frame navigation to another origin is aborted and popups are closed;
+form submissions (submit events, `form.submit()`, non-GET navigations) are blocked and submit buttons are not clicked;
+`alert`/`confirm` dialogs are dismissed; elements whose text or attributes match delete, remove account, logout,
+sign out, pay, payment, buy, purchase or checkout are never clicked, and Enter/Space is not sent while one has focus.
+Blocked navigations and submits are listed in the report.
+
+**Checks**
+
+1. *Keyboard.* Focus dropping to `<body>` after a key press (except leaving the document by Tabbing off the last or
+   first element); a **focus trap** (the last 20 Tab presses of a 40-press sweep visit at most 5 distinct elements while
+   more tabbable elements exist; Escape is then tried, and a lock that Escape releases is reported as a dismissible
+   dialog, not a trap); a focused element that is hidden, zero-size, outside the viewport or covered by another element
+   (judged after keyboard actions only). Sweeps start from the top of the page at the start, every `--sweep-every`
+   actions and at the end.
+2. *Page errors.* Uncaught exceptions and unhandled rejections, `console.error`, failed requests and HTTP 4xx/5xx
+   responses (favicon excluded).
+3. *Accessibility.* The first extension scan of each page is that page's baseline; later scans (every `--scan-every`
+   actions and at the end) report issues whose fingerprint was not in it, grouped by rule id and severity.
+
+**Output.** A JSON file (seed, every action taken, new issues with selector and rule id, errors, traps, focus findings,
+blocked navigations, verdict) and a readable summary in the terminal. **Exit code 1** if there is a new Critical or
+Serious issue, a keyboard trap or an uncaught error; console errors and failed requests are reported but do not fail
+the run. Replay a run with the `--url` and `--seed` printed at the top of its output; the run is deterministic as long as
+the page itself is (timers, server data and animations can change what is on screen).
+
+The spec skips itself unless started through `npm run test:monkey`, so `npm run test:e2e` is unaffected.
+
 ## Permissions
 
 | Permission | Why |
