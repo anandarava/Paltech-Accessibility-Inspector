@@ -92,7 +92,7 @@ export function SeverityDonut({ counts, total, onSelectTotal, onSelectSeverity }
             {shown}
           </span>
         )}
-        <span className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-slate-600" aria-hidden="true">
+        <span className="mt-1 text-[11px] text-slate-600" aria-hidden="true">
           {hover ?? "Issues"}
         </span>
       </div>

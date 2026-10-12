@@ -23,13 +23,15 @@ interface Props {
   onOpen?(): void;
   disabled?: boolean;
   panelClassName?: string;
+  /** Open the panel above the trigger (for triggers at the bottom of the view). */
+  above?: boolean;
 }
 
 /**
  * Menu button: trigger with aria-haspopup="menu" and a panel of role=menuitem buttons.
  * Arrow keys move, Escape closes and returns focus to the trigger, choosing an item closes the menu.
  */
-export function RowMenu({ trigger, ariaLabel, items, triggerClassName, triggerProps, onOpen, disabled, panelClassName = "w-48" }: Props) {
+export function RowMenu({ trigger, ariaLabel, items, triggerClassName, triggerProps, onOpen, disabled, panelClassName = "w-48", above = false }: Props) {
   const id = useId();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -104,7 +106,7 @@ export function RowMenu({ trigger, ariaLabel, items, triggerClassName, triggerPr
           role="menu"
           aria-label={ariaLabel}
           onKeyDown={onPanelKey}
-          className={`absolute top-full right-0 z-20 mt-1 rounded-xl border border-slate-300 bg-white p-1.5 shadow-lg ${panelClassName}`}
+          className={`absolute right-0 z-20 ${above ? "bottom-full mb-1" : "top-full mt-1"} rounded-xl border border-slate-300 bg-white p-1.5 shadow-lg ${panelClassName}`}
         >
           {items.map((it) => (
             <div key={it.key} role="none">

@@ -1,35 +1,31 @@
 import type { IssueSource, Severity } from "@shared/types";
 import { SEVERITIES, useStore, type ResultTab } from "@src/sidepanel/store";
 import { SeverityDonut } from "./SeverityDonut";
-import { AlertCircleIcon } from "./icons";
 
-/** Tinted tile per severity: [open: border + background + text, zero: softer border + background]. Text is dark on the tint (>= 4.5:1). */
-const TILE: Record<Severity, { open: string; zero: string; dot: string }> = {
-  Critical: { open: "border-red-300 bg-red-50 text-red-900", zero: "border-red-100 bg-red-50/40 text-slate-700", dot: "" },
-  Serious: { open: "border-orange-300 bg-orange-50 text-orange-900", zero: "border-orange-100 bg-orange-50/40 text-slate-700", dot: "" },
-  Moderate: { open: "border-yellow-300 bg-yellow-50 text-yellow-900", zero: "border-yellow-100 bg-yellow-50/40 text-slate-700", dot: "" },
-  Minor: { open: "border-slate-300 bg-slate-100 text-slate-800", zero: "border-slate-200 bg-slate-50 text-slate-700", dot: "" },
+/**
+ * Severity tile: white card with a coloured left accent. A tile with open issues
+ * is tinted and its count takes the severity colour (dark shade, >= 4.5:1 on the tint).
+ */
+const TILE: Record<Severity, { accent: string; open: string; count: string }> = {
+  Critical: { accent: "border-l-red-600", open: "border-red-300 bg-red-50", count: "text-red-700" },
+  Serious: { accent: "border-l-orange-500", open: "border-orange-300 bg-orange-50", count: "text-orange-700" },
+  Moderate: { accent: "border-l-amber-500", open: "border-amber-300 bg-amber-50", count: "text-amber-800" },
+  Minor: { accent: "border-l-slate-400", open: "border-slate-300 bg-slate-100", count: "text-slate-800" },
 };
 
-function TileIcon({ sev }: { sev: Severity }) {
-  if (sev === "Critical") return <AlertCircleIcon size={20} />;
-  return <span className={`sev-dot sev-${sev} h-4! w-4!`} aria-hidden="true" />;
-}
+const CARD = "rounded-lg border border-slate-200 bg-white";
 
 /** Severity tile in the 2x2 grid beside the donut; a count above zero filters the list. */
 function SeverityTile({ sev, value, pressed, onSelect }: { sev: Severity; value: number; pressed: boolean; onSelect(): void }) {
-  const base = "flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-[13px]";
+  const base = `block w-full rounded-lg border border-l-4 px-3 py-2 text-left ${TILE[sev].accent}`;
   const body = (
     <>
-      <TileIcon sev={sev} />
-      <span className="min-w-0">
-        <span className="block leading-tight">{sev}</span>
-        <span className="block text-xl leading-tight font-bold tabular-nums">{value}</span>
-      </span>
+      <span className="block text-[13px] font-semibold leading-tight text-slate-600">{sev}</span>
+      <span className={`mt-1 block text-2xl font-bold leading-tight tabular-nums ${value === 0 ? "text-slate-900" : TILE[sev].count}`}>{value}</span>
     </>
   );
   if (value === 0) {
-    return <li className={`${base} ${TILE[sev].zero}`}>{body}</li>;
+    return <li className={`${base} border-slate-200 bg-white`}>{body}</li>;
   }
   return (
     <li>
@@ -38,7 +34,7 @@ function SeverityTile({ sev, value, pressed, onSelect }: { sev: Severity; value:
         onClick={onSelect}
         aria-pressed={pressed}
         aria-label={`${sev}: ${value}. Show these issues`}
-        className={`${base} w-full hover:brightness-95 ${TILE[sev].open} ${pressed ? "ring-2 ring-blue-600 ring-offset-1" : ""}`}
+        className={`${base} hover:brightness-95 ${TILE[sev].open} ${pressed ? "ring-2 ring-blue-600 ring-offset-1" : ""}`}
       >
         {body}
       </button>
@@ -54,31 +50,30 @@ interface StatProps {
   onSelect(): void;
   /** Accessible name of the button, e.g. "Best practice: 2. Show these issues". */
   name: string;
-  accent?: boolean;
 }
 
 /** A number that filters the list, or a plain 0 when there is nothing to show. */
-function StatNumber({ value, pressed, onSelect, name, accent }: Omit<StatProps, "label" | "hint">) {
-  if (value === 0) return <span className="text-lg font-bold tabular-nums text-slate-600">0</span>;
+function StatNumber({ value, pressed, onSelect, name }: Omit<StatProps, "label" | "hint">) {
+  if (value === 0) return <span className="text-lg font-bold tabular-nums text-slate-900">0</span>;
   return (
     <button
       type="button"
       onClick={onSelect}
       aria-pressed={pressed}
       aria-label={name}
-      className={`rounded px-0.5 text-lg font-bold tabular-nums underline-offset-2 hover:underline ${pressed ? "bg-blue-100 text-blue-900" : accent ? "text-blue-800" : "text-slate-900"}`}
+      className={`rounded text-lg font-bold tabular-nums underline-offset-2 hover:underline ${pressed ? "bg-blue-100 px-0.5 text-blue-900" : "text-slate-900"}`}
     >
       {value}
     </button>
   );
 }
 
-/** One cell of the row under the donut: number on top, label below. */
+/** One card in the row under the donut: number on top, label below, left-aligned. */
 function Stat(props: StatProps) {
   return (
-    <li className="min-w-0 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-center" title={props.hint}>
+    <li className={`min-w-0 px-3 py-2 ${CARD}`} title={props.hint}>
       <StatNumber {...props} />
-      <span className="block text-[11.5px] leading-tight text-slate-600">{props.label}</span>
+      <span className="block text-[12px] leading-tight text-slate-600">{props.label}</span>
     </li>
   );
 }
@@ -131,29 +126,31 @@ export function ScoreCard() {
       <h2 id="summary-heading" className="sr-only">
         Issue summary
       </h2>
-      <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5">
-        <div className="flex flex-wrap items-center justify-center gap-3">
-          <SeverityDonut
-            counts={{ Critical: bySeverity("Critical"), Serious: bySeverity("Serious"), Moderate: bySeverity("Moderate"), Minor: bySeverity("Minor") }}
-            total={active.length}
-            onSelectTotal={() => show({})}
-            onSelectSeverity={(sev) => show({ severities: [sev] })}
-          />
-          <ul aria-label="Open issues by severity" className="grid min-w-[13rem] flex-1 grid-cols-2 gap-2">
+      <div className="rounded-xl bg-slate-50 p-3">
+        <div className="flex flex-wrap items-stretch gap-3">
+          <div className={`flex shrink-0 items-center justify-center p-3 ${CARD}`}>
+            <SeverityDonut
+              counts={{ Critical: bySeverity("Critical"), Serious: bySeverity("Serious"), Moderate: bySeverity("Moderate"), Minor: bySeverity("Minor") }}
+              total={active.length}
+              onSelectTotal={() => show({})}
+              onSelectSeverity={(sev) => show({ severities: [sev] })}
+            />
+          </div>
+          <ul aria-label="Open issues by severity" className="grid min-w-[13rem] flex-1 grid-cols-2 gap-3">
             {SEVERITIES.map((sev) => (
               <SeverityTile key={sev} sev={sev} value={bySeverity(sev)} pressed={onlySeverity(sev)} onSelect={() => show({ severities: [sev] })} />
             ))}
           </ul>
         </div>
 
-        <ul aria-label="More counts" className="mt-2 grid grid-cols-3 gap-2">
-          <li className="min-w-0 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-center" title="Found by axe-core rules / found by the extension's own advanced rules">
+        <ul aria-label="More counts" className="mt-3 grid grid-cols-3 gap-3">
+          <li className={`min-w-0 px-3 py-2 ${CARD}`} title="Found by axe-core rules / found by the extension's own advanced rules">
             <span className="text-lg font-bold tabular-nums">
               <StatNumber value={bySource("axe")} pressed={onlySource("axe")} onSelect={() => show({ sources: ["axe"] })} name={`axe-core: ${bySource("axe")}. Show these issues`} />
-              <span className="px-0.5 font-normal text-slate-400" aria-hidden="true">/</span>
+              <span className="px-1 font-normal text-slate-500" aria-hidden="true">/</span>
               <StatNumber value={bySource("custom")} pressed={onlySource("custom")} onSelect={() => show({ sources: ["custom"] })} name={`Advanced rules: ${bySource("custom")}. Show these issues`} />
             </span>
-            <span className="block text-[11.5px] leading-tight text-slate-600">axe-core / advanced</span>
+            <span className="block text-[12px] leading-tight text-slate-600">axe-core / advanced</span>
           </li>
           <Stat
             value={bestPractice}
@@ -170,7 +167,6 @@ export function ScoreCard() {
             pressed={excludedPressed}
             onSelect={() => show({ statuses: ["ignored", "baselined"] })}
             name={`Excluded (ignored or baselined): ${excluded}. Show these issues`}
-            accent
           />
         </ul>
       </div>

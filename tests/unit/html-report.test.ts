@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildHtmlReport } from "@src/background/exporters/html-report";
+import { buildHtmlReport, buildMultiPageHtmlReport, multiPageReportData } from "@src/background/exporters/html-report";
+import { buildMultiPageReport } from "@src/background/exporters/index";
 import { makeIssue, makeScanResult } from "./support/factories";
 
 describe("buildHtmlReport", () => {
@@ -134,5 +135,68 @@ describe("severity filter in the developer details", () => {
     const html = buildHtmlReport(makeScanResult({ issues: [mixed[0], mixed[1]] }));
     expect(html).not.toContain('class="devfilter"');
     expect(html).not.toContain('type="checkbox"');
+  });
+});
+
+describe("multi-page report", () => {
+  const home = makeScanResult({
+    title: "Home",
+    url: "https://example.com/",
+    score: 80,
+    issues: [
+      makeIssue({ ruleId: "IMG-01", title: "Missing alt", severity: "Critical" }),
+      makeIssue({ ruleId: "CLR-01", title: "Text contrast", severity: "Moderate" }),
+      makeIssue({ ruleId: "CLR-01", title: "Text contrast", severity: "Moderate", status: "ignored" }),
+    ],
+  });
+  const checkout = makeScanResult({
+    title: "Checkout </script><script>alert(1)</script>",
+    url: "https://example.com/checkout",
+    score: 40,
+    issues: [makeIssue({ ruleId: "IMG-01", title: "Missing alt", severity: "Critical" })],
+  });
+
+  /** The JSON embedded in the report, parsed back. */
+  const embedded = (html: string) => JSON.parse(/<script type="application\/json" id="report-data">([\s\S]*?)<\/script>/.exec(html)![1]);
+
+  it("maps each scan to one page with its open issues grouped by rule", () => {
+    const data = multiPageReportData([home, checkout]);
+    expect(data.pages.map((p) => p.title)).toEqual(["Home", "Checkout </script><script>alert(1)</script>"]);
+    expect(data.pages[0].rules.map((r) => [r.code, r.severity, r.elements.length])).toEqual([
+      ["IMG-01", "Critical", 1],
+      ["CLR-01", "Moderate", 1],
+    ]);
+    expect(data.pages[0].issuesExcluded).toBe(1);
+    expect(data.pages[0].rules[0].why).toBeTruthy();
+    expect(data.site.origin).toBe("https://example.com");
+  });
+
+  it("embeds the data so page text cannot break out of the script block", () => {
+    const html = buildMultiPageHtmlReport([home, checkout]);
+    expect(html).not.toContain("</script><script>alert(1)");
+    expect(html).not.toContain("__REPORT_DATA__");
+    expect(embedded(html).pages[1].title).toBe("Checkout </script><script>alert(1)</script>");
+  });
+
+  it("allows only its own renderer script, with a fresh nonce per export", () => {
+    const a = buildMultiPageHtmlReport([home, checkout]);
+    const b = buildMultiPageHtmlReport([home, checkout]);
+    const nonce = /script-src 'nonce-([0-9a-f]{32})'/.exec(a)?.[1];
+    expect(nonce).toBeDefined();
+    expect(a).toContain(`<script nonce="${nonce}">`);
+    expect(a).not.toContain("__CSP_NONCE__");
+    // The data block and the renderer; "<script" also appears in a comment inside the renderer.
+    expect(a.match(/<script (?:type|nonce)=/g)).toHaveLength(2);
+    expect(a).not.toMatch(/<script>/);
+    expect(/script-src 'nonce-([0-9a-f]{32})'/.exec(b)?.[1]).not.toBe(nonce);
+  });
+
+  it("names one file for all pages, and falls back to the single-page report for one scan", () => {
+    const now = new Date(2026, 9, 12, 9, 30, 0);
+    expect(buildMultiPageReport("html", [home, checkout], {}, now).filename).toBe("a11y-report_2-pages_20261012-093000.html");
+    expect(JSON.parse(buildMultiPageReport("json", [home, checkout], {}, now).content).pages).toHaveLength(2);
+    const single = buildMultiPageReport("html", [home], {}, now).content;
+    expect(single).toContain("Part 1 · Summary");
+    expect(single).not.toContain('id="report-data"');
   });
 });

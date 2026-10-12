@@ -28,7 +28,7 @@ import { PANEL_PORT_PREFIX } from "@shared/constants";
 import rulesJson from "@shared/a11y-rules.json";
 import type { FrameScanOutput } from "@src/content/scanner";
 import { fingerprint } from "@src/content/fingerprint";
-import { buildReport, type ReportMeta } from "@src/background/exporters/index";
+import { buildMultiPageReport, buildReport, type ReportMeta } from "@src/background/exporters/index";
 import { ensureContentScript } from "./injector";
 import {
   addBaseline,
@@ -791,6 +791,18 @@ async function handleMessage(msg: Message, sender: Sender): Promise<unknown> {
       const saved = await getSavedScan(msg.id);
       if (!saved) throw new Error("That saved scan no longer exists.");
       const file = buildReport(msg.format, saved.result, await reportMeta());
+      const downloadId = await downloadText(file.filename, file.mime, file.content);
+      return { downloadId, filename: file.filename };
+    }
+
+    case "SAVED_SCANS_EXPORT": {
+      const results = [];
+      for (const id of msg.ids) {
+        const saved = await getSavedScan(id);
+        if (!saved) throw new Error("One of the selected saved scans no longer exists.");
+        results.push(saved.result);
+      }
+      const file = buildMultiPageReport(msg.format, results, await reportMeta());
       const downloadId = await downloadText(file.filename, file.mime, file.content);
       return { downloadId, filename: file.filename };
     }

@@ -82,6 +82,8 @@ export type Message =
   | { type: "SAVED_SCAN_RENAME"; id: string; name: string }
   | { type: "SAVED_SCAN_DELETE"; id: string }
   | { type: "SAVED_SCAN_EXPORT"; id: string; format: ExportFormat }
+  /** One file covering several saved scans, in the order given. */
+  | { type: "SAVED_SCANS_EXPORT"; ids: string[]; format: ExportFormat }
   // ---- Baseline / ignore ----
   | { type: "BASELINE_ADD"; tabId: number; issueIds: string[]; reason: string }
   | { type: "IGNORE_ADD"; tabId: number; issueIds: string[]; reason: string }
