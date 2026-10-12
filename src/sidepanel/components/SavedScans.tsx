@@ -160,6 +160,18 @@ export function SavedScans({ onBack }: { onBack(): void }) {
     else showToast({ kind: "error", message: `Export failed: ${res.error ?? "unknown error"}`, autoDismiss: false });
   };
 
+  /** Export every ticked scan into one report (an overview, then each page), in list order. */
+  const exportSelected = async (format: ExportFormat) => {
+    const ids = (items ?? []).filter((m) => selected.includes(m.id)).map((m) => m.id);
+    if (ids.length === 0) return;
+    setBusy("exp:selected");
+    showToast({ kind: "info", message: `Building one ${format.toUpperCase()} report for ${ids.length} ${ids.length === 1 ? "page" : "pages"}…` });
+    const res = await sendToBackground<{ filename?: string }>({ type: "SAVED_SCANS_EXPORT", ids, format });
+    setBusy(null);
+    if (res.ok) showToast({ kind: "success", message: `Report exported${res.data?.filename ? `: ${res.data.filename}` : "."}` });
+    else showToast({ kind: "error", message: `Export failed: ${res.error ?? "unknown error"}`, autoDismiss: false });
+  };
+
   const refreshActiveUrl = async () => {
     try {
       if (tabId === null) return setActiveUrl(null);
@@ -185,10 +197,16 @@ export function SavedScans({ onBack }: { onBack(): void }) {
     setView("compare");
   };
 
-  const toggle = (sid: string) =>
-    setSelected((s) => (s.includes(sid) ? s.filter((x) => x !== sid) : s.length >= 2 ? [s[1], sid] : [...s, sid]));
+  const toggle = (sid: string) => setSelected((s) => (s.includes(sid) ? s.filter((x) => x !== sid) : [...s, sid]));
 
   const canCompare = selected.length === 2 || (selected.length === 1 && Boolean(result));
+  const allSelected = Boolean(items?.length) && selected.length === items?.length;
+  // "Select all" reads as partly ticked (mixed) when only some scans are selected.
+  const selectAllRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (selectAllRef.current) selectAllRef.current.indeterminate = selected.length > 0 && !allSelected;
+  }, [selected.length, allSelected]);
+  const exporting = busy === "exp:selected";
 
   return (
     <section ref={rootRef} aria-labelledby={`${id}-h`} className="flex min-h-0 flex-1 flex-col overflow-y-auto">
@@ -248,7 +266,9 @@ export function SavedScans({ onBack }: { onBack(): void }) {
             <p className="text-xs text-slate-800">
               {selected.length === 0
                 ? "Tick two scans (or one to compare with the current scan)."
-                : `${selected.length} selected${selected.length === 1 && result ? " – compares with the current scan" : ""}.`}
+                : selected.length > 2
+                  ? `${selected.length} selected – tick exactly two to compare.`
+                  : `${selected.length} selected${selected.length === 1 && result ? " – compares with the current scan" : ""}.`}
             </p>
           </div>
           <Button size="md" onClick={compare} disabled={!canCompare} className="bg-white">
@@ -259,7 +279,34 @@ export function SavedScans({ onBack }: { onBack(): void }) {
         {items?.length === 0 && <p className="mt-2 text-xs text-slate-700">No saved scans yet.</p>}
       </div>
 
-      <ul className="px-3 pt-3 pb-3">
+      {Boolean(items?.length) && (
+        // Lined up with the rows' checkboxes: list padding + row padding + row border.
+        <div className="mx-3 mt-3 flex items-center justify-between gap-2 px-[13px]">
+          <label className="flex cursor-pointer items-center gap-2.5 text-xs font-medium text-slate-800">
+            <input
+              ref={selectAllRef}
+              type="checkbox"
+              className="peer sr-only"
+              checked={allSelected}
+              onChange={() => setSelected(allSelected ? [] : (items ?? []).map((m) => m.id))}
+            />
+            <span
+              aria-hidden="true"
+              className={`flex h-4 w-4 items-center justify-center rounded border text-white peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-blue-700 ${
+                selected.length > 0 ? "border-blue-600 bg-blue-600" : "border-slate-500 bg-white"
+              }`}
+            >
+              {allSelected ? <CheckIcon size={12} /> : selected.length > 0 && <span className="h-0.5 w-2 rounded bg-white" />}
+            </span>
+            Select all
+          </label>
+          <span aria-live="polite" className="text-xs text-slate-700">
+            {selected.length} of {items?.length} selected
+          </span>
+        </div>
+      )}
+
+      <ul className="px-3 pt-2 pb-3">
         {items?.map((meta) => {
           const checked = selected.includes(meta.id);
           const { title, when } = splitScanName(meta.name);
@@ -270,7 +317,7 @@ export function SavedScans({ onBack }: { onBack(): void }) {
               <div className="flex flex-wrap items-center gap-x-3 gap-y-2.5">
                 <div className="flex min-w-0 flex-1 basis-56 items-start gap-3">
                   <label className="flex h-11 shrink-0 cursor-pointer items-center">
-                    <input type="checkbox" className="peer sr-only" checked={checked} onChange={() => toggle(meta.id)} aria-label={`Select "${meta.name}" for comparison`} />
+                    <input type="checkbox" className="peer sr-only" checked={checked} onChange={() => toggle(meta.id)} aria-label={`Select "${meta.name}" to compare or export`} />
                     <span
                       aria-hidden="true"
                       className={`flex h-4 w-4 items-center justify-center rounded border text-white peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-blue-700 ${
@@ -385,6 +432,30 @@ export function SavedScans({ onBack }: { onBack(): void }) {
         <EmptyState illustration={<SavedScansIllustration />} heading="No saved scans yet">
           Save a scan to view it here and compare with other scans.
         </EmptyState>
+      )}
+
+      {Boolean(items?.length) && (
+        <div className="sticky bottom-0 mt-auto flex items-center justify-end gap-2 border-t border-slate-200 bg-white px-3 py-2 shadow-[0_-2px_6px_rgba(15,23,42,0.06)]">
+          <RowMenu
+            above
+            ariaLabel={
+              selected.length === 0 ? "Export selected scans (tick one or more scans first)" : `Export ${selected.length} selected ${selected.length === 1 ? "scan" : "scans"}`
+            }
+            disabled={selected.length === 0 || exporting}
+            triggerClassName="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-blue-700 px-3 text-xs font-semibold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600"
+            trigger={
+              <>
+                <DownloadIcon size={14} />
+                {exporting ? "Exporting…" : `Export${selected.length > 0 ? ` (${selected.length})` : ""}`}
+                <ChevronDownIcon size={14} />
+              </>
+            }
+            items={[
+              { key: "html", label: "One HTML report", icon: <DownloadIcon />, onSelect: () => void exportSelected("html") },
+              { key: "json", label: "One JSON file", icon: <DownloadIcon />, onSelect: () => void exportSelected("json") },
+            ]}
+          />
+        </div>
       )}
     </section>
   );

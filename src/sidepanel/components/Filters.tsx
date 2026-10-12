@@ -27,6 +27,26 @@ function statusSelection(statuses: IssueStatus[]): string {
   return `${shown.length} selected`;
 }
 
+/** Short description of a severity / category selection (empty means all), e.g. "All", "Serious" or "2 selected". */
+function selection(selected: string[]): string {
+  if (selected.length === 0) return "All";
+  if (selected.length === 1) return selected[0];
+  return `${selected.length} selected`;
+}
+
+/** Button face shared by the three filters: icon, "Name: <value>" with the value in bold, and the matching issue count. */
+function FilterFace({ name, value, count }: { name: string; value: string; count: number }) {
+  return (
+    <>
+      <FilterIcon size={14} className="text-slate-700" />
+      <span className="truncate">
+        {name}: <strong className="font-bold text-slate-900">{value}</strong>
+      </span>
+      <span className="rounded-full bg-blue-100 px-1.5 text-[11px] font-semibold tabular-nums text-blue-900">{count}</span>
+    </>
+  );
+}
+
 function toggle<T>(list: T[], value: T): T[] {
   return list.includes(value) ? list.filter((x) => x !== value) : [...list, value];
 }
@@ -50,10 +70,13 @@ export function Filters() {
     0,
   );
   const statusSel = statusSelection(filters.statuses);
-  const sevLabel = filters.severities.length === 0 ? "Severity: all" : `Severity: ${filters.severities.length}`;
-  const catLabel = filters.categories.length === 0 ? "Category: all" : `Category: ${filters.categories.length}`;
+  const sevSel = selection(filters.severities);
+  const catSel = selection(filters.categories);
   const sevCount = (s: Severity) => result.issues.filter((i) => i.severity === s).length;
   const catCount = (c: Category) => result.issues.filter((i) => i.category === c).length;
+  const shownBySeverity = result.issues.filter((i) => filters.severities.length === 0 || filters.severities.includes(i.severity)).length;
+  const shownByCategory = result.issues.filter((i) => filters.categories.length === 0 || filters.categories.includes(i.category)).length;
+  const issuesWord = (n: number) => `${n} ${n === 1 ? "issue" : "issues"}`;
   const lastStatus = filters.statuses.length === 1;
 
   return (
@@ -88,7 +111,7 @@ export function Filters() {
       </div>
       <div className="mt-2 flex flex-wrap items-stretch gap-2">
         <FilterMenu
-          ariaLabel={`${sevLabel}, open severity filter`}
+          ariaLabel={`Severity: ${sevSel}, ${issuesWord(shownBySeverity)}, open severity filter`}
           className="min-w-24 flex-1"
           panelClassName="w-60"
           panel={
@@ -112,11 +135,11 @@ export function Filters() {
             </fieldset>
           }
         >
-          {sevLabel}
+          <FilterFace name="Severity" value={sevSel} count={shownBySeverity} />
         </FilterMenu>
 
         <FilterMenu
-          ariaLabel={`${catLabel}, open category filter`}
+          ariaLabel={`Category: ${catSel}, ${issuesWord(shownByCategory)}, open category filter`}
           className="min-w-24 flex-1"
           panelClassName="w-60"
           panel={
@@ -140,7 +163,7 @@ export function Filters() {
             </fieldset>
           }
         >
-          {catLabel}
+          <FilterFace name="Category" value={catSel} count={shownByCategory} />
         </FilterMenu>
 
         {filters.sources.length > 0 && (
@@ -155,7 +178,7 @@ export function Filters() {
         )}
 
         <FilterMenu
-          ariaLabel={`Status: ${statusSel}, ${shownByStatus} ${shownByStatus === 1 ? "issue" : "issues"}, open status filter`}
+          ariaLabel={`Status: ${statusSel}, ${issuesWord(shownByStatus)}, open status filter`}
           align="right"
           className="min-w-24 flex-1"
           panelClassName="w-72"
@@ -204,11 +227,7 @@ export function Filters() {
             </fieldset>
           }
         >
-          <FilterIcon size={14} className="text-slate-700" />
-          <span className="truncate">
-            Status: <strong className="font-bold text-slate-900">{statusSel}</strong>
-          </span>
-          <span className="rounded-full bg-blue-100 px-1.5 text-[11px] font-semibold tabular-nums text-blue-900">{shownByStatus}</span>
+          <FilterFace name="Status" value={statusSel} count={shownByStatus} />
         </FilterMenu>
       </div>
     </section>

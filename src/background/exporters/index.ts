@@ -3,8 +3,8 @@
  * only produces strings; downloading is handled by offscreen-client.
  */
 import type { ExportFormat, ScanResult } from "@shared/types";
-import { buildHtmlReport, type ReportMeta } from "./html-report";
-import { buildJsonReport } from "./json-report";
+import { buildHtmlReport, buildMultiPageHtmlReport, type ReportMeta } from "./html-report";
+import { buildJsonReport, buildJsonReportDocument, toolInfo } from "./json-report";
 
 export interface ReportFile {
   filename: string;
@@ -12,7 +12,7 @@ export interface ReportFile {
   content: string;
 }
 
-export { buildHtmlReport, buildJsonReport };
+export { buildHtmlReport, buildJsonReport, buildMultiPageHtmlReport };
 export type { ReportMeta };
 
 const FORMATS: Record<ExportFormat, { ext: string; mime: string; build: (r: ScanResult, meta: ReportMeta) => string }> = {
@@ -45,4 +45,21 @@ export function buildReport(format: ExportFormat, result: ScanResult, meta: Repo
   const spec = FORMATS[format];
   if (!spec) throw new Error(`Unsupported export format: ${String(format)}`);
   return { filename: reportFilename(format, result), mime: spec.mime, content: spec.build(result, meta) };
+}
+
+/**
+ * One file for several scanned pages: the multi-page HTML report, or a JSON document with a `pages`
+ * array holding each page's usual export. A single result gets the ordinary single-page report.
+ */
+export function buildMultiPageReport(format: ExportFormat, results: ScanResult[], meta: ReportMeta = {}, now: Date = new Date()): ReportFile {
+  if (results.length === 0) throw new Error("No scans to export.");
+  if (results.length === 1) return buildReport(format, results[0], meta);
+  const spec = FORMATS[format];
+  if (!spec) throw new Error(`Unsupported export format: ${String(format)}`);
+  const filename = `a11y-report_${results.length}-pages_${stamp(now.toISOString())}.${spec.ext}`;
+  const content =
+    format === "html"
+      ? buildMultiPageHtmlReport(results, meta)
+      : JSON.stringify({ tool: toolInfo(), exportedAt: now.toISOString(), pages: results.map((r) => buildJsonReportDocument(r, now)) }, null, 2) + "\n";
+  return { filename, mime: spec.mime, content };
 }

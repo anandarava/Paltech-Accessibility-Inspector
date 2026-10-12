@@ -20,6 +20,7 @@ import { wcagDocsUrl } from "@shared/wcag-map";
 import { contrastRatio, parseColor, suggestPassingColor, toHex, type RGB } from "@shared/color";
 import { toolInfo } from "./json-report";
 import { guidanceFor, SEVERITY_MEANING, type AffectedUsers, type Effort, type RuleGuidance } from "./report-guidance";
+import MULTI_PAGE_TEMPLATE from "./multipage-template.html?raw";
 
 /** Optional details about who produced the report, shown on the cover. */
 export interface ReportMeta {
@@ -265,10 +266,10 @@ function truncate(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text;
 }
 
-/** A human description of the element, e.g. `<a> “Should testers write Unit tests?”`. */
-function describeElement(issue: Issue): string {
+/** The element's tag and the text a person would recognise it by (both may be empty). */
+function elementParts(issue: Issue): { tag: string; text: string } {
   const html = cleanSnippet(issue.element?.html);
-  const tag = /^<\s*([a-z][a-z0-9-]*)/i.exec(html)?.[1]?.toLowerCase();
+  const tag = /^<\s*([a-z][a-z0-9-]*)/i.exec(html)?.[1]?.toLowerCase() ?? "";
   const dataText = typeof issue.data?.text === "string" ? issue.data.text : "";
   const alt = /\balt\s*=\s*"([^"]*)"/i.exec(html)?.[1];
   const label = /\baria-label\s*=\s*"([^"]*)"/i.exec(html)?.[1];
@@ -276,9 +277,21 @@ function describeElement(issue: Issue): string {
   const control = tag === "select" || tag === "input" || tag === "textarea";
   const placeholder = /\bplaceholder\s*=\s*"([^"]*)"/i.exec(html)?.[1];
   const text = (dataText || label || (control ? placeholder : snippetText(html)) || alt || "").trim();
+  return { tag, text: text ? truncate(text, 70) : "" };
+}
+
+/** A human description of the element, e.g. `<a> “Should testers write Unit tests?”`. */
+function describeElement(issue: Issue): string {
+  const { tag, text } = elementParts(issue);
   const tagHtml = tag ? `<code>&lt;${escapeHtml(tag)}&gt;</code>` : "";
-  const textHtml = text ? `“${escapeHtml(truncate(text, 70))}”` : "";
+  const textHtml = text ? `“${escapeHtml(text)}”` : "";
   return [tagHtml, textHtml].filter(Boolean).join(" ") || '<span class="muted">Element</span>';
+}
+
+/** Plain-text form of describeElement, for the multi-page report's data. */
+function describeElementText(issue: Issue): string {
+  const { tag, text } = elementParts(issue);
+  return [tag ? `<${tag}>` : "", text ? `“${text}”` : ""].filter(Boolean).join(" ") || "Element";
 }
 
 // ---------------------------------------------------------------------------
@@ -455,19 +468,24 @@ function selectorPattern(selector: string): string {
   return selector.replace(/:nth-(?:of-type|child|last-child|last-of-type)\(\d+\)/g, "").trim();
 }
 
-function patternNote(group: RuleGroup): string {
-  if (group.issues.length < 2) return "";
+/** Up to three selector patterns shared by more than one of the rule's elements, most common first. */
+function sharedPatterns(group: RuleGroup): Array<[string, number]> {
+  if (group.issues.length < 2) return [];
   const counts = new Map<string, number>();
   for (const i of group.issues) {
     const p = selectorPattern(i.element?.selector ?? "");
     if (p) counts.set(p, (counts.get(p) ?? 0) + 1);
   }
-  const shared = [...counts.entries()].filter(([, n]) => n > 1).sort((a, b) => b[1] - a[1]);
+  return [...counts.entries()]
+    .filter(([, n]) => n > 1)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3);
+}
+
+function patternNote(group: RuleGroup): string {
+  const shared = sharedPatterns(group);
   if (shared.length === 0) return "";
-  const items = shared
-    .slice(0, 3)
-    .map(([p, n]) => `<li><b>${n} elements</b> share <code>${escapeHtml(p)}</code></li>`)
-    .join("");
+  const items = shared.map(([p, n]) => `<li><b>${n} elements</b> share <code>${escapeHtml(p)}</code></li>`).join("");
   return `<div class="note"><p><strong>Likely fewer fixes than elements.</strong> These elements come from the same component or style, so one change there should fix all of them:</p><ul>${items}</ul></div>`;
 }
 
@@ -1087,4 +1105,223 @@ ${result.environment ? `<tr><th scope="row">Environment</th><td>${escapeHtml(res
 </body>
 </html>
 `;
+}
+
+// ---------------------------------------------------------------------------
+// Multi-page report: multipage-template.html holds the layout and a small
+// renderer; the scans are serialised into its JSON data block.
+// ---------------------------------------------------------------------------
+
+interface TemplateContrast {
+  ratio: string;
+  fg: string;
+  bg: string;
+}
+
+interface TemplateElement {
+  element: string;
+  finding: string;
+  /** Current colours, then the suggested ones; empty for non-contrast findings. */
+  contrast: TemplateContrast[];
+  sampleText: string;
+  measurements: Array<[string, string]>;
+  suggestedFix: string;
+  /** Validated data:image URL, or null. */
+  screenshot: string | null;
+  selector: string;
+  html: string;
+  technical: Array<[string, string]>;
+}
+
+interface TemplateRule {
+  code: string;
+  severity: Severity;
+  title: string;
+  summary: string;
+  wcag: string;
+  category: string;
+  why: string;
+  howToFix: string;
+  affects: string[];
+  effort: string;
+  learnMore: string;
+  sharedComponents: Array<{ count: number; selector: string }>;
+  elements: TemplateElement[];
+}
+
+interface TemplatePage {
+  id: string;
+  title: string;
+  url: string;
+  score: number;
+  scannedAt: string;
+  browser: string;
+  viewport: string;
+  scope: string;
+  scanDuration: string;
+  scanId: string;
+  rulesPassed: string[];
+  rulesNotApplicable: string[];
+  issuesExcluded: number;
+  allFramesScanned: boolean;
+  rules: TemplateRule[];
+}
+
+/** The JSON the multi-page template's renderer reads (field names are the template's). */
+export interface MultiPageReportData {
+  tool: { name: string; version: string; logo: string };
+  generatedAt: string;
+  standard: string;
+  rulesets: string;
+  site: { name: string; origin: string };
+  batch: { id: string; startedAt: string; finishedAt: string };
+  pages: TemplatePage[];
+}
+
+/** Plain-text form of formatDataValue. */
+function plainDataValue(key: string, value: unknown): string {
+  if (value === null || value === undefined) return "—";
+  if (Array.isArray(value)) return value.map((v) => (v !== null && typeof v === "object" ? JSON.stringify(v) : String(v))).join(", ");
+  if (typeof value === "object") {
+    return Object.entries(value as Record<string, unknown>)
+      .filter(([, v]) => v !== undefined && (v === null || typeof v !== "object"))
+      .map(([k, v]) => `${humanizeKey(k)}: ${formatScalar(k, v)}`)
+      .join(", ");
+  }
+  return formatScalar(key, value);
+}
+
+function templateElement(issue: Issue, group: RuleGroup, sharedAdvice: string | undefined): TemplateElement {
+  const html = cleanSnippet(issue.element?.html);
+  const sample = (typeof issue.data?.text === "string" ? issue.data.text : "") || (/^<\s*(select|input|textarea)\b/i.test(html) ? "" : snippetText(html));
+  const contrast = contrastFacts(issue);
+  const finding = elementFinding(issue, contrast, sample).join(" ") || (issue.description ?? "");
+
+  const contrastTiles: TemplateContrast[] = contrast ? [{ ratio: `${contrast.ratio}:1`, fg: contrast.fg, bg: contrast.bg }] : [];
+  if (contrast?.suggested) contrastTiles.push({ ratio: contrast.suggestedRatio === undefined ? "—" : `${contrast.suggestedRatio}:1`, fg: contrast.suggested, bg: contrast.bg });
+
+  const hidden = new Set([...HIDDEN_DATA_KEYS, ...(contrast ? CONTRAST_KEYS : [])]);
+  const measurements = Object.entries(issue.data ?? {})
+    .filter(([k, v]) => v !== undefined && !hidden.has(k))
+    .map(([k, v]): [string, string] => [humanizeKey(k), plainDataValue(k, v)]);
+
+  const advice = contrast?.suggested ? "" : elementAdvice(issue, sharedAdvice);
+  const suggestedValue = issue.fix?.suggestedValue?.trim() || (contrast?.suggested ? `${contrast.text ? "color" : "border-color"}: ${contrast.suggested}` : "");
+  const suggestedFix = [advice, suggestedValue ? `CSS: ${suggestedValue}` : ""].filter(Boolean).join("\n") || sharedAdvice || group.guidance.fix;
+
+  const axeRule = typeof issue.data?.axeRuleId === "string" ? issue.data.axeRuleId : "";
+  const technical: Array<[string, string]> = [];
+  if (issue.element?.xpath) technical.push(["XPath", issue.element.xpath]);
+  technical.push(["Found by", `${sourceLabel(issue.source)}${axeRule ? ` (${axeRule})` : ""}`]);
+  technical.push(["Fingerprint", `${issue.fingerprint} (stable id used for ignore and baseline)`]);
+
+  return {
+    element: describeElementText(issue),
+    finding,
+    contrast: contrastTiles,
+    // Text contrast shows the sample in each colour pair; non-text contrast shows a mock control.
+    sampleText: contrast?.text ? truncate(sample || "Sample text", 28) : "",
+    measurements,
+    suggestedFix,
+    screenshot: safeImage(issue.evidence?.screenshot),
+    selector: issue.element?.selector ?? "",
+    html,
+    technical,
+  };
+}
+
+function templateRule(group: RuleGroup): TemplateRule {
+  const g = group.guidance;
+  const first = group.issues[0];
+  const shared = sharedAdviceOf(group);
+  const docs = safeHref(first.fix?.docsUrl) ?? (first.wcag.criterion ? safeHref(wcagDocsUrl(first.wcag.criterion)) : null);
+  return {
+    code: group.ruleId,
+    severity: group.severity,
+    title: g.headline,
+    summary: group.title !== g.headline ? group.title : "",
+    wcag: wcagText(group.wcag),
+    category: group.category,
+    why: g.impact,
+    howToFix: shared ? `${g.fix} For every element below: ${shared}` : g.fix,
+    affects: [...g.users],
+    effort: g.effort,
+    learnMore: docs ?? "",
+    sharedComponents: sharedPatterns(group).map(([selector, count]) => ({ count, selector })),
+    elements: group.issues.map((issue) => templateElement(issue, group, shared)),
+  };
+}
+
+function templatePage(result: ScanResult, n: number): TemplatePage {
+  const issues = result.issues ?? [];
+  const active = issues.filter((i) => i.status === "new");
+  const url = safeHref(result.url) ?? result.url ?? "";
+  return {
+    id: `page-${n}`,
+    title: result.title || result.url || "Untitled page",
+    url,
+    score: Number.isFinite(result.score) ? result.score : 0,
+    scannedAt: formatDate(result.timestamp),
+    browser: result.browser ?? "",
+    viewport: `${result.viewport?.width ?? "?"} × ${result.viewport?.height ?? "?"} px`,
+    scope: result.scope?.kind === "selector" ? `Part of the page (${result.scope.selector ?? ""})` : "Full page",
+    scanDuration: formatDuration(result.durationMs),
+    scanId: result.scanId,
+    rulesPassed: effectivePassedRules(active, result.passedRules ?? []),
+    rulesNotApplicable: result.inapplicableRules ?? [],
+    issuesExcluded: issues.length - active.length,
+    allFramesScanned: (result.unscannedFrames ?? []).length === 0,
+    rules: groupByRule(active).map(templateRule),
+  };
+}
+
+function originOf(url: string): string {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return "";
+  }
+}
+
+/** The template's data for these scans, in the order given. */
+export function multiPageReportData(results: ScanResult[], meta: ReportMeta = {}, now: Date = new Date()): MultiPageReportData {
+  const tool = toolInfo();
+  const unique = (xs: string[]) => [...new Set(xs.filter(Boolean))];
+  const origins = unique(results.map((r) => originOf(r.url)));
+  const times = results.map((r) => r.timestamp).sort();
+  return {
+    tool: { name: tool.name, version: tool.version, logo: safeImage(meta.logo) ?? "" },
+    generatedAt: formatDate(now.toISOString()),
+    standard: unique(results.map((r) => `WCAG ${r.wcagVersion ?? "2.2"} ${r.wcagLevel}`)).join(", "),
+    rulesets: results.every((r) => r.axeOnly) ? "axe-core rules only" : "axe-core and PalTech A11y Inspector rules",
+    site: {
+      name: meta.organisation?.trim() || (origins.length === 1 ? new URL(origins[0]).hostname : `${origins.length} sites`),
+      origin: origins.join(", "),
+    },
+    batch: {
+      id: `batch_${now.toISOString().replace(/[:.]/g, "-")}`,
+      startedAt: times.length ? formatDate(times[0]) : "",
+      finishedAt: times.length ? formatDate(times[times.length - 1]) : "",
+    },
+    pages: results.map((r, i) => templatePage(r, i + 1)),
+  };
+}
+
+/** A fresh nonce for the template's Content-Security-Policy, so only its own renderer script runs. */
+function cspNonce(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * One interactive report for several scanned pages, built from multipage-template.html: a sidebar of
+ * pages that opens on the application summary, and each page's full report with filters.
+ */
+export function buildMultiPageHtmlReport(results: ScanResult[], meta: ReportMeta = {}, now: Date = new Date()): string {
+  if (results.length === 0) throw new Error("No scans to export.");
+  // "<" is escaped so no value can close the <script> block or open a comment inside it.
+  const json = JSON.stringify(multiPageReportData(results, meta, now)).replace(/</g, "\\u003c");
+  const nonce = cspNonce();
+  return MULTI_PAGE_TEMPLATE.split("__CSP_NONCE__").join(nonce).split("__REPORT_DATA__").join(json);
 }
