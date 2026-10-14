@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { Issue, SavedScan, ScanResult, ScanSummary } from "@shared/types";
 import { sendToBackground } from "@shared/messages";
-import { SEVERITIES, useStore, type CompareSide } from "@src/sidepanel/store";
+import { SEVERITIES, isNeedsReviewIssue, useStore, type CompareSide } from "@src/sidepanel/store";
 import { useFocusHeading } from "@src/sidepanel/hooks/useFocusHeading";
 import { Button } from "./Button";
 import { BackButton } from "./BackButton";
@@ -30,9 +30,9 @@ function delta(n: number): string {
   return n > 0 ? `+${n}` : String(n);
 }
 
-/** Only issues that count: open statuses. */
+/** Only issues that count: open statuses, needs-review findings excluded. */
 function activeIssues(r: ScanResult): Issue[] {
-  return r.issues.filter((i) => i.status === "new");
+  return r.issues.filter((i) => i.status === "new" && !isNeedsReviewIssue(i));
 }
 
 function IssueRows({ issues }: { issues: Issue[] }) {

@@ -88,8 +88,8 @@ export function RulesSection(props: {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("");
 
-  // Undeterminable ("Semi") rules are never reported, so they are not offered here.
-  const reportable = useMemo(() => rulesFile.rules.filter((r) => r.type !== "Semi"), [rulesFile]);
+  // Every rule can report: undeterminable ("Semi") ones feed the Needs review tab.
+  const reportable = rulesFile.rules;
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();

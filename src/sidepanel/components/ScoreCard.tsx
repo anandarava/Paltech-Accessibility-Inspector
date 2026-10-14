@@ -1,5 +1,5 @@
 import type { IssueSource, Severity } from "@shared/types";
-import { SEVERITIES, useStore, type ResultTab } from "@src/sidepanel/store";
+import { SEVERITIES, isNeedsReviewIssue, useStore, type ResultTab } from "@src/sidepanel/store";
 import { SeverityDonut } from "./SeverityDonut";
 
 /**
@@ -102,8 +102,10 @@ export function ScoreCard() {
 
   // Totals follow axe DevTools: every open issue (best practices included) counts once;
   // baselined and ignored issues are listed separately and excluded from the total.
-  const active = result.issues.filter((i) => i.status === "new");
-  const excluded = result.issues.filter((i) => i.status === "baselined" || i.status === "ignored").length;
+  // Needs-review findings are not failures: they have their own tab and never count here.
+  const counted = result.issues.filter((i) => !isNeedsReviewIssue(i));
+  const active = counted.filter((i) => i.status === "new");
+  const excluded = counted.filter((i) => i.status === "baselined" || i.status === "ignored").length;
   const bySource = (s: IssueSource) => active.filter((i) => i.source === s).length;
   const bySeverity = (s: Severity) => active.filter((i) => i.severity === s).length;
   const bestPractice = active.filter((i) => i.wcag.level === "BP").length;

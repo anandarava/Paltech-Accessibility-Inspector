@@ -26,7 +26,7 @@ import { computeScore, isNotConformant, summarize } from "@shared/scoring";
 export type View = "list" | "detail" | "keyboard" | "saved" | "compare";
 
 /** Result tabs, as in axe DevTools: every finding, WCAG failures, best practices, passed and not-applicable rules. */
-export type ResultTab = "all" | "auto" | "bp" | "failed" | "passed" | "na";
+export type ResultTab = "all" | "auto" | "bp" | "review" | "failed" | "passed" | "na";
 export type GroupBy = "rule" | "category";
 
 /** One side of a comparison: the live result or a saved scan id. */
@@ -390,12 +390,19 @@ export function isBestPracticeIssue(issue: Issue): boolean {
   return issue.wcag.level === "BP";
 }
 
-/** WCAG failure; best practices excluded. */
+/** Undeterminable finding that a person has to check; listed only in the Needs review tab. */
+export function isNeedsReviewIssue(issue: Issue): boolean {
+  return issue.type === "Semi";
+}
+
+/** WCAG failure; best practices and needs-review findings excluded. */
 export function isDefiniteIssue(issue: Issue): boolean {
-  return !isBestPracticeIssue(issue);
+  return !isBestPracticeIssue(issue) && !isNeedsReviewIssue(issue);
 }
 
 export function matchesTab(issue: Issue, tab: ResultTab): boolean {
+  if (tab === "review") return isNeedsReviewIssue(issue);
+  if (isNeedsReviewIssue(issue)) return false;
   switch (tab) {
     case "all":
       return true;

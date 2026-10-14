@@ -114,8 +114,8 @@ function buildAxeRunOptions(options: ScanOptions, rulesFile: RulesFile, disabled
 
   const base: axe.RunOptions = {
     reporter: "v1",
-    // "incomplete" (axe could not decide) is not requested: only definite findings are reported.
-    resultTypes: ["violations"],
+    // "incomplete" (axe could not decide) is requested only for the Needs review tab.
+    resultTypes: options.includeNeedsReview === false ? ["violations"] : ["violations", "incomplete"],
     iframes: false,
     elementRef: true,
     selectors: true,
@@ -303,10 +303,11 @@ export async function scanFrame(options: ScanOptions, rulesFile: RulesFile, rule
     }
 
     safeProgress(96, "Deduplicating issues");
-    // Keep only definite findings (custom rules report undeterminable cases as
-    // "Semi"), for success criteria that are part of the selected WCAG version.
+    // Keep findings for success criteria in the selected WCAG version. Undeterminable
+    // ("Semi") findings are kept for the Needs review tab unless the scan opted out.
     const version = options.wcagVersion ?? "2.2";
-    issues = dedupeIssues(issues).filter((issue) => issue.type !== "Semi" && criterionInVersion(issue.wcag.criterion, version));
+    const keepReview = options.includeNeedsReview !== false;
+    issues = dedupeIssues(issues).filter((issue) => (keepReview || issue.type !== "Semi") && criterionInVersion(issue.wcag.criterion, version));
     safeProgress(100, "Scan complete");
     return {
       issues,

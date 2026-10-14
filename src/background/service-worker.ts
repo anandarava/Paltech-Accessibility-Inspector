@@ -224,6 +224,7 @@ function defaultScanOptions(settings: Settings): ScanOptions {
     wcagVersion: settings.wcagVersion,
     rules: [],
     includeBestPractices: settings.includeBestPractices,
+    includeNeedsReview: settings.includeNeedsReview,
     axeOnly: settings.axeOnly,
   };
 }
@@ -355,8 +356,8 @@ async function performScan(tabId: number, requested: ScanOptions | undefined): P
     // from other frames (e.g. a same-document about:blank child) or the reflow pass.
     const seenFingerprints = new Set<string>();
     const pushIssue = (issue: Issue, frameId: number): void => {
-      // Only definite findings are reported; undeterminable ("Semi") ones are dropped.
-      if (issue.type === "Semi") return;
+      // Needs-review ("Semi") findings are kept only when the scan asked for them.
+      if (issue.type === "Semi" && options.includeNeedsReview === false) return;
       // Selectors are frame-local, so identical widgets in two iframes share a fingerprint;
       // only repeats within one frame are duplicates.
       const dedupeKey = `${frameId}:${issue.fingerprint}`;

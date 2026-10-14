@@ -275,8 +275,8 @@ test.describe("PalTech A11y Inspector extension", () => {
           expect(issue.element.selector.length).toBeGreaterThan(0);
           expect(issue.element.selector).not.toContain("a11y-checker-overlay-host");
         }
-        // Only definite findings are reported.
-        expect(result.issues.filter((i) => i.type === "Semi")).toEqual([]);
+        // Needs-review findings are only ever "Semi"; definite findings stay "Auto".
+        expect(result.issues.filter((i) => i.type !== "Auto" && i.type !== "Semi")).toEqual([]);
       } finally {
         await page.close();
       }
@@ -427,14 +427,21 @@ test.describe("PalTech A11y Inspector extension", () => {
     }
   });
 
-  test("undeterminable findings are not reported", async () => {
+  test("undeterminable findings are reported for review, and can be switched off", async () => {
     const { page, tabId } = await openFixture("contrast");
     try {
       const result = await scan(tabId);
       // contrast.html plants text over a gradient (CLR-03), which cannot be decided automatically.
-      expect(result.issues.some((i) => i.ruleId === "CLR-03")).toBe(false);
-      expect(result.issues.filter((i) => i.type === "Semi")).toEqual([]);
-      expect(result.issues.some((i) => i.ruleId === "CLR-01")).toBe(true);
+      const clr03 = result.issues.filter((i) => i.ruleId === "CLR-03");
+      expect(clr03.length).toBeGreaterThan(0);
+      expect(clr03.every((i) => i.type === "Semi")).toBe(true);
+      expect(result.issues.some((i) => i.ruleId === "CLR-01" && i.type === "Auto")).toBe(true);
+
+      const off = await scan(tabId, { includeNeedsReview: false });
+      expect(off.issues.filter((i) => i.type === "Semi")).toEqual([]);
+      expect(off.issues.some((i) => i.ruleId === "CLR-01")).toBe(true);
+      // Review findings never move the score.
+      expect(off.score).toBe(result.score);
     } finally {
       await page.close();
     }

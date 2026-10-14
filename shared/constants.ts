@@ -32,6 +32,7 @@ export const DEFAULT_SETTINGS: Settings = {
   enabledCategories: [],
   autoRescan: false,
   includeBestPractices: true,
+  includeNeedsReview: true,
   axeOnly: false,
   environment: "",
   reportPreparedBy: "",

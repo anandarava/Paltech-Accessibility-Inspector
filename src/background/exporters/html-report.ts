@@ -682,6 +682,31 @@ function renderFailedRulesTable(groups: RuleGroup[]): string {
 </section>`;
 }
 
+/** Undeterminable ("Semi") findings: listed for manual checking, never counted. */
+function isNeedsReview(issue: Issue): boolean {
+  return issue.type === "Semi";
+}
+
+function renderNeedsReview(review: Issue[]): string {
+  if (review.length === 0) return "";
+  const rows = groupByRule(review)
+    .flatMap((g) =>
+      g.issues.map(
+        (i) => `<tr><td><b>${escapeHtml(g.guidance.headline)}</b><br><span class="muted small"><code>${escapeHtml(g.ruleId)}</code> · ${escapeHtml(wcagText(g.wcag))}</span></td>
+<td>${describeElement(i)}<br><code class="small">${escapeHtml(truncate(i.element?.selector ?? "", 90))}</code></td>
+<td>${escapeHtml(truncate(i.description ?? "", 240))}</td></tr>`,
+      ),
+    )
+    .join("");
+  return `<section class="card" id="h-review" aria-labelledby="h-review-t">
+<h3 id="h-review-t" class="label">Needs review (${review.length})</h3>
+<p class="muted small">The automated checks could not decide these. Check each one by hand. They are not counted in the totals or the score.</p>
+<div class="scroll"><table class="grid"><caption class="sr-only">Findings that need manual review</caption>
+<thead><tr><th scope="col">Check</th><th scope="col">Element</th><th scope="col">Why it needs review</th></tr></thead>
+<tbody>${rows}</tbody></table></div>
+</section>`;
+}
+
 function renderExcluded(excluded: Issue[]): string {
   if (excluded.length === 0) return "";
   const rows = groupByRule(excluded)
@@ -957,8 +982,10 @@ footer{color:var(--muted);font-size:.84rem;padding-bottom:2rem}
 export function buildHtmlReport(result: ScanResult, meta: ReportMeta = {}): string {
   const tool = toolInfo();
   const issues = result.issues ?? [];
-  const active = issues.filter((i) => i.status === "new");
-  const excluded = issues.filter((i) => i.status !== "new");
+  const review = issues.filter((i) => isNeedsReview(i) && i.status === "new");
+  const counted = issues.filter((i) => !isNeedsReview(i));
+  const active = counted.filter((i) => i.status === "new");
+  const excluded = counted.filter((i) => i.status !== "new");
   const passed = effectivePassedRules(active, result.passedRules ?? []);
   const inapplicable = result.inapplicableRules ?? [];
   const unscanned = result.unscannedFrames ?? [];
@@ -1077,6 +1104,7 @@ ${renderSeverityFilter(counts, `${renderFailedRulesTable(groups)}
 
 ${detailsHtml}`)}
 
+${renderNeedsReview(review)}
 ${renderExcluded(excluded)}
 
 ${listsHtml}
@@ -1253,7 +1281,7 @@ function templateRule(group: RuleGroup): TemplateRule {
 }
 
 function templatePage(result: ScanResult, n: number): TemplatePage {
-  const issues = result.issues ?? [];
+  const issues = (result.issues ?? []).filter((i) => !isNeedsReview(i));
   const active = issues.filter((i) => i.status === "new");
   const url = safeHref(result.url) ?? result.url ?? "";
   return {
