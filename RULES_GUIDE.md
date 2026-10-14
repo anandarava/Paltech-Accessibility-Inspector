@@ -138,7 +138,8 @@ These run only when **axe-core only** is ✗. They are counted under
 | IMG-03 | 1.1.1 A | Moderate | Alt text is generic ("image", "photo", "icon") | Same: axe does not judge alt wording |
 | IMG-09 | 1.1.1 A | Serious | Image marked decorative (`alt=""`) but has a `title` | axe treats `alt=""` as decorative and passes the image without looking at the title |
 | CLR-04 | 1.4.11 AA | Serious | UI component borders or icons below 3:1 | axe has no rule for 1.4.11 Non-text Contrast |
-| CLR-05 | 1.4.11 AA | Serious | Focus indicator below 3:1 against its surroundings | Same criterion (1.4.11) |
+| CLR-05 | 1.4.11 AA | Serious | Focus ring (outline, shadow or border) below 3:1 against its surroundings. A focus shown only by a subtle background change is listed under **Needs review** in A/AA scans, because WCAG AA does not require an element's focused and unfocused states to contrast | Same criterion (1.4.11) |
+| CLR-09 | 2.4.13 AAA | Moderate | Focus shown only by a background change below 3:1 against the unfocused state (AAA scans only) | axe has no rule for 2.4.13 |
 | FRM-02 | 3.3.2 A | Serious | Placeholder is the only label | axe's `label-title-only` covers title-only labels; FRM-02 covers the placeholder case |
 | FRM-03 | 1.3.1 A | Moderate | Radio or checkbox group without a group label | axe once had `radiogroup` / `checkboxgroup` rules but removed them |
 | FRM-04 | 3.3.2 A | Moderate | Required field not marked as required in code | axe's only 3.3.2 rule is `form-field-multiple-labels` |

@@ -193,6 +193,7 @@ window. If you see "chromium distribution not found", run
 | `unlimitedStorage` | Saved scans keep full results including evidence screenshots, which quickly exceed the default 10 MB `chrome.storage.local` quota (up to 100 saved scans are kept) |
 | `downloads` | Save exported HTML and JSON reports |
 | `offscreen` | Crop evidence screenshots and build large report downloads: the MV3 service worker has no DOM canvas and no `URL.createObjectURL` |
+| `debugger` | Check focus indicators correctly (KBD-05, CLR-05). While you work in the side panel the page does not have focus, and Chrome then draws no focus styles at all. During a scan the extension turns on "emulate a focused page" (the same switch as in DevTools' Rendering panel) and turns it off again afterwards. Chrome shows a "started debugging this browser" bar while this runs. If it cannot attach, the focus check is skipped with one Needs review note |
 
 The extension asks for no optional permissions.
 
@@ -345,6 +346,7 @@ custom).
 | CLR-02 | Large text (24px, or 18.66px bold) contrast below 3:1 | 1.4.3 Contrast (Minimum) (AA) | Auto | Serious | custom | yes |
 | CLR-04 | UI component borders/icons below 3:1 | 1.4.11 Non-text Contrast (AA) | Auto | Serious | custom | yes |
 | CLR-05 | Focus indicator below 3:1 against adjacent colors | 1.4.11 Non-text Contrast (AA) | Auto | Serious | custom | yes |
+| CLR-09 | Focus highlight is only a subtle background change (below 3:1 against the unfocused state) | 2.4.13 Focus Appearance (AAA) | Auto | Moderate | custom | yes |
 
 #### Forms
 

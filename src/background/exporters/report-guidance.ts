@@ -117,6 +117,13 @@ const RULES: Record<string, RuleGuidance> = {
     users: [KB, LV],
     effort: "Quick fix",
   },
+  "CLR-09": {
+    headline: "The keyboard focus highlight is a barely visible colour change",
+    impact: "The focused item only turns a slightly different shade, so keyboard users with low vision, or on a bright screen, struggle to see where they are.",
+    fix: "Make the focused state contrast at least 3:1 with the unfocused state, or add an outline around the focused item.",
+    users: [KB, LV],
+    effort: "Quick fix",
+  },
   "CLR-08": {
     headline: "Text does not meet the enhanced (AAA) contrast level",
     impact: "Most users can read it, but people with moderate low vision would benefit from stronger contrast.",

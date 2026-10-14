@@ -447,6 +447,46 @@ test.describe("PalTech A11y Inspector extension", () => {
     }
   });
 
+  test("focus indicators: transparent rings and invisible outline changes are not mistaken for the indicator", async () => {
+    const { page, tabId } = await openFixture("focus-indicators");
+    try {
+      // A tester clicks with the mouse before scanning, so Chrome would not apply
+      // :focus-visible to programmatic focus unless the rule forces it.
+      await page.click("#start");
+      // Reproduce the side panel: the tester's focus is elsewhere, so the page has no focus
+      // and Chrome draws no focus styles. Playwright normally fakes focus for every page;
+      // switch that off and bring another tab forward. The scan must emulate focus itself.
+      const cdp = await context.newCDPSession(page);
+      await cdp.send("Emulation.setFocusEmulationEnabled", { enabled: false });
+      await panel.bringToFront();
+      expect(await page.evaluate(() => document.hasFocus())).toBe(false);
+      const result = await scan(tabId);
+      const rulesFor = (id: string) =>
+        result.issues.filter((i) => i.element.selector === `#${id}` && ["KBD-05", "CLR-05"].includes(i.ruleId)).map((i) => i.ruleId);
+      expect(rulesFor("bg-strong")).toEqual([]);
+      expect(rulesFor("bg-faint")).toEqual(["CLR-05"]);
+      expect(rulesFor("outline-transparent-shadow")).toEqual([]);
+      expect(rulesFor("fv-strong")).toEqual([]);
+      expect(rulesFor("fv-faint")).toEqual(["CLR-05"]);
+      // A faint grey behind dark text cannot be darkened without hurting the text: suggest an outline.
+      const faint = result.issues.find((i) => i.element.selector === "#fv-faint" && i.ruleId === "CLR-05");
+      expect(faint?.fix?.suggestedValue).toMatch(/^outline: 2px solid #[0-9a-f]{6}; outline-offset: 2px$/);
+      // A background-only change is judged against the unfocused state, which WCAG requires only
+      // at AAA (2.4.13): an AA scan lists it for review, an AAA scan reports it as CLR-09.
+      expect(faint?.type).toBe("Semi");
+      expect(result.issues.find((i) => i.element.selector === "#bg-faint" && i.ruleId === "CLR-05")?.type).toBe("Semi");
+      const aaa = await scan(tabId, { wcagLevel: "AAA" });
+      const atAaa = (id: string) =>
+        aaa.issues.filter((i) => i.element.selector === `#${id}` && ["CLR-05", "CLR-09"].includes(i.ruleId)).map((i) => `${i.ruleId}/${i.type}`);
+      expect(atAaa("fv-faint")).toEqual(["CLR-09/Auto"]);
+      expect(atAaa("bg-faint")).toEqual(["CLR-09/Auto"]);
+      expect(rulesFor("transparent-only")).toEqual(["KBD-05"]);
+      expect(rulesFor("nothing")).toEqual(["KBD-05"]);
+    } finally {
+      await page.close();
+    }
+  });
+
   test("axe-core only: custom rules are skipped and axe's own rules take over", async () => {
     const { page, tabId } = await openFixture("contrast");
     try {
@@ -463,6 +503,47 @@ test.describe("PalTech A11y Inspector extension", () => {
       expect(na.filter((r) => axeOnly.passedRules.includes(r))).toEqual([]);
       expect(na.filter((r) => axeOnly.issues.some((i) => i.data?.axeRuleId === r))).toEqual([]);
     } finally {
+      await page.close();
+    }
+  });
+
+  test("the summary can be resized to give the issue list more room", async () => {
+    const { page, tabId } = await openFixture("images");
+    const panelTab = await context.newPage();
+    try {
+      await panelTab.setViewportSize({ width: 420, height: 800 });
+      await panelTab.goto(`chrome-extension://${extensionId}/src/sidepanel/index.html?tabId=${tabId}`, { waitUntil: "load" });
+      await scan(tabId);
+      const divider = panelTab.getByRole("separator", { name: "Resize summary" });
+      await expect(divider).toBeVisible();
+      const summaryHeight = () => panelTab.locator("#summary-region").evaluate((el) => el.getBoundingClientRect().height);
+      const full = await summaryHeight();
+      expect(full).toBeGreaterThan(100);
+
+      // Drag the divider up by 100px: the summary shrinks by the same amount.
+      const box = (await divider.boundingBox())!;
+      await panelTab.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await panelTab.mouse.down();
+      await panelTab.mouse.move(box.x + box.width / 2, box.y + box.height / 2 - 100, { steps: 5 });
+      await panelTab.mouse.up();
+      expect(Math.round(await summaryHeight())).toBe(Math.round(full - 100));
+
+      // Keyboard: Home hides it (and takes it out of the tab order), End shows all of it.
+      await divider.focus();
+      await panelTab.keyboard.press("Home");
+      expect(await summaryHeight()).toBe(0);
+      await expect(panelTab.locator("#summary-region")).toHaveCSS("visibility", "hidden");
+      await expect(divider).toHaveAttribute("aria-valuetext", "Summary hidden");
+      await panelTab.keyboard.press("End");
+      expect(Math.round(await summaryHeight())).toBe(Math.round(full));
+
+      // The chosen size is remembered when the panel is opened again.
+      await panelTab.keyboard.press("Home");
+      await panelTab.reload({ waitUntil: "load" });
+      await expect(panelTab.getByRole("separator", { name: "Resize summary" })).toHaveAttribute("aria-valuetext", "Summary hidden");
+      await panelTab.getByRole("separator", { name: "Resize summary" }).press("End");
+    } finally {
+      await panelTab.close();
       await page.close();
     }
   });

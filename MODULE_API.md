@@ -13,7 +13,11 @@ Shared contracts (already written, read them first):
 
 - `src/background/service-worker.ts` is the MV3 service worker (module). It is the
   only place that calls `chrome.scripting`, `chrome.tabs.captureVisibleTab`,
-  `chrome.downloads` and `chrome.offscreen`.
+  `chrome.downloads`, `chrome.offscreen` and `chrome.debugger`.
+- `src/background/focus-emulation.ts` attaches `chrome.debugger` to the tab for the
+  duration of a scan and sends `Emulation.setFocusEmulationEnabled`, so the page
+  behaves as focused and draws its focus styles while the side panel has focus.
+  Failures leave the scan running without it.
 - `src/content/content-script.iife.ts` is injected programmatically with
   `chrome.scripting.executeScript({ target: { tabId, allFrames: true }, files: [csFile] })`
   where `import csFile from "@src/content/content-script.iife.ts?script"` (CRXJS builds
@@ -160,7 +164,7 @@ in the scan options, the scanner and the service worker drop them.
 | File | Emits | Notes |
 |---|---|---|
 | `contrast.ts` | CLR-01, CLR-02, CLR-03, CLR-04 | Walk visible text nodes, ancestor background with alpha blending (`shared/color.ts`), large text 24px / 18.66px bold (weight >= 700), CLR-03 Semi when background-image/gradient/video/canvas; CLR-04 for input/button/select borders vs surrounding background. Suggest nearest passing colour by stepping lightness in HSL. Chunk work with `yieldToMain` every 200 nodes. |
-| `focus-visible.ts` | KBD-05, CLR-05 | For each focusable: snapshot outline/box-shadow/border/background/color/text-decoration, `el.focus({ preventScroll: true })`, compare; if identical -> KBD-05 (type Semi when `:focus-visible` may not have applied, i.e. when `el.matches(":focus-visible")` is false after focus); if different compute indicator contrast vs adjacent background -> CLR-05 when < 3:1. Restore original activeElement. Skip if the page has > 400 focusables (report one Semi finding on body explaining the cap). |
+| `focus-visible.ts` | KBD-05, CLR-05, CLR-09 | For each focusable: snapshot outline/box-shadow/border/background/color/text-decoration, `el.focus({ preventScroll: true })`, compare; if identical -> KBD-05 (type Semi when `:focus-visible` may not have applied, i.e. when `el.matches(":focus-visible")` is false after focus); if different compute indicator contrast vs adjacent background -> CLR-05 when < 3:1. A background-only change is measured against the unfocused state: CLR-09 (2.4.13 AAA) in AAA scans, CLR-05 Semi (Needs review) in A/AA scans. Restore original activeElement. Skip if the page has > 400 focusables (report one Semi finding on body explaining the cap). |
 | `focus-obscured.ts` | KBD-06 | For each focusable (cap 400): scrollIntoView block "nearest", check `elementFromPoint` at centre and at the four corners inset by 2px; if a `position: fixed|sticky` element that is not an ancestor covers the centre -> KBD-06. Restore scroll position. |
 | `alt-quality.ts` | IMG-02, IMG-03, IMG-08, IMG-09 | Filename regex `\.(jpe?g|png|gif|svg|webp|avif|bmp)$` or `^(IMG|DSC|DCIM)[_-]?\d+`; generic words list; inline svg without role/name/aria-hidden -> IMG-08 Semi; `<img alt="">` with a non-empty `title` and no aria-label/aria-labelledby -> IMG-09. |
 | `link-text.ts` | LNK-03, LNK-05 | Vague text list (click here, here, read more, more, learn more, link, details); `target=_blank` with no visible/sr text or aria-label containing "new window"/"new tab"/"opens in" and no rel-annotated icon. |

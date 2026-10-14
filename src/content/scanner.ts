@@ -197,7 +197,7 @@ async function runAxe(root: Document | Element, runOptions: axe.RunOptions): Pro
   return axe.run(context, runOptions);
 }
 
-function makeRuleContext(root: Document | Element, rule: CustomRule, ruleConfig: RuleConfig, extras: ScanContextExtras, progress: (p: number) => void): RuleContext {
+function makeRuleContext(root: Document | Element, rule: CustomRule, ruleConfig: RuleConfig, extras: ScanContextExtras, progress: (p: number) => void, wcagLevel: RuleContext["wcagLevel"]): RuleContext {
   const thresholds: Record<string, number> = {};
   for (const id of ruleIdsOf(rule)) Object.assign(thresholds, ruleConfig.thresholds?.[id] ?? {});
   return {
@@ -207,6 +207,7 @@ function makeRuleContext(root: Document | Element, rule: CustomRule, ruleConfig:
     isVisible,
     yieldToMain,
     progress,
+    wcagLevel,
   };
 }
 
@@ -224,7 +225,7 @@ export async function runCustomRule(
   progress: (p: number) => void = () => undefined,
 ): Promise<Issue[]> {
   const disabled = disabledRuleIds(rulesFile, ruleConfig);
-  const ctx = makeRuleContext(root, rule, ruleConfig, extras, progress);
+  const ctx = makeRuleContext(root, rule, ruleConfig, extras, progress, options.wcagLevel ?? "AA");
   const findings = await rule.run(ctx);
   const safeFindings = (Array.isArray(findings) ? findings : []).filter((f) => f && f.element instanceof Element && !extras.isExtensionNode(f.element));
   const issues = normalizeCustomFindings(rule, safeFindings, rulesFile);

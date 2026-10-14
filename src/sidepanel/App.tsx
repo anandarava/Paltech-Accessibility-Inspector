@@ -10,6 +10,7 @@ import { ScanButton, ScanProgressBar, useStartScan } from "./components/ScanButt
 import { ScopeControl } from "./components/ScopeControl";
 import { LandingView } from "./components/LandingView";
 import { ScoreCard } from "./components/ScoreCard";
+import { ResizableSummary } from "./components/ResizableSummary";
 import { ResultTabs } from "./components/ResultTabs";
 import { Filters } from "./components/Filters";
 import { IssueList } from "./components/IssueList";
@@ -119,7 +120,9 @@ export function App({ tabIdOverride, inspectable = false, onInspect, getInspecte
 
   const listPane = (
     <>
-      <ScoreCard />
+      <ResizableSummary>
+        <ScoreCard />
+      </ResizableSummary>
       <ResultTabs />
       <Filters />
       <IssueList onOpen={openIssue} wide={wide} />

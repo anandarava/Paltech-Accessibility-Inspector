@@ -73,6 +73,8 @@ The top of the results is a summary: how many issues, how serious, and whether t
 - **Conformance.** *No critical WCAG issues* turns into a red *Not conformant (WCAG level)* label whenever an open Critical WCAG issue exists, whatever the score. The score is a trend indicator, not a certificate.
 - **Rules passed.** The green count shows how many rules passed.
 
+**More room for the list.** Drag the divider under the summary up to shrink the summary, or all the way up to hide it; drag it down to bring it back. Double-click the divider to hide or show the summary. From the keyboard, tab to the divider and use Arrow Up and Arrow Down, Home to hide the summary or End to show all of it. The panel remembers the size you choose.
+
 Below the summary, the tabs choose what the list shows:
 
 | Tab | What it shows |
@@ -218,7 +220,7 @@ Changes are saved with the **Save** button. Settings changed in the side panel a
 
 - It finds roughly 30 to 40 percent of accessibility problems. Test with a keyboard and a screen reader (NVDA, JAWS, VoiceOver or TalkBack) as well.
 - It cannot judge whether alt text, labels or instructions are accurate. It catches obvious patterns such as filenames and generic words.
-- Contrast over images, gradients and video cannot be decided automatically, so those cases are not reported.
+- Contrast over images, gradients and video cannot be decided automatically. Those cases are listed on the **Needs review** tab for you to check.
 - Content in cross-origin iframes may not be scanned. Such frames are listed as not scanned.
 - Canvas content (charts, games) cannot be inspected.
 - Issues that only appear after an interaction (hover menus, error messages, later views of a single-page app) are found only if you trigger that state before scanning.
@@ -234,5 +236,6 @@ Changes are saved with the **Save** button. Settings changed in the side panel a
 | A count differs from axe DevTools | Tick **axe-core only** and use the same WCAG version and level. |
 | Cursor or layout looks wrong after an update | Reload the extension on `chrome://extensions` and reload the page. |
 | You want to start over on a tab | Press **Reset** in the footer. |
+| A yellow bar says the extension "started debugging this browser" | This is expected during a scan. To check focus indicators, the extension makes the page behave as if it had keyboard focus (the side panel has it while you work), then switches this off. The bar closes when the scan ends. If you cancel it, focus indicators are not checked and one note appears under **Needs review**. |
 
 **Privacy.** Scanning runs entirely in your browser and the extension makes no network requests of its own. Screenshots are taken only when you ask for them, input values are masked and elements matching your redaction selectors (by default password fields and `.pii`) are blurred before an image is stored.

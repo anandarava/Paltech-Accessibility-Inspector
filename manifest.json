@@ -13,7 +13,7 @@
   "background": { "service_worker": "src/background/service-worker.ts", "type": "module" },
   "options_page": "src/options/index.html",
   "devtools_page": "src/devtools/index.html",
-  "permissions": ["activeTab", "scripting", "sidePanel", "storage", "unlimitedStorage", "downloads", "offscreen"],
+  "permissions": ["activeTab", "scripting", "sidePanel", "storage", "unlimitedStorage", "downloads", "offscreen", "debugger"],
   "host_permissions": ["<all_urls>"],
   "web_accessible_resources": [
     {
