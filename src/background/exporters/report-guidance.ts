@@ -54,6 +54,13 @@ const RULES: Record<string, RuleGuidance> = {
     users: [SR],
     effort: "Quick fix",
   },
+  "IMG-09": {
+    headline: "Images are marked decorative but have a title",
+    impact: "alt=\"\" tells screen readers to skip the image, but the title says it means something. Some screen readers read the title, others skip it, so users get different information.",
+    fix: "Decide what the image is for: if it is decorative, remove the title; if it carries meaning, put that meaning in the alt text.",
+    users: [SR],
+    effort: "Quick fix",
+  },
   "IMG-03": {
     headline: "Image descriptions are too generic",
     impact: "Words like \"image\" or \"photo\" tell screen reader users that an image exists, but not what it shows.",

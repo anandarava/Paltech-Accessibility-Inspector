@@ -49,7 +49,7 @@ axe DevTools-style workflow:
   extension's own rules and lets axe's own
   `color-contrast` / `target-size` run, so counts line up with axe DevTools at
   the same WCAG version and level
-- **Result tabs**: All / WCAG issues / Best practices / Passed,
+- **Result tabs**: All / WCAG issues / Best practices / Needs review / Passed,
   free-text search, a **Status** filter (Open / Ignored / Baselined, with
   "Open only" and "Excluded only" shortcuts) to review ignored or baselined
   issues across all rules, results **grouped by rule** ("Text contrast (12)") with a
@@ -102,7 +102,7 @@ report, keyed by project rule id:
 
 ```html
 <script type="application/json" id="expected">
-  { "IMG-01": 2, "IMG-02": 2, "IMG-03": 2, "IMG-05": 1, "IMG-06": 2 }
+  { "IMG-01": 2, "IMG-02": 2, "IMG-03": 2, "IMG-05": 1, "IMG-06": 2, "IMG-09": 1 }
 </script>
 ```
 
@@ -315,6 +315,7 @@ custom).
 | IMG-01 | &lt;img&gt; missing alt attribute | 1.1.1 Non-text Content (A) | Auto | Critical | axe: `image-alt` | yes |
 | IMG-02 | Alt text is a filename | 1.1.1 Non-text Content (A) | Auto | Serious | custom | yes |
 | IMG-03 | Alt text is generic ("image", "photo", "icon") | 1.1.1 Non-text Content (A) | Auto | Moderate | custom | yes |
+| IMG-09 | Image marked decorative (alt="") but has a title | 1.1.1 Non-text Content (A) | Auto | Serious | custom | yes |
 | IMG-05 | &lt;svg role="img"&gt; with no &lt;title&gt;, aria-label, or aria-labelledby | 1.1.1 Non-text Content (A) | Auto | Serious | axe: `svg-img-alt`, `role-img-alt` | yes |
 | IMG-06 | &lt;input type="image"&gt;, &lt;area&gt;, or &lt;object&gt; without text alternative | 1.1.1 Non-text Content (A) | Auto | Critical | axe: `input-image-alt`, `area-alt`, `object-alt`, `server-side-image-map` | yes |
 
@@ -415,10 +416,12 @@ custom).
 | OTH-03 | Orientation locked via CSS | 1.3.4 Orientation (AA) | Auto | Serious | axe: `css-orientation-lock` | yes |
 
 Notes: results axe cannot decide (`aria-hidden-focus`, `duplicate-id-aria`,
-`th-has-data-cells`, `color-contrast` over images…) are not requested, and the
-catalogue's undeterminable ("Semi") rules (CLR-03, CLR-06, FRM-05, FRM-06,
-IMG-08, KBD-04, KBD-08, MED-01, MED-02, STR-13) are kept only as ids and never
-reported. `label-content-name-mismatch` is an experimental axe rule and is off
+`th-has-data-cells`, `color-contrast` over images…) and the catalogue's
+undeterminable ("Semi") rules (CLR-03, CLR-06, FRM-05, FRM-06, IMG-08, KBD-04,
+KBD-08, MED-01, MED-02, STR-13) are listed on the **Needs review** tab and in a
+"Needs review" section of the HTML report. They never count as failures or
+toward the score. Untick "Include findings that need manual review" in the
+options to leave them out. `label-content-name-mismatch` is an experimental axe rule and is off
 unless enabled explicitly.
 
 ## Known limitations

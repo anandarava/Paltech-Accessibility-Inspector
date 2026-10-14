@@ -136,6 +136,7 @@ These run only when **axe-core only** is ✗. They are counted under
 |---|---|---|---|---|
 | IMG-02 | 1.1.1 A | Serious | Alt text is a filename (e.g. `IMG_2031.jpg`) | axe's `image-alt` only checks that alt text exists, not what it says |
 | IMG-03 | 1.1.1 A | Moderate | Alt text is generic ("image", "photo", "icon") | Same: axe does not judge alt wording |
+| IMG-09 | 1.1.1 A | Serious | Image marked decorative (`alt=""`) but has a `title` | axe treats `alt=""` as decorative and passes the image without looking at the title |
 | CLR-04 | 1.4.11 AA | Serious | UI component borders or icons below 3:1 | axe has no rule for 1.4.11 Non-text Contrast |
 | CLR-05 | 1.4.11 AA | Serious | Focus indicator below 3:1 against its surroundings | Same criterion (1.4.11) |
 | FRM-02 | 3.3.2 A | Serious | Placeholder is the only label | axe's `label-title-only` covers title-only labels; FRM-02 covers the placeholder case |

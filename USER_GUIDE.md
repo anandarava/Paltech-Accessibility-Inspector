@@ -80,6 +80,7 @@ Below the summary, the tabs choose what the list shows:
 | All | Every open issue |
 | WCAG issues | Failures of a WCAG success criterion |
 | Best practices | Recommendations that are not WCAG failures |
+| Needs review | Checks the automated rules could not decide, such as text over a background image. Check each by hand. They are not counted as failures or in the score |
 | Failed rules | One row per failed rule with its WCAG reference, severity and element count |
 | Passed rules | Rules that passed on this page |
 | Not applicable rules | Rules that found nothing to test (for example no video on the page) |

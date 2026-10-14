@@ -110,7 +110,19 @@
           <figcaption>SVG marked as an image without a title or label.</figcaption>
         </figure>
 
-        <!-- IMG-08 (Semi, not reported): bare inline svg with no role, name, or aria-hidden -->
+        <!-- IMG-09: alt="" (decorative) but has a title (1); the aria-label one is fine -->
+        <figure>
+          <img width="120" height="80" alt="" title="Quarterly sales chart"
+               src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='80'%3E%3Crect width='120' height='80' fill='%23c0392b'/%3E%3C/svg%3E">
+          <figcaption>Empty alt with a title.</figcaption>
+        </figure>
+        <figure>
+          <img width="120" height="80" alt="" aria-label="Quarterly sales chart" title="Sales"
+               src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='80'%3E%3Crect width='120' height='80' fill='%23d35400'/%3E%3C/svg%3E">
+          <figcaption>Empty alt, but named by aria-label (not flagged).</figcaption>
+        </figure>
+
+        <!-- IMG-08 (Semi, Needs review): bare inline svg with no role, name, or aria-hidden -->
         <figure>
           <svg width="48" height="48" viewBox="0 0 48 48">
             <path d="M8 24h32M24 8v32" stroke="#0b4f9c" stroke-width="4"/>
@@ -144,7 +156,7 @@
 
   <!-- Definite (Auto) findings the extension must report, per project rule id. -->
   <script type="application/json" id="expected">
-    { "IMG-01": 2, "IMG-02": 2, "IMG-03": 2, "IMG-05": 1, "IMG-06": 2 }
+    { "IMG-01": 2, "IMG-02": 2, "IMG-03": 2, "IMG-05": 1, "IMG-06": 2, "IMG-09": 1 }
   </script>
 </body>
 </html>

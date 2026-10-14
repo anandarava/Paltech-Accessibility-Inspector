@@ -18,6 +18,8 @@ The rule catalogue in [shared/a11y-rules.json](shared/a11y-rules.json) already c
 ## Priority 1: close the gaps in the report
 
 ### 1. Add a "Needs review" category
+**Status: done** on branch `detection-enhancements`. New tab, HTML report section, and an on/off setting (on by default). Not counted in the score.
+
 - **Gap:** ARC reports 52 contrast cases over background images and IBM reports 33 potential violations. PalTech shows no comparable queue.
 - **Cause:** [scanner.ts:118](src/content/scanner.ts#L118) only requests violations, so axe-core's "incomplete" results are thrown away.
 - **Change:**
@@ -27,6 +29,8 @@ The rule catalogue in [shared/a11y-rules.json](shared/a11y-rules.json) already c
 - **Effort:** Small.
 
 ### 2. New rule: empty alt with a title or name (IMG-09)
+**Status: done** on branch `detection-enhancements`. Flags `title` only. An `aria-label` or `aria-labelledby` names the image reliably, so it is not reported.
+
 - **Gap:** ARC (10 errors), IBM (10 violations) and WAVE (10 alerts) flagged images with `alt=""` plus a `title`. PalTech flagged none.
 - **Cause:** axe-core treats `alt=""` as decorative and passes the image. No current IMG rule checks this conflict.
 - **Change:** Add a rule to [src/content/rules/alt-quality.ts](src/content/rules/alt-quality.ts). Flag an `<img>` that has `alt=""` and also a non-empty `title`, `aria-label` or `aria-labelledby`. The fix guidance is to pick one intent: decorative (remove the title) or meaningful (write proper alt text).
