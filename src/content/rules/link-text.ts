@@ -10,7 +10,9 @@
  *  - LNK-03 judges the *accessible name* (aria-label / aria-labelledby win
  *    over the visible text), so `<a aria-label="Read more about pricing">Read
  *    more</a>` passes. Links with `aria-describedby` are skipped because the
- *    description may supply the context (2.4.4 allows "in context").
+ *    description may supply the context (2.4.4 allows "in context"). A link
+ *    whose text is a single <code> element is a term ("link" the ARIA role on
+ *    a documentation page), not vague text, and is skipped too.
  *    Trailing punctuation, arrows and ellipses are stripped before matching.
  *    A link whose vague text is complemented by the surrounding sentence is
  *    still flagged (the rule cannot read intent), hence best practice only.
@@ -86,6 +88,19 @@ export function isVagueLinkText(text: string): boolean {
   return VAGUE_LINK_TEXT.has(norm);
 }
 
+/**
+ * A link whose whole text is one code element names a term, not a vague
+ * phrase: `<a href="/Roles/link_role"><code>link</code></a>` on a
+ * documentation page points to the definition of `link`.
+ */
+export function isCodeTerm(link: Element): boolean {
+  const children = Array.from(link.children);
+  if (children.length !== 1) return false;
+  const only = children[0];
+  if (!only || !["code", "kbd", "samp", "var"].includes(only.tagName.toLowerCase())) return false;
+  return (link.textContent ?? "").trim() === (only.textContent ?? "").trim();
+}
+
 /** All text a user (sighted or screen reader) could receive from this link that might warn about a new window. */
 function warningText(link: Element, doc: Document): string {
   const parts: string[] = [];
@@ -154,7 +169,7 @@ export const rule: CustomRule = {
 
         // --- LNK-03 ----------------------------------------------------------
         const name = accessibleName(link);
-        if (isVagueLinkText(name) && !link.hasAttribute("aria-describedby")) {
+        if (isVagueLinkText(name) && !link.hasAttribute("aria-describedby") && !isCodeTerm(link)) {
           const href = link.getAttribute("href") ?? "";
           findings.push({
             element: link,

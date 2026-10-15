@@ -546,6 +546,37 @@ test.describe("PalTech A11y Inspector extension", () => {
     }
   });
 
+  test("real-site patterns: no false findings, and the look-alikes are still reported", async () => {
+    const { page, tabId } = await openFixture("real-site-cases");
+    try {
+      const result = await scan(tabId);
+      const idOf = (i: Issue) => /id="([^"]+)"/.exec(i.element.html)?.[1] ?? i.element.selector;
+      const rulesOn = (id: string) => result.issues.filter((i) => idOf(i) === id).map((i) => i.ruleId).sort();
+      // Chrome's two-colour default ring is visible on the dark band.
+      expect(rulesOn("default-ring").filter((r) => r === "CLR-05" || r === "KBD-05")).toEqual([]);
+      // Text pushed out of its button or parked left of the page is not seen; shown text still is.
+      expect(rulesOn("icon-search").filter((r) => r.startsWith("CLR-0"))).toEqual([]);
+      expect(rulesOn("offscreen")).toEqual([]);
+      expect(rulesOn("low")).toContain("CLR-01");
+      // A carousel slide waiting outside the window is shown later and still counts.
+      expect(rulesOn("slide-two")).toContain("CLR-01");
+      // The clipped image strip is not behind the text below it: a definite failure, not "needs review".
+      expect(rulesOn("countdown")).toEqual(["CLR-01"]);
+      // A gallery window holding both a caption and its image does not separate them.
+      expect(rulesOn("gallery-caption")).toEqual(["CLR-03"]);
+      // Citation links in <sup> and back-links in <span> sit in text: the inline exception applies.
+      for (const id of ["cite-1", "cite-2", "back-1", "back-2"]) expect(rulesOn(id).filter((r) => r.startsWith("TGT"))).toEqual([]);
+      // <a><code>link</code></a> names a term.
+      expect(rulesOn("code-link")).not.toContain("LNK-03");
+      // Child frames: no page-level findings in the empty frame, nothing at all from the parked one.
+      const fromFrames = result.issues.filter((i) => (i.frameId ?? 0) !== 0);
+      expect(fromFrames.filter((i) => ["STR-01", "STR-02", "STR-03", "STR-05"].includes(i.ruleId)).map((i) => i.ruleId)).toEqual([]);
+      expect(result.issues.filter((i) => i.element.html.includes("parked-warning"))).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
   test("the summary can be resized to give the issue list more room", async () => {
     const { page, tabId } = await openFixture("images");
     const panelTab = await context.newPage();

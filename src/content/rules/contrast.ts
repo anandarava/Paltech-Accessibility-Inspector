@@ -7,7 +7,9 @@
  *  - CLR-03  text over an image / gradient / media (Semi, Moderate): the real
  *            background cannot be determined from computed styles alone.
  *  - CLR-04  form control border (or fill) below 3:1 against its surroundings
- *            (Auto, Serious, WCAG 1.4.11).
+ *            (Auto, Serious, WCAG 1.4.11). Fields, drop-downs, checkboxes,
+ *            radios, switches and sliders only; buttons are identified by
+ *            their text or icon and need no boundary.
  *
  * How the background is resolved
  * ------------------------------
@@ -33,7 +35,11 @@
  *  - Text shadows and outlines that improve legibility are ignored (WCAG does
  *    allow them to count); such text may be flagged although it passes.
  *  - Disabled controls and placeholder text are exempt from 1.4.3 and skipped.
- *  - Screen-reader-only text (1x1 clipped) is skipped because it is not seen.
+ *  - Screen-reader-only text (1x1 clipped) is skipped because it is not seen,
+ *    and so is text pushed out of its own `overflow: hidden` box (image
+ *    replacement) or placed above / left of the page (see isTextOutOfSight).
+ *  - Images and video count as "behind the text" only with the part an
+ *    `overflow: hidden` ancestor leaves visible (see mediaRectBehind).
  *  - Text inside `aria-hidden="true"` subtrees IS checked: 1.4.3/1.4.11 are
  *    about what sighted users see, and such text (captions, cloned carousel
  *    slides, icon-font glyphs) is still painted. Only rendering (display,
@@ -395,6 +401,66 @@ interface MediaBox {
   rect: Rect;
 }
 
+/**
+ * The part of a media element that can be behind `text`: its rect cut down by
+ * each ancestor that hides overflow (`overflow: hidden` or `clip`) and does
+ * not also hold the text. A carousel strip inside an `overflow: hidden` window
+ * reaches far beyond what is shown, and only the shown part can be behind text
+ * outside the window. A window holding both the text and the image (a slide
+ * waiting outside it) clips both alike, so it is not applied: the two still
+ * overlap when the slide is shown. Scroll containers are not applied either:
+ * text and image scroll together. Null when nothing is left. Clipping by a
+ * `position: fixed` ancestor's containing block is not modelled.
+ */
+function mediaRectBehind(media: MediaBox, text: Element): Rect | null {
+  return clippedRectFrom(media.rect, parentOf(media.element), (node) => node.contains(text));
+}
+
+function hides(overflow: string): boolean {
+  return overflow === "hidden" || overflow === "clip";
+}
+
+/** `rect` cut down by `box`'s border box on each axis where `box` hides overflow; null when nothing is left. */
+function clipToBox(rect: Rect, box: Element): Rect | null {
+  const cs = (box.ownerDocument.defaultView ?? window).getComputedStyle(box);
+  const clipX = hides(cs.overflowX);
+  const clipY = hides(cs.overflowY);
+  if (!clipX && !clipY) return rect;
+  const b = box.getBoundingClientRect();
+  const out: Rect = {
+    left: clipX ? Math.max(rect.left, b.left) : rect.left,
+    right: clipX ? Math.min(rect.right, b.right) : rect.right,
+    top: clipY ? Math.max(rect.top, b.top) : rect.top,
+    bottom: clipY ? Math.min(rect.bottom, b.bottom) : rect.bottom,
+  };
+  return out.right <= out.left || out.bottom <= out.top ? null : out;
+}
+
+/**
+ * Text that is in the DOM but never seen:
+ *  - pushed out of its own element, which hides overflow (image replacement:
+ *    `text-indent: -5000px; overflow: hidden` on an icon button);
+ *  - placed wholly above or left of the page (`left: -9999px`), where nobody
+ *    can scroll to it, unless a clipping ancestor holds it, which is how
+ *    carousels park their other slides; those are shown later and still count.
+ */
+function isTextOutOfSight(rect: Rect, el: Element, view: Window): boolean {
+  if (!clipToBox(rect, el)) return true;
+  const beforePage = rect.right + view.scrollX <= 0 || rect.bottom + view.scrollY <= 0;
+  return beforePage && clippedRectFrom(rect, parentOf(el)) !== null;
+}
+
+/** `start` cut down by `from` and each of its ancestors that hides overflow, up to (not including) the first one `stop` accepts. */
+function clippedRectFrom(start: Rect, from: Element | null, stop?: (node: Element) => boolean): Rect | null {
+  let rect: Rect | null = start;
+  const doc = from?.ownerDocument;
+  for (let node = from; rect && node && doc && node !== doc.documentElement && node !== doc.body; node = parentOf(node)) {
+    if (stop?.(node)) break;
+    rect = clipToBox(rect, node);
+  }
+  return rect;
+}
+
 /** Rendered media elements that could sit behind text (img/video/canvas/picture/object/embed); aria-hidden media still paints. */
 function collectMedia(ctx: RuleContext): MediaBox[] {
   const out: MediaBox[] = [];
@@ -420,7 +486,9 @@ function overlapsMedia(group: TextGroup, rect: Rect, media: MediaBox[]): Element
   if (area <= 0) return null;
   for (const m of media) {
     if (m.element === group.element || m.element.contains(group.element) || group.element.contains(m.element)) continue;
-    if (intersectionArea(rect, m.rect) >= area * 0.25) return m.element;
+    if (intersectionArea(rect, m.rect) < area * 0.25) continue;
+    const shown = mediaRectBehind(m, group.element);
+    if (shown && intersectionArea(rect, shown) >= area * 0.25) return m.element;
   }
   return null;
 }
@@ -473,6 +541,7 @@ async function checkText(ctx: RuleContext, findings: RuleFinding[], cache: Backg
 
       const clipText = cs.webkitBackgroundClip === "text" || (cs as unknown as { backgroundClip?: string }).backgroundClip === "text";
       const rect = textRect(group);
+      if (rect && isTextOutOfSight(rect, el, view)) continue;
       const mediaBehind = rect ? overlapsMedia(group, rect, media) : null;
       if (bg.hasImage || clipText || mediaBehind) {
         const reason = mediaBehind
@@ -547,7 +616,14 @@ async function checkText(ctx: RuleContext, findings: RuleFinding[], cache: Backg
 // CLR-04: control boundaries
 // ---------------------------------------------------------------------------
 
-const CONTROL_SELECTOR = "input, select, textarea, button, [role='checkbox'], [role='radio'], [role='switch'], [role='slider']";
+/**
+ * Controls whose boundary identifies them. Buttons are left out: WCAG 1.4.11
+ * does not require a visible boundary on a button that its text or icon
+ * identifies, so a borderless "quiet" button, or one whose border matches the
+ * page, is not a failure (its text and icon contrast are checked elsewhere).
+ */
+const CONTROL_SELECTOR = "input, select, textarea, [role='checkbox'], [role='radio'], [role='switch'], [role='slider']";
+const BUTTON_INPUT_TYPES = new Set(["submit", "button", "reset", "image"]);
 
 interface BorderInfo {
   color: RGBA;
@@ -555,7 +631,7 @@ interface BorderInfo {
   side: string;
 }
 
-/** First painted border side (width > 0, style not none/hidden) with a parseable colour. */
+/** First painted border side (width > 0, style not none/hidden, not transparent) with a parseable colour. */
 function paintedBorder(cs: CSSStyleDeclaration): BorderInfo | null {
   const sides: Array<[string, string, string, string]> = [
     ["top", cs.borderTopWidth, cs.borderTopStyle, cs.borderTopColor],
@@ -568,7 +644,7 @@ function paintedBorder(cs: CSSStyleDeclaration): BorderInfo | null {
     if (!Number.isFinite(width) || width <= 0) continue;
     if (style === "none" || style === "hidden") continue;
     const parsed = parseColor(color);
-    if (!parsed) continue;
+    if (!parsed || parsed[3] <= 0.01) continue; // a transparent border is not drawn
     return { color: parsed, width, side };
   }
   return null;
@@ -592,7 +668,7 @@ async function checkControls(ctx: RuleContext, findings: RuleFinding[], cache: B
     try {
       // Rendered-only check: an aria-hidden control is still painted and its boundary must still be perceivable.
       if (isExtensionElement(el, ctx) || !isRendered(el)) continue;
-      if (el instanceof HTMLInputElement && (el.type === "hidden")) continue;
+      if (el instanceof HTMLInputElement && (el.type === "hidden" || BUTTON_INPUT_TYPES.has(el.type))) continue;
       if (el.matches(":disabled, [aria-disabled='true']")) continue; // inactive controls are exempt
       const view = el.ownerDocument.defaultView ?? window;
       const cs = view.getComputedStyle(el);

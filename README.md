@@ -439,6 +439,10 @@ unless enabled explicitly.
   decided automatically).
 - Content inside cross-origin iframes may not be scanned without additional
   host permissions; such frames are listed as unscanned.
+- Frames nobody can see (hidden, 1px or smaller, or placed above or left of
+  the page, like tracking and messaging frames) are not reported, and
+  page-level checks (title, h1, main landmark, and language when the frame
+  shows no text) apply to the top page only.
 - Canvas-based content (charts, games) cannot be inspected semantically.
 - Issues that appear only after specific interactions (hover menus, error
   states, later SPA views) are found only if you trigger those states before

@@ -11,6 +11,7 @@ import type { CustomRule, RuleContext } from "./rules/types";
 import { CUSTOM_RULES, ruleIdsOf } from "./rules/index";
 import { axeIdsForProjectRule, dedupeIssues, normalizeAxeResults, normalizeCustomFindings } from "./normalizer";
 import { isVisible, yieldToMain } from "./dom-utils";
+import { isRendered } from "./rules/contrast";
 import { axeTagsFor, criterionInVersion } from "@shared/wcag-map";
 
 export interface FrameScanOutput {
@@ -23,6 +24,13 @@ export interface FrameScanOutput {
   frameUrl: string;
   isTop: boolean;
   durationMs: number;
+  /**
+   * Addresses of this frame's child frames that nobody can see (not rendered,
+   * at most 1px, or placed above or left of the page). The service worker
+   * drops findings from frames at these addresses: their content is never
+   * shown (tracking and messaging frames such as Facebook's xd_arbiter).
+   */
+  hiddenChildFrames?: string[];
 }
 
 export interface ScanContextExtras {
@@ -232,6 +240,71 @@ export async function runCustomRule(
   return issues.filter((issue) => isAllowed(issue.ruleId, options, disabled));
 }
 
+/**
+ * axe rules about the page as a whole. Inside a child frame they describe the
+ * embedded document, which needs none of these: a frame is named by the
+ * iframe's title attribute (axe `frame-title`), and its headings and
+ * landmarks belong to the page around it. Ad and tracking frames otherwise
+ * produce "no title / no h1 / no main" on almost every site.
+ */
+const PAGE_LEVEL_AXE_RULES = new Set(["document-title", "page-has-heading-one", "landmark-one-main", "bypass"]);
+/** Language rules apply to a child frame only when it shows text (an empty frame has nothing to pronounce). */
+const LANGUAGE_AXE_RULES = new Set(["html-has-lang", "html-lang-valid", "html-xml-lang-mismatch"]);
+
+function frameHasText(doc: Document): boolean {
+  try {
+    return /\S/.test(doc.body?.innerText ?? "");
+  } catch {
+    return true;
+  }
+}
+
+/** Drop page-level findings that do not apply inside a child frame. */
+export function filterFrameLevelIssues(issues: Issue[], isTop: boolean, doc: Document): Issue[] {
+  if (isTop) return issues;
+  let hasText: boolean | null = null;
+  return issues.filter((issue) => {
+    const axeId = String(issue.data?.axeRuleId ?? "");
+    if (PAGE_LEVEL_AXE_RULES.has(axeId)) return false;
+    if (LANGUAGE_AXE_RULES.has(axeId)) {
+      hasText ??= frameHasText(doc);
+      return hasText;
+    }
+    return true;
+  });
+}
+
+/** True when nobody can see the frame element: not rendered, at most 1px, or wholly above or left of the page. */
+function isHiddenFrame(frame: Element): boolean {
+  if (!isRendered(frame)) return true;
+  const rect = frame.getBoundingClientRect();
+  if (rect.width <= 1 || rect.height <= 1) return true;
+  const view = frame.ownerDocument.defaultView ?? window;
+  return rect.right + view.scrollX <= 0 || rect.bottom + view.scrollY <= 0;
+}
+
+/**
+ * Addresses of this document's child frames that nobody can see. A content
+ * script cannot map a frame element to the extension's frame id in Chrome
+ * (runtime.getFrameId is Firefox-only), so frames are matched by address. An
+ * address is listed only when every frame loading it is hidden, so a visible
+ * frame is never dropped because a hidden one shares its address.
+ */
+export function hiddenChildFrameUrls(doc: Document): string[] {
+  const hidden = new Map<string, boolean>();
+  for (const frame of Array.from(doc.querySelectorAll("iframe, frame"))) {
+    try {
+      const url = (frame as HTMLIFrameElement).src;
+      if (!/^https?:/i.test(url)) continue; // about:blank / srcdoc frames share one address
+      const isHidden = isHiddenFrame(frame);
+      hidden.set(url, (hidden.get(url) ?? true) && isHidden);
+    } catch {
+      // scan this frame as usual
+    }
+  }
+  return [...hidden].filter(([, isHidden]) => isHidden).map(([url]) => url);
+}
+
 const LEVEL_RANK = { A: 0, AA: 1, AAA: 2 } as const;
 
 /** True when a finding's WCAG level is within the selected level; best-practice ("BP") findings always are. */
@@ -309,6 +382,7 @@ export async function scanFrame(options: ScanOptions, rulesFile: RulesFile, rule
     const version = options.wcagVersion ?? "2.2";
     const keepReview = options.includeNeedsReview !== false;
     issues = dedupeIssues(issues).filter((issue) => (keepReview || issue.type !== "Semi") && criterionInVersion(issue.wcag.criterion, version));
+    issues = filterFrameLevelIssues(issues, isTop, document);
     safeProgress(100, "Scan complete");
     return {
       issues,
@@ -318,6 +392,7 @@ export async function scanFrame(options: ScanOptions, rulesFile: RulesFile, rule
       frameUrl,
       isTop,
       durationMs: Math.round(performance.now() - started),
+      hiddenChildFrames: hiddenChildFrameUrls(document),
     };
   } finally {
     scanInProgress = false;

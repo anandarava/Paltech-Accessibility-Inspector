@@ -17,8 +17,9 @@
  *    (b) the `minSize` circle centred on any other undersized target (centre
  *    distance >= minSize).
  *  - Inline: a target whose computed display is inline and that sits in a
- *    sentence (its parent has non-whitespace text nodes besides the link)
- *    is exempt, since its size is constrained by the line height.
+ *    sentence (its parent, or the nearest block around inline wrappers such
+ *    as <sup> or <span>, has other non-whitespace text) is exempt, since its
+ *    size is constrained by the line height.
  *  - User agent control: native-appearance checkbox/radio inputs are drawn
  *    by the browser at their default size and are exempt.
  *  - The "essential" and "equivalent target elsewhere" exceptions cannot be
@@ -84,18 +85,37 @@ function largestRect(el: Element): DOMRect | null {
   return best;
 }
 
-/** Inline target that is part of a sentence: parent has other non-empty text. */
-function isInlineInSentence(el: Element, cs: CSSStyleDeclaration): boolean {
-  if (!cs.display.startsWith("inline") || cs.display === "inline-block" || cs.display === "inline-flex" || cs.display === "inline-grid") return false;
-  const parent = el.parentElement;
-  if (!parent) return false;
+function isInlineDisplay(display: string): boolean {
+  return display.startsWith("inline") && display !== "inline-block" && display !== "inline-flex" && display !== "inline-grid" && display !== "inline-table";
+}
+
+/** True when a child of `parent` other than `skip` shows text that is not itself a target. */
+function hasOtherText(parent: Element, skip: Element): boolean {
   for (const node of Array.from(parent.childNodes)) {
-    if (node === el) continue;
+    if (node === skip) continue;
     if (node.nodeType === Node.TEXT_NODE && /\S/.test(node.textContent ?? "")) return true;
     if (node.nodeType === Node.ELEMENT_NODE) {
       const e = node as Element;
       if (!e.matches(TARGET_SELECTOR) && /\S/.test(e.textContent ?? "")) return true;
     }
+  }
+  return false;
+}
+
+/**
+ * Inline target that is part of a sentence. The text may sit outside inline
+ * wrappers around the target: a citation link `<sup><a>[1]</a></sup>` in a
+ * paragraph, or a back-link `<span><a>^</a></span>` before the reference text.
+ * Walk up through inline ancestors to the first block and look for other text
+ * at each level.
+ */
+function isInlineInSentence(el: Element, cs: CSSStyleDeclaration): boolean {
+  if (!isInlineDisplay(cs.display)) return false;
+  const view = el.ownerDocument.defaultView ?? window;
+  let child: Element = el;
+  for (let parent = el.parentElement; parent; child = parent, parent = parent.parentElement) {
+    if (hasOtherText(parent, child)) return true;
+    if (!isInlineDisplay(view.getComputedStyle(parent).display)) return false;
   }
   return false;
 }

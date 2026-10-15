@@ -31,6 +31,9 @@
  *  - Moving focus can trigger page behaviour (opening menus, validation).
  *    Focus is moved with `preventScroll` and restored, but side effects that
  *    the page itself performs on focus cannot be undone.
+ *  - Chrome's default focus ring (`outline: auto` in the default colour) is a
+ *    dark ring with a white ring around it, visible on any background; its
+ *    computed colour only describes the dark part, so it is not measured.
  *  - Contrast of the indicator is measured against the background *around*
  *    the element (outlines sit outside the box). An inset ring against the
  *    element's own fill is approximated by the same value.
@@ -156,6 +159,19 @@ export function shadowColor(boxShadow: string, before = "none"): RGBA | null {
 function outlineVisible(s: StyleSnapshot): boolean {
   const w = parseFloat(s.outlineWidth);
   return s.outlineStyle !== "none" && Number.isFinite(w) && w > 0;
+}
+
+/**
+ * Chrome's default focus ring: `outline-style: auto` in the default
+ * `-webkit-focus-ring-color` (computed as rgb(16, 16, 16)). Since Chrome 83 it
+ * is drawn as a dark inner ring with a white outer ring, so one of the two
+ * reaches 3:1 on any background; the computed colour describes only the dark
+ * ring. An author colour with `auto` is measured as usual.
+ */
+export function isDefaultFocusRing(s: Pick<StyleSnapshot, "outlineStyle" | "outlineColor">): boolean {
+  if (s.outlineStyle !== "auto") return false;
+  const c = parseColor(s.outlineColor);
+  return !!c && c[0] === 16 && c[1] === 16 && c[2] === 16 && c[3] >= 0.99;
 }
 
 function firstBorderColor(s: StyleSnapshot): string {
@@ -302,6 +318,7 @@ export const rule: CustomRule = {
           }
 
           const ring = rings.find((r) => r.indicator);
+          if (ring?.kind === "outline" && isDefaultFocusRing(after)) continue; // the browser's two-colour ring
           if (ring?.indicator) {
             if (surrounding.hasImage) continue; // cannot judge contrast against an image
             const ratio = contrastRatio(ring.indicator, surrounding.color);

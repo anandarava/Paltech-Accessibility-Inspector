@@ -256,6 +256,63 @@ function failureSummaryText(node: axe.NodeResult): string {
 // axe results
 // ---------------------------------------------------------------------------
 
+/** True when some text inside `el` is painted and not inside an aria-hidden subtree. */
+function hasShownText(el: Element): boolean {
+  const walker = el.ownerDocument.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    if (!/\S/.test(n.textContent ?? "")) continue;
+    const parent = n.parentElement;
+    if (!parent || parent.closest("[aria-hidden='true']")) continue;
+    const range = el.ownerDocument.createRange();
+    range.selectNodeContents(n);
+    const r = range.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) continue;
+    const withCheck = parent as Element & { checkVisibility?: (o?: { visibilityProperty?: boolean; opacityProperty?: boolean }) => boolean };
+    if (typeof withCheck.checkVisibility === "function" && !withCheck.checkVisibility({ visibilityProperty: true, opacityProperty: true })) continue;
+    return true;
+  }
+  return false;
+}
+
+const LANDMARK_SELECTOR = "main, [role='main'], nav, [role='navigation'], [role='region'], [role='search'], [role='complementary'], aside, [role='contentinfo'], [role='banner']";
+
+/** An in-page link whose target is a landmark or sits in one (a skip link). */
+function isSkipLink(el: Element): boolean {
+  const href = el.getAttribute("href") ?? "";
+  if (el.localName !== "a" || !href.startsWith("#") || href.length < 2) return false;
+  let id = href.slice(1);
+  try {
+    id = decodeURIComponent(id);
+  } catch {
+    // keep the raw id
+  }
+  const target = el.ownerDocument.getElementById(id);
+  return !!target && (target.matches(LANDMARK_SELECTOR) || target.closest(LANDMARK_SELECTOR) !== null);
+}
+
+/**
+ * axe-core results that are known to be wrong for the element, checked on the
+ * live element:
+ *  - `label-content-name-mismatch` (experimental) on a control with no visible
+ *    text: the "label" it compares is hidden text (a 0x0, aria-hidden badge),
+ *    so there is no visible label to mismatch.
+ *  - `region` on a skip link: axe exempts a skip link only when it is the first
+ *    link on the page, and cookie banners often come first. A link to a
+ *    landmark is a bypass mechanism, not content outside landmarks.
+ */
+function isKnownAxeMisfire(axeRuleId: string, element: Element | null): boolean {
+  if (!element) return false;
+  try {
+    if (axeRuleId === "label-content-name-mismatch") return !hasShownText(element);
+    if (axeRuleId === "region") return isSkipLink(element);
+  } catch {
+    // keep the finding
+  }
+  return false;
+}
+
+const SEVERITY_RANK: Record<Severity, number> = { Minor: 0, Moderate: 1, Serious: 2, Critical: 3 };
+
 interface AxeMapping {
   ruleId: string;
   title: string;
@@ -327,6 +384,7 @@ function normalizeAxeGroup(results: axe.Result[], rulesFile: RulesFile, incomple
       } catch {
         element = null;
       }
+      if (isKnownAxeMisfire(result.id, element)) continue;
       const messages = checkMessages(node);
       const ref = elementRef(element, axeTargetToString(node.target), node.html);
       const snippet = element ? textSnippet(element) : collapse(node.html).slice(0, 40);
@@ -340,7 +398,14 @@ function normalizeAxeGroup(results: axe.Result[], rulesFile: RulesFile, incomple
       if (summary) fixParts.push(sentence(summary));
       else if (messages.length) fixParts.push(messages.map(sentence).join(" "));
 
-      const severity = node.impact && !mapping.def?.severity ? severityFromImpact(node.impact) : mapping.severity;
+      let severity = node.impact && !mapping.def?.severity ? severityFromImpact(node.impact) : mapping.severity;
+      if (incomplete) {
+        // axe could not decide: the project rule's severity describes a confirmed failure, not this
+        // hit. Use axe's own impact for the element, and never call an undecided result Critical.
+        const impact = node.impact ?? result.impact;
+        if (impact) severity = severityFromImpact(impact);
+        if (SEVERITY_RANK[severity] > SEVERITY_RANK.Serious) severity = "Serious";
+      }
 
       out.push({
         id: nextIssueId(),

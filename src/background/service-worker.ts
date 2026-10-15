@@ -376,6 +376,9 @@ async function performScan(tabId: number, requested: ScanOptions | undefined): P
     // them (see focus-emulation.ts). axe-core-only scans have no focus rules.
     const emulatingFocus = options.axeOnly ? false : await enableFocusEmulation(tabId);
     try {
+      // Addresses of child frames nobody can see, reported by their parent frame (parents
+      // have lower frame ids, so they are scanned first). Their findings are dropped.
+      const hiddenFrameUrls = new Set<string>();
       for (let idx = 0; idx < frameIds.length; idx++) {
         const frameId = frameIds[idx];
         broadcast({
@@ -392,6 +395,8 @@ async function performScan(tabId: number, requested: ScanOptions | undefined): P
           continue;
         }
         const out = res.data;
+        for (const u of Array.isArray(out.hiddenChildFrames) ? out.hiddenChildFrames : []) if (typeof u === "string") hiddenFrameUrls.add(u);
+        if (frameId !== 0 && hiddenFrameUrls.has(out.frameUrl)) continue;
         for (const issue of out.issues) {
           if (!isIssue(issue)) continue;
           pushIssue(issue, frameId);
