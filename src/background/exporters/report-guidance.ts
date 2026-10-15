@@ -180,6 +180,20 @@ const RULES: Record<string, RuleGuidance> = {
     users: [SR],
     effort: "Quick fix",
   },
+  "FRM-11": {
+    headline: "Form fields have no visible label",
+    impact: "The field's name exists only for screen readers, so sighted users, people with memory or attention difficulties, and voice-control users cannot see what to enter or what to say to select it.",
+    fix: "Show a visible label with the field (a <label>, or visible text referenced with aria-labelledby).",
+    users: [CO, MO, LV],
+    effort: "Quick fix",
+  },
+  "TGT-02": {
+    headline: "Click and tap targets are smaller than the enhanced 44 × 44 px",
+    impact: "People with tremors, limited dexterity or large fingers on touch screens find small targets hard to hit, even when they are spaced apart.",
+    fix: "Make targets at least 44 × 44 px, for example with padding.",
+    users: [MO],
+    effort: "Quick fix",
+  },
   "KBD-01": {
     headline: "Some clickable items cannot be reached with the keyboard",
     impact: "People who cannot use a mouse are completely blocked from these controls.",

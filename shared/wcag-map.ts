@@ -48,6 +48,7 @@ export const WCAG_CRITERIA: Record<string, { name: string; level: "A" | "AA" | "
   "2.5.2": { name: "Pointer Cancellation", level: "A", slug: "pointer-cancellation" },
   "2.5.3": { name: "Label in Name", level: "A", slug: "label-in-name" },
   "2.5.4": { name: "Motion Actuation", level: "A", slug: "motion-actuation" },
+  "2.5.5": { name: "Target Size (Enhanced)", level: "AAA", slug: "target-size-enhanced" },
   "2.5.7": { name: "Dragging Movements", level: "AA", slug: "dragging-movements" },
   "2.5.8": { name: "Target Size (Minimum)", level: "AA", slug: "target-size-minimum" },
   "3.1.1": { name: "Language of Page", level: "A", slug: "language-of-page" },

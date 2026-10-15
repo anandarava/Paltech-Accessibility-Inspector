@@ -16,7 +16,8 @@ export { buildHtmlReport, buildJsonReport, buildMultiPageHtmlReport };
 export type { ReportMeta };
 
 const FORMATS: Record<ExportFormat, { ext: string; mime: string; build: (r: ScanResult, meta: ReportMeta) => string }> = {
-  html: { ext: "html", mime: "text/html;charset=utf-8", build: buildHtmlReport },
+  // Every HTML export uses the interactive template (filters, collapsible elements); one scan is its single-page mode.
+  html: { ext: "html", mime: "text/html;charset=utf-8", build: (r, meta) => buildMultiPageHtmlReport([r], meta) },
   json: { ext: "json", mime: "application/json;charset=utf-8", build: (r) => buildJsonReport(r) },
 };
 
@@ -49,7 +50,7 @@ export function buildReport(format: ExportFormat, result: ScanResult, meta: Repo
 
 /**
  * One file for several scanned pages: the multi-page HTML report, or a JSON document with a `pages`
- * array holding each page's usual export. A single result gets the ordinary single-page report.
+ * array holding each page's usual export. A single result gets the usual single-scan export (the same template).
  */
 export function buildMultiPageReport(format: ExportFormat, results: ScanResult[], meta: ReportMeta = {}, now: Date = new Date()): ReportFile {
   if (results.length === 0) throw new Error("No scans to export.");

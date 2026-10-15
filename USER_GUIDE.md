@@ -196,9 +196,18 @@ Use **Export** in the footer to download the current scan.
 | HTML report | A summary and developer details without screenshots. |
 | JSON | Raw results for tooling and CI. |
 
-The HTML report has two parts. **Part 1** is a plain-language summary for team leads and clients: the verdict, the score, the severity breakdown, the problems to fix first, who is affected, what was tested and the limits of automated testing. **Part 2** is for developers: every affected element with its measurements, a fix, the selector, the HTML and the screenshot.
+Every HTML report, for one scan or several saved scans, uses the same layout. **Part 1** is a plain-language summary for team leads and clients: the verdict, the score, the severity breakdown, the problems to fix first, who is affected, what was tested and the limits of automated testing. **Part 2** is for developers: one card per rule, listing every affected element with its measurements, a fix, the selector, the HTML and the screenshot. **Needs review** follows, with the same cards marked *Needs review · not counted*.
 
-**Filter by severity.** At the start of Part 2 of the HTML report, a **Show severity** row has one button per severity that occurs in the report (for example *Critical 4*, *Moderate 2*). All are on when you open the report. Click a button, or tab to it and press Space, to hide or show that severity. The *Failed rules* table, the rule cards and the individual elements follow your choice, and a notice appears if you switch every severity off. The filter works in any browser without scripts, and applies if you print the report. The summary in Part 1 always shows the full totals.
+**Filter and browse.** A filter bar sits above the rule cards in Part 2:
+
+| Filter | What it does |
+| --- | --- |
+| Severity | Show only Critical, Serious, Moderate or Minor findings (combine several) |
+| Show | All, only the issues, or only the Needs review findings |
+| Search | Matches element text, selector or fingerprint |
+| Rule, Category, Effort, Affects | Narrow to one rule, one category (for example Forms), one effort level or one group of users |
+
+Rules start collapsed to one line each (rule, severity, number of elements): click a rule, or tab to it and press Enter, to open it. Inside a rule, each element is one line you can open. **Expand all** opens every rule; click it again to open every element too. **Collapse all** closes everything. Links in the summary and the *Failed rules* table open the rule they point to. **Reset filters** brings everything back. The line under the filters says how many elements are shown. The summary in Part 1 always shows the full totals. A report of several saved scans adds a list of pages on the left and an overview of all pages. The report needs JavaScript to display: open it in a browser.
 
 The organisation name and the *Prepared by* line shown on the report are set in the Options page.
 

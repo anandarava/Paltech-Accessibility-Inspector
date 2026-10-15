@@ -969,9 +969,12 @@ async function reportMeta(): Promise<ReportMeta> {
 async function captureReportScreenshots(tabId: number, result: ScanResult): Promise<void> {
   const seen = new Set<string>();
   const wanted: string[] = [];
-  for (const issue of result.issues) {
+  // One screenshot per rule card. Failures come first so needs-review cards never use up
+  // the limit; a rule can have a failure card and a needs-review card, each gets its own.
+  const ordered = [...result.issues.filter((i) => i.type !== "Semi"), ...result.issues.filter((i) => i.type === "Semi")];
+  for (const issue of ordered) {
     if (issue.status !== "new") continue;
-    const key = `${issue.ruleId} ${issue.title}`;
+    const key = `${issue.type === "Semi" ? "review" : "issue"} ${issue.ruleId} ${issue.title}`;
     if (seen.has(key)) continue;
     seen.add(key);
     if (!issue.evidence?.screenshot) wanted.push(issue.id);

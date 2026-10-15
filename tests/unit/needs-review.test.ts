@@ -44,6 +44,26 @@ describe("needs-review findings", () => {
     expect(html).not.toContain("Excluded issues");
   });
 
+  it("are shown as the same rule cards as the issues, badged and with their own ids", () => {
+    const failing = makeIssue({ ruleId: "CLR-05", title: "Focus indicator below 3:1 against adjacent colors", severity: "Serious" });
+    const reviewing = makeIssue({ ruleId: "CLR-05", title: "Focus indicator below 3:1 against adjacent colors", severity: "Serious", type: "Semi" });
+    const html = buildHtmlReport(makeScanResult({ issues: [failing, reviewing] }));
+    // Same card layout: header, why it matters, how to fix, and the element list.
+    const card = /<article id="review-[^"]+" class="rule"[\s\S]*?<\/article>/.exec(html)?.[0] ?? "";
+    expect(card).toContain("Why it matters");
+    expect(card).toContain("How to fix");
+    expect(card).toContain('<ol class="instances"');
+    expect(card).toContain("Needs review · not counted");
+    // The same rule as a failure and as a review item: two cards, no duplicate ids.
+    const ids = [...html.matchAll(/<article id="([^"]+)"/g)].map((m) => m[1]);
+    expect(ids).toHaveLength(2);
+    expect(new Set(ids).size).toBe(2);
+    expect(html).toContain('<a href="#h-review">Needs review</a>');
+    expect(html).toContain("Rules to review");
+    // Still outside the totals.
+    expect(html).toContain("1 open issues: 0 critical, 1 serious");
+  });
+
   it("leave the HTML report without a review section when there are none", () => {
     expect(buildHtmlReport(makeScanResult({ issues: [failure()] }))).not.toContain("Needs review");
   });
@@ -53,5 +73,8 @@ describe("needs-review findings", () => {
     const page = data.pages[0];
     expect(page.rules).toHaveLength(1);
     expect(page.issuesExcluded).toBe(0);
+    // Listed apart, as the same rule cards.
+    expect(page.review).toHaveLength(1);
+    expect(page.review[0]?.code).toBe("CLR-03");
   });
 });

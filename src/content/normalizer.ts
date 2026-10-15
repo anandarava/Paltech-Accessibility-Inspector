@@ -436,12 +436,18 @@ export function normalizeCustomFindings(rule: CustomRule, findings: RuleFinding[
 
 /** Same fingerprint -> keep the first occurrence. */
 export function dedupeIssues(issues: Issue[]): Issue[] {
-  const seen = new Set<string>();
+  // Same fingerprint = same rule on the same element. A definite finding replaces a
+  // needs-review ("Semi") one, e.g. a custom rule confirming what axe-core left incomplete.
+  const at = new Map<string, number>();
   const out: Issue[] = [];
   for (const issue of issues) {
-    if (seen.has(issue.fingerprint)) continue;
-    seen.add(issue.fingerprint);
-    out.push(issue);
+    const index = at.get(issue.fingerprint);
+    if (index === undefined) {
+      at.set(issue.fingerprint, out.length);
+      out.push(issue);
+    } else if (out[index]?.type === "Semi" && issue.type !== "Semi") {
+      out[index] = issue;
+    }
   }
   return out;
 }

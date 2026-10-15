@@ -25,7 +25,7 @@ const DIST = path.resolve(ROOT, process.env.A11Y_E2E_DIST ?? "dist");
 const FIXTURES = path.join(ROOT, "fixtures");
 const HAS_DIST = existsSync(path.join(DIST, "manifest.json"));
 
-const FIXTURE_PAGES = ["images", "forms", "keyboard-trap", "contrast", "structure", "aria", "links", "spa"] as const;
+const FIXTURE_PAGES = ["images", "forms", "keyboard-trap", "contrast", "structure", "aria", "links", "spa", "labels-aria"] as const;
 
 type ExpectedCounts = Record<string, number>;
 
@@ -502,6 +502,45 @@ test.describe("PalTech A11y Inspector extension", () => {
       expect(na).toContain("video-caption");
       expect(na.filter((r) => axeOnly.passedRules.includes(r))).toEqual([]);
       expect(na.filter((r) => axeOnly.issues.some((i) => i.data?.axeRuleId === r))).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("visible labels and strict ARIA: exactly the planted elements, each classified correctly", async () => {
+    const { page, tabId } = await openFixture("labels-aria");
+    try {
+      const result = await scan(tabId);
+      const found = (ruleId: string) =>
+        result.issues
+          .filter((i) => i.ruleId === ruleId)
+          .map((i) => `${/id="([^"]+)"/.exec(i.element.html)?.[1] ?? i.element.selector}/${i.type}`)
+          .sort();
+      // Item 3: named only by aria-label, a visually hidden label or hidden text; never the labelled look-alikes.
+      expect(found("FRM-11")).toEqual(["f1/Semi", "f2/Semi", "f3/Semi", "f4/Semi"]);
+      // Item 4: definite where axe-core says "incomplete", and no leftover needs-review duplicate.
+      expect(found("ARIA-02")).toEqual(["a1/Auto", "a2/Auto"]);
+      // One issue per element: where axe-core already fails it (the focusable span), its finding is kept.
+      expect(result.issues.filter((i) => i.ruleId === "ARIA-02" && i.element.html.includes('id="a1"'))).toHaveLength(1);
+      expect(found("ARIA-03")).toEqual(["c1/Auto", "c2/Semi"]);
+      expect(found("STR-08")).toEqual(["dup-note/Auto", "dup-note/Auto"]);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("target size: 24px at AA with the spacing exception, 44px at AAA without it", async () => {
+    const { page, tabId } = await openFixture("target-size");
+    try {
+      const ids = (result: ScanResult, ruleId: string) =>
+        result.issues.filter((i) => i.ruleId === ruleId).map((i) => /id="([^"]+)"/.exec(i.element.html)?.[1] ?? i.element.selector).sort();
+      const aa = await scan(tabId);
+      expect(ids(aa, "TGT-01")).toEqual(["t-tiny1", "t-tiny2"]);
+      expect(ids(aa, "TGT-02")).toEqual([]);
+      const aaa = await scan(tabId, { wcagLevel: "AAA" });
+      expect(ids(aaa, "TGT-02")).toEqual(["t-30", "t-tiny1", "t-tiny2", "t-wide"]);
+      expect(ids(aaa, "TGT-01")).toEqual(["t-tiny1", "t-tiny2"]);
+      expect(aaa.issues.find((i) => i.ruleId === "TGT-02")?.wcag).toMatchObject({ criterion: "2.5.5", level: "AAA" });
     } finally {
       await page.close();
     }

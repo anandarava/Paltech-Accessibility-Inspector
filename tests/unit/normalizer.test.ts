@@ -9,7 +9,8 @@
  */
 import { describe, expect, it } from "vitest";
 import type { AxeResults, Result, NodeResult } from "axe-core";
-import { normalizeAxeResults } from "@src/content/normalizer";
+import { dedupeIssues, normalizeAxeResults } from "@src/content/normalizer";
+import { makeIssue } from "./support/factories";
 import rulesFile from "@shared/a11y-rules.json";
 import type { RulesFile } from "@shared/types";
 
@@ -98,5 +99,20 @@ describe("normalizeAxeResults", () => {
     const second = build();
     expect(first[0].fingerprint).toMatch(/^[0-9a-f]{8}$/);
     expect(first[0].fingerprint).toBe(second[0].fingerprint);
+  });
+});
+
+describe("dedupeIssues", () => {
+  it("keeps one issue per fingerprint, the first one", () => {
+    const a = makeIssue({ id: "a", fingerprint: "f1" });
+    const b = makeIssue({ id: "b", fingerprint: "f1" });
+    expect(dedupeIssues([a, b]).map((i) => i.id)).toEqual(["a"]);
+  });
+
+  it("lets a definite finding replace a needs-review one for the same rule and element", () => {
+    const review = makeIssue({ id: "axe-incomplete", fingerprint: "f1", type: "Semi" });
+    const definite = makeIssue({ id: "custom", fingerprint: "f1", type: "Auto" });
+    expect(dedupeIssues([review, definite]).map((i) => i.id)).toEqual(["custom"]);
+    expect(dedupeIssues([definite, review]).map((i) => i.id)).toEqual(["custom"]);
   });
 });

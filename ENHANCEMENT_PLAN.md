@@ -38,6 +38,8 @@ The rule catalogue in [shared/a11y-rules.json](shared/a11y-rules.json) already c
 - **Effort:** Small.
 
 ### 3. Visible-label check for form fields (FRM-11)
+**Status: done** (uncommitted). Needs review, not a definite failure. Checked on gov.uk search and GitHub login (no false positives). Finding: WAVE's 2 "missing form label" errors on the comparison page are a hidden password-manager form (`display: none`), so they were WAVE false positives.
+
 - **Gap:** WAVE reports 2 missing form labels and IBM reports 3 potential visible-label issues.
 - **Cause:** FRM-01 uses axe-core's `label` rule, which passes a field named only by `aria-label` or by a visually hidden label.
 - **Change:** Add a "Semi" rule to [src/content/rules/forms.ts](src/content/rules/forms.ts). Flag a field that has an accessible name but no label text visible near it.
@@ -45,6 +47,8 @@ The rule catalogue in [shared/a11y-rules.json](shared/a11y-rules.json) already c
 - **Effort:** Medium (deciding what counts as "visible near the field" needs care).
 
 ### 4. ARIA checks stricter than axe-core
+**Status: done** (uncommitted). New definite checks: names on unnameable elements (ARIA-02), partly broken id lists (ARIA-03), duplicate referenced ids (STR-08). The `aria-label` on the skip-links `div` that ARC and IBM reported is now a definite ARIA-02 failure.
+
 - **Gap:** ARC reports 2 ARIA errors, IBM 1 invalid ARIA attribute, and Siteimprove flags ARIA issues. PalTech reported none.
 - **Candidate checks:**
   - `aria-controls`, `aria-describedby` or `aria-labelledby` pointing to an id that doesn't exist on the page right now
@@ -82,6 +86,8 @@ More findings don't mean a better tool, because false positives count against yo
 - **Effort:** Medium to large.
 
 ### 8. Finish AAA mode
+**Status: done** (uncommitted). New rule TGT-02 (2.5.5 Target Size (Enhanced), AAA, 44 x 44 px, no spacing exception), run in AAA scans only. On the comparison page an AAA scan finds 102, against Siteimprove's 68; how Siteimprove counts is not known, so the numbers are not directly comparable.
+
 - Siteimprove reported 68 enhanced target-size findings (WCAG 2.5.5, AAA).
 - CLR-08 already covers AAA contrast. Add a 44 × 44 px target-size rule that runs only when the WCAG level is set to AAA.
 - **Effort:** Small (reuses [target-size.ts](src/content/rules/target-size.ts)).
