@@ -435,8 +435,10 @@ unless enabled explicitly.
   necessary. The score is not a compliance certification.
 - The tool cannot judge the quality or accuracy of alt text, labels, or
   instructions; it only catches obvious patterns (filenames, generic words).
-- Contrast over images, gradients, and videos is not checked (it cannot be
-  decided automatically).
+- Contrast over images and videos is not checked (it cannot be decided
+  automatically); such text is listed under Needs review. Text on a colour
+  gradient is measured against each of the gradient's colours, and a small
+  icon beside the text (such as an external-link icon) is ignored.
 - Content inside cross-origin iframes may not be scanned without additional
   host permissions; such frames are listed as unscanned.
 - Frames nobody can see (hidden, 1px or smaller, or placed above or left of

@@ -29,9 +29,14 @@
  *  - Positioned siblings that overlap the text (a card floating over a hero,
  *    absolutely positioned decorations) are not ancestors and are ignored, so
  *    the background may be wrong in either direction.
- *  - `background-image`, gradients, `mix-blend-mode`, filters, `backdrop-filter`
- *    and `-webkit-background-clip: text` cannot be evaluated; those cases are
- *    downgraded to CLR-03 "needs review" instead of a pass/fail.
+ *  - `background-image`, `mix-blend-mode`, filters, `backdrop-filter` and
+ *    `-webkit-background-clip: text` cannot be evaluated; those cases are
+ *    downgraded to CLR-03 "needs review" instead of a pass/fail. Two kinds of
+ *    background image are judged after all (see judgeBackgroundImages): a
+ *    no-repeat icon that stays clear of the text (an external-link icon in
+ *    the link's padding) is ignored, and a gradient is measured against each
+ *    of its colours: passing on all of them is a pass, failing on all is a
+ *    failure, and anything in between is CLR-03.
  *  - Text shadows and outlines that improve legibility are ignored (WCAG does
  *    allow them to count); such text may be flagged although it passes.
  *  - Disabled controls and placeholder text are exempt from 1.4.3 and skipped.
@@ -84,6 +89,8 @@ export interface BackgroundResolution {
   color: RGB;
   /** True when any layer up to the first opaque one paints a background-image/gradient. */
   hasImage: boolean;
+  /** The elements that paint those background images, innermost first (empty when `hasImage` is false). */
+  imageLayers?: Element[];
   /** Product of `opacity` from this element up to the root (1 = fully opaque group). */
   cumulativeOpacity: number;
   /**
@@ -195,12 +202,13 @@ export function resolveBackground(el: Element | null, cache: BackgroundCache = n
     const alpha = Math.min(1, Math.max(0, own[3])) * cumulativeOpacity;
     const ownImage = cs.backgroundImage !== "none" && cs.backgroundImage !== "";
     if (alpha >= 0.999) {
-      result = { color: [own[0], own[1], own[2]], hasImage: ownImage, cumulativeOpacity, inner, reachedOpaque: true, canvas: parent.canvas };
+      result = { color: [own[0], own[1], own[2]], hasImage: ownImage, imageLayers: ownImage ? [el] : [], cumulativeOpacity, inner, reachedOpaque: true, canvas: parent.canvas };
     } else {
       const layer: RGBA = [own[0], own[1], own[2], alpha];
       result = {
         color: alpha > 0 ? blend(layer, parent.color) : parent.color,
         hasImage: ownImage || parent.hasImage,
+        imageLayers: ownImage ? [el, ...(parent.imageLayers ?? [])] : (parent.imageLayers ?? []),
         cumulativeOpacity,
         inner,
         reachedOpaque: parent.reachedOpaque,
@@ -450,6 +458,12 @@ function isTextOutOfSight(rect: Rect, el: Element, view: Window): boolean {
   return beforePage && clippedRectFrom(rect, parentOf(el)) !== null;
 }
 
+/** True when the element's box is wholly cut away by ancestors that hide overflow. */
+export function isClippedAway(el: Element): boolean {
+  const r = el.getBoundingClientRect();
+  return clippedRectFrom({ left: r.left, top: r.top, right: r.right, bottom: r.bottom }, parentOf(el)) === null;
+}
+
 /** `start` cut down by `from` and each of its ancestors that hides overflow, up to (not including) the first one `stop` accepts. */
 function clippedRectFrom(start: Rect, from: Element | null, stop?: (node: Element) => boolean): Rect | null {
   let rect: Rect | null = start;
@@ -491,6 +505,181 @@ function overlapsMedia(group: TextGroup, rect: Rect, media: MediaBox[]): Element
     if (shown && intersectionArea(rect, shown) >= area * 0.25) return m.element;
   }
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// Background images that can be judged after all
+// ---------------------------------------------------------------------------
+
+/** Split a computed comma-separated list on top-level commas (not those inside rgb(...) or url(...)). */
+function splitTopLevel(value: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < value.length; i++) {
+    const ch = value[i];
+    if (ch === "(") depth++;
+    else if (ch === ")") depth = Math.max(0, depth - 1);
+    else if (ch === "," && depth === 0) {
+      parts.push(value.slice(start, i).trim());
+      start = i + 1;
+    }
+  }
+  parts.push(value.slice(start).trim());
+  return parts.filter(Boolean);
+}
+
+/** Colour stops of a computed gradient, e.g. "linear-gradient(rgb(55, 118, 171) 10%, rgb(43, 91, 132) 90%)". */
+export function gradientStops(layer: string): RGBA[] {
+  const stops: RGBA[] = [];
+  for (const m of layer.matchAll(/rgba?\([^)]*\)|#[0-9a-f]{3,8}\b|\btransparent\b/gi)) {
+    const c = parseColor(m[0]);
+    if (c) stops.push(c);
+  }
+  return stops;
+}
+
+const imageSizes = new Map<string, Promise<{ width: number; height: number } | null>>();
+
+/** Natural size of an image the page has (normally) already loaded; null when it cannot be read quickly. */
+function naturalSize(url: string, doc: Document): Promise<{ width: number; height: number } | null> {
+  let pending = imageSizes.get(url);
+  if (!pending) {
+    pending = new Promise((resolve) => {
+      try {
+        const img = new (doc.defaultView ?? window).Image();
+        const done = (): void => resolve(img.naturalWidth > 0 ? { width: img.naturalWidth, height: img.naturalHeight } : null);
+        img.onload = done;
+        img.onerror = () => resolve(null);
+        setTimeout(() => resolve(null), 400);
+        img.src = url;
+        if (img.complete) done();
+      } catch {
+        resolve(null);
+      }
+    });
+    imageSizes.set(url, pending);
+  }
+  return pending;
+}
+
+/** A px or % length against `full`; null for anything else (calc(), keywords). */
+function lengthIn(value: string, full: number): number | null {
+  const m = /^(-?[\d.]+)(px|%)$/.exec(value.trim());
+  if (!m) return null;
+  const n = parseFloat(m[1] ?? "");
+  if (!Number.isFinite(n)) return null;
+  return m[2] === "%" ? (full * n) / 100 : n;
+}
+
+/**
+ * True unless a no-repeat image layer on `layerEl` is shown to stay clear of
+ * every line of the text (Wikipedia's external-link icon, drawn in the link's
+ * right padding). Anything that cannot be worked out counts as overlapping.
+ */
+async function imageCoversText(layerEl: Element, index: number, image: string, lines: Rect[]): Promise<boolean> {
+  const url = /^url\(\s*["']?(.*?)["']?\s*\)$/.exec(image)?.[1];
+  if (!url) return true;
+  if (layerEl.getClientRects().length !== 1) return true; // an inline box split over lines
+  const view = layerEl.ownerDocument.defaultView ?? window;
+  const cs = view.getComputedStyle(layerEl);
+  const pick = (list: string): string => {
+    const items = splitTopLevel(list);
+    return items.length ? (items[index % items.length] ?? "") : "";
+  };
+  const repeat = pick(cs.backgroundRepeat).split(/\s+/);
+  const repeatX = repeat[0] ?? "repeat";
+  const repeatY = repeat[1] ?? (repeatX === "repeat-x" ? "no-repeat" : repeatX === "repeat-y" ? "repeat" : repeatX);
+  const box = layerEl.getBoundingClientRect();
+  const bl = parseFloat(cs.borderLeftWidth) || 0;
+  const bt = parseFloat(cs.borderTopWidth) || 0;
+  const area = {
+    left: box.left + bl,
+    top: box.top + bt,
+    width: box.width - bl - (parseFloat(cs.borderRightWidth) || 0),
+    height: box.height - bt - (parseFloat(cs.borderBottomWidth) || 0),
+  };
+  const sizeValue = pick(cs.backgroundSize);
+  if (/cover|contain/.test(sizeValue)) return true;
+  const [sw = "auto", sh = "auto"] = sizeValue.split(/\s+/);
+  let width = sw === "auto" ? null : lengthIn(sw, area.width);
+  let height = sh === "auto" ? null : lengthIn(sh, area.height);
+  if ((sw !== "auto" && width === null) || (sh !== "auto" && height === null)) return true;
+  if (width === null || height === null) {
+    const natural = await naturalSize(url, layerEl.ownerDocument);
+    if (natural) {
+      if (width === null && height === null) {
+        width = natural.width;
+        height = natural.height;
+      } else if (width === null) width = ((height as number) * natural.width) / natural.height;
+      else height = (width * natural.height) / natural.width;
+    } else if (width !== null || height !== null) {
+      width ??= height;
+      height ??= width; // unknown ratio: assume a square icon
+    } else return true;
+  }
+  const [px = "0%", py = "0%"] = pick(cs.backgroundPosition).split(/\s+/);
+  const x = lengthIn(px, area.width - (width as number));
+  const y = lengthIn(py, area.height - (height as number));
+  if (x === null || y === null) return true;
+  const icon: Rect = {
+    left: repeatX === "no-repeat" ? area.left + x : area.left,
+    right: repeatX === "no-repeat" ? area.left + x + (width as number) : area.left + area.width,
+    top: repeatY === "no-repeat" ? area.top + y : area.top,
+    bottom: repeatY === "no-repeat" ? area.top + y + (height as number) : area.top + area.height,
+  };
+  return lines.some((line) => intersectionArea(line, icon) > 0);
+}
+
+/** Line boxes of the group's text (viewport coordinates). */
+function textLines(group: TextGroup): Rect[] {
+  const lines: Rect[] = [];
+  for (const node of group.nodes) {
+    try {
+      const range = node.ownerDocument.createRange();
+      range.selectNodeContents(node);
+      for (const r of Array.from(range.getClientRects())) {
+        if (r.width > 0 && r.height > 0) lines.push({ left: r.left, top: r.top, right: r.right, bottom: r.bottom });
+      }
+      range.detach();
+    } catch {
+      // ignore
+    }
+  }
+  return lines;
+}
+
+/**
+ * What the background images behind a text group leave to measure:
+ *  - null: an image is behind the text, its colours are unknown (CLR-03);
+ *  - []: no image is behind the text (only icons beside it), measure as usual;
+ *  - colours: the backdrop colours of the gradients behind the text; the text
+ *    is measured against each of them.
+ */
+async function judgeBackgroundImages(group: TextGroup, bg: BackgroundResolution, cache: BackgroundCache): Promise<RGB[] | null> {
+  const layers = bg.imageLayers ?? [];
+  if (layers.length === 0) return null;
+  const lines = textLines(group);
+  if (lines.length === 0) return null;
+  const backdrops: RGB[] = [];
+  for (const layerEl of layers) {
+    const view = layerEl.ownerDocument.defaultView ?? window;
+    const images = splitTopLevel(view.getComputedStyle(layerEl).backgroundImage);
+    // Gradients paint over the element's own background colour.
+    const under = resolveBackground(layerEl, cache).color;
+    for (let i = 0; i < images.length; i++) {
+      const image = images[i] ?? "";
+      if (/gradient\(/i.test(image)) {
+        if (bg.cumulativeOpacity < 1) return null; // faded groups are not modelled for gradients
+        const stops = gradientStops(image);
+        if (stops.length === 0) return null;
+        for (const stop of stops) backdrops.push(stop[3] >= 0.999 ? [stop[0], stop[1], stop[2]] : blend(stop, under));
+      } else if (await imageCoversText(layerEl, i, image, lines)) {
+        return null;
+      }
+    }
+  }
+  return backdrops;
 }
 
 /**
@@ -543,7 +732,10 @@ async function checkText(ctx: RuleContext, findings: RuleFinding[], cache: Backg
       const rect = textRect(group);
       if (rect && isTextOutOfSight(rect, el, view)) continue;
       const mediaBehind = rect ? overlapsMedia(group, rect, media) : null;
-      if (bg.hasImage || clipText || mediaBehind) {
+      // Background images that turn out to be judgeable: icons beside the text, or gradients
+      // whose colour stops can each be measured. null = an image really is behind the text.
+      const gradient = bg.hasImage && !clipText && !mediaBehind ? await judgeBackgroundImages(group, bg, cache) : null;
+      if ((bg.hasImage && gradient === null) || clipText || mediaBehind) {
         const reason = mediaBehind
           ? `sits over a <${mediaBehind.tagName.toLowerCase()}> element`
           : clipText
@@ -573,20 +765,55 @@ async function checkText(ctx: RuleContext, findings: RuleFinding[], cache: Backg
         continue;
       }
 
-      const fgOpaque = paintOver(bg, fg);
-      const ratio = contrastRatio(fgOpaque, bg.color);
-      if (contrastRatioExact(fgOpaque, bg.color) >= required) continue;
+      let fgOpaque = paintOver(bg, fg);
+      let backdrop = bg.color;
+      let gradientNote = "";
+      let suggestAgainst = bg.color;
+      if (gradient && gradient.length > 0) {
+        // A gradient behind the text: measure against each of its colours.
+        const measured = gradient.map((b) => {
+          const text = blend(fg, b);
+          return { b, text, ratio: contrastRatioExact(text, b) };
+        });
+        const worst = measured.reduce((a, m) => (m.ratio < a.ratio ? m : a));
+        const best = measured.reduce((a, m) => (m.ratio > a.ratio ? m : a));
+        if (worst.ratio >= required) continue; // readable on every part of the gradient
+        const range = `${toHex(worst.b)} to ${toHex(best.b)}`;
+        if (best.ratio >= required) {
+          // Readable on part of the gradient only: where the text sits decides.
+          findings.push({
+            element: el,
+            type: IMAGE.type,
+            severity: IMAGE.severity ?? PRIMARY.severity ?? "Moderate",
+            description: `Text "${snippet}" sits on a gradient (${range}): its contrast ranges from ${contrastRatio(worst.text, worst.b)}:1 to ${contrastRatio(best.text, best.b)}:1 across the gradient's colours; ${required}:1 is required for ${large ? "large" : "normal"} text (${Math.round(fontSize * 100) / 100}px, weight ${fontWeight}). Check the part of the gradient behind the text.`,
+            data: { ruleId: IMAGE.id, foreground: toHex(worst.text), background: toHex(worst.b), ratio: contrastRatio(worst.text, worst.b), required, fontSize, fontWeight, reason: "gradient", text: snippet },
+            fix: {
+              summary: `Change the text colour to ${toHex(suggestPassingColor(worst.text, worst.b, required))} so it passes on the whole gradient, or narrow the gradient.`,
+              suggestedValue: `color: ${toHex(suggestPassingColor(worst.text, worst.b, required))}`,
+              docsUrl: "https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html",
+            },
+          });
+          continue;
+        }
+        // Too low on every part of the gradient: report the most favourable colour.
+        fgOpaque = best.text;
+        backdrop = best.b;
+        suggestAgainst = worst.b;
+        gradientNote = ` The background is a gradient (${range}); this is its most favourable colour.`;
+      }
+      const ratio = contrastRatio(fgOpaque, backdrop);
+      if (contrastRatioExact(fgOpaque, backdrop) >= required) continue;
 
-      const suggested = suggestPassingColor(fgOpaque, bg.color, required);
+      const suggested = suggestPassingColor(fgOpaque, suggestAgainst, required);
       const def = large ? LARGE : PRIMARY;
       const fgHex = toHex(fgOpaque);
-      const bgHex = toHex(bg.color);
+      const bgHex = toHex(backdrop);
       const inferredCanvas = inferredCanvasNote(bg);
       findings.push({
         element: el,
         type: inferredCanvas ? "Semi" : def.type,
         severity: def.severity ?? "Serious",
-        description: `Text "${snippet}" has a contrast ratio of ${ratio}:1 (${fgHex} on ${bgHex}); ${required}:1 is required for ${large ? "large" : "normal"} text (${Math.round(fontSize * 100) / 100}px, weight ${fontWeight}).${inferredCanvas}`,
+        description: `Text "${snippet}" has a contrast ratio of ${ratio}:1 (${fgHex} on ${bgHex}); ${required}:1 is required for ${large ? "large" : "normal"} text (${Math.round(fontSize * 100) / 100}px, weight ${fontWeight}).${gradientNote}${inferredCanvas}`,
         data: {
           ruleId: def.id,
           foreground: fgHex,
@@ -601,7 +828,7 @@ async function checkText(ctx: RuleContext, findings: RuleFinding[], cache: Backg
           canvas: bg.canvas,
         },
         fix: {
-          summary: `Change the text colour to ${toHex(suggested)} (${contrastRatio(suggested, bg.color)}:1 against ${bgHex}) or adjust the background so the ratio reaches ${required}:1.`,
+          summary: `Change the text colour to ${toHex(suggested)} (${contrastRatio(suggested, suggestAgainst)}:1 against ${toHex(suggestAgainst)}) or adjust the background so the ratio reaches ${required}:1.`,
           suggestedValue: `color: ${toHex(suggested)}`,
           docsUrl: "https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html",
         },

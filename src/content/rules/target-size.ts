@@ -22,6 +22,10 @@
  *    size is constrained by the line height.
  *  - User agent control: native-appearance checkbox/radio inputs are drawn
  *    by the browser at their default size and are exempt.
+ *  - Not targets at all: elements with `pointer-events: none`, visually
+ *    hidden ones (1x1 skip links, clip / clip-path, opacity 0), ones cut away
+ *    by an `overflow: hidden` ancestor, and ones whose centre another element
+ *    covers (checked inside the viewport only).
  *  - The "essential" and "equivalent target elsewhere" exceptions cannot be
  *    detected and may cause false positives (icon buttons that duplicate a
  *    larger control, map pins, etc.).
@@ -33,7 +37,7 @@
  */
 import rulesJson from "@shared/a11y-rules.json";
 import type { RuleDefinition, RulesFile } from "@shared/types";
-import { isExtensionElement } from "./contrast";
+import { isClippedAway, isExtensionElement } from "./contrast";
 import { queryAllIncludingRoot } from "@src/content/dom-utils";
 import type { CustomRule, RuleContext, RuleFinding } from "./types";
 
@@ -83,6 +87,34 @@ function largestRect(el: Element): DOMRect | null {
     best = r.width > 0 && r.height > 0 ? r : null;
   }
   return best;
+}
+
+/**
+ * A target nobody can see or press: `pointer-events: none` (clicks pass
+ * through it), a visually hidden skip link (1x1, clip, clip-path), fully
+ * transparent, or cut away by an `overflow: hidden` ancestor. It is neither
+ * reported nor counted as a neighbour of other targets.
+ */
+function isUnpressable(el: Element, cs: CSSStyleDeclaration, rect: DOMRect): boolean {
+  if (cs.pointerEvents === "none") return true;
+  if (rect.width <= 1 || rect.height <= 1) return true;
+  if (/^rect\(\s*0(px)?[\s,]+0(px)?[\s,]+0(px)?[\s,]+0(px)?\s*\)$/.test(cs.clip)) return true;
+  if (/^inset\(\s*(50|100)%/.test(cs.clipPath)) return true;
+  if (cs.opacity === "0") return true;
+  return isClippedAway(el);
+}
+
+/**
+ * True when another element sits on top of the target's centre, so a pointer
+ * there reaches that element instead. Only decidable inside the viewport.
+ */
+function isCovered(target: Target, ctx: RuleContext): boolean {
+  const doc = target.element.ownerDocument;
+  const view = doc.defaultView ?? window;
+  if (target.cx < 0 || target.cy < 0 || target.cx >= view.innerWidth || target.cy >= view.innerHeight) return false;
+  const hit = doc.elementFromPoint(target.cx, target.cy);
+  if (!hit || target.element.contains(hit) || isExtensionElement(hit, ctx)) return false;
+  return !hit.contains(target.element); // an ancestor at the centre means the target's own box is not there
 }
 
 function isInlineDisplay(display: string): boolean {
@@ -169,6 +201,7 @@ export const rule: CustomRule = {
         if (outer && outer !== el) continue;
         const rect = largestRect(el);
         if (!rect) continue;
+        if (isUnpressable(el, view.getComputedStyle(el), rect)) continue;
         const undersized = rect.width + 0.5 < minSize || rect.height + 0.5 < minSize;
         const target: Target = {
           element: el,
@@ -210,6 +243,7 @@ export const rule: CustomRule = {
       const { target, cs } = entry;
       try {
         if (isInlineInSentence(target.element, cs)) continue;
+        if (isCovered(target, ctx)) continue; // another element takes the pointer here
 
         // Spacing exception: a circle of diameter minSize centred on the target must
         // not intersect (a) any other target's bounding box, nor (b) the minSize
@@ -267,6 +301,7 @@ export const rule: CustomRule = {
       const { target, cs } = entry;
       try {
         if (isInlineInSentence(target.element, cs)) continue;
+        if (isCovered(target, ctx)) continue;
         const w = Math.round(target.width * 10) / 10;
         const h = Math.round(target.height * 10) / 10;
         findings.push({

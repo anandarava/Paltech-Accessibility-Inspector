@@ -482,6 +482,16 @@ test.describe("PalTech A11y Inspector extension", () => {
       expect(atAaa("bg-faint")).toEqual(["CLR-09/Auto"]);
       expect(rulesFor("transparent-only")).toEqual(["KBD-05"]);
       expect(rulesFor("nothing")).toEqual(["KBD-05"]);
+      // Indicators of several parts pass when one part stands out, and fail when none does.
+      expect(rulesFor("two-rings")).toEqual([]);
+      expect(rulesFor("highlight-underline")).toEqual([]);
+      expect(rulesFor("inset-ring")).toEqual([]);
+      expect(rulesFor("two-faint")).toEqual(["CLR-05"]);
+      expect(rulesFor("inside-outline")).toEqual([]);
+      // Rings drawn on a pseudo-element, the parent, a child or inside a web component are indicators.
+      for (const id of ["pseudo-ring", "parent-ring", "child-ring", "shadow-ring"]) expect(rulesFor(id), id).toEqual([]);
+      // The previous element's :focus-within style is not part of the next element's unfocused state.
+      expect(rulesFor("fw-button")).toEqual([]);
     } finally {
       await page.close();
     }
@@ -564,8 +574,25 @@ test.describe("PalTech A11y Inspector extension", () => {
       expect(rulesOn("countdown")).toEqual(["CLR-01"]);
       // A gallery window holding both a caption and its image does not separate them.
       expect(rulesOn("gallery-caption")).toEqual(["CLR-03"]);
+      // An icon beside the text is not behind it; one under the text still is.
+      expect(rulesOn("ext-link").filter((r) => r.startsWith("CLR"))).toEqual([]);
+      expect(rulesOn("icon-under").filter((r) => r.startsWith("CLR"))).toEqual(["CLR-03"]);
+      // Gradients are measured on each colour.
+      expect(rulesOn("grad-pass").filter((r) => r.startsWith("CLR"))).toEqual([]);
+      expect(rulesOn("grad-fail").filter((r) => r.startsWith("CLR"))).toEqual(["CLR-01"]);
+      expect(rulesOn("grad-mixed").filter((r) => r.startsWith("CLR"))).toEqual(["CLR-03"]);
       // Citation links in <sup> and back-links in <span> sit in text: the inline exception applies.
       for (const id of ["cite-1", "cite-2", "back-1", "back-2"]) expect(rulesOn(id).filter((r) => r.startsWith("TGT"))).toEqual([]);
+      // Text spacing: margin below the text is not clipping; cut-off text is; ellipsis is for review.
+      const zm = (id: string) => result.issues.filter((i) => idOf(i) === id && i.ruleId === "ZM-03").map((i) => i.type);
+      expect(zm("zm-margin")).toEqual([]);
+      expect(zm("zm-clip")).toEqual(["Auto"]);
+      expect(zm("zm-ellipsis")).toEqual(["Semi"]);
+      // Focus scrolls a link in a scrolled sidebar clear of the sidebar's sticky header.
+      expect(rulesOn("sb-first")).not.toContain("KBD-06");
+      // Hidden, click-through and covered targets are not targets; the visible tiny ones still fail.
+      for (const id of ["skip-hidden", "chevron", "covered"]) expect(rulesOn(id).filter((r) => r.startsWith("TGT"))).toEqual([]);
+      expect(rulesOn("tiny-a")).toContain("TGT-01");
       // <a><code>link</code></a> names a term.
       expect(rulesOn("code-link")).not.toContain("LNK-03");
       // Child frames: no page-level findings in the empty frame, nothing at all from the parked one.

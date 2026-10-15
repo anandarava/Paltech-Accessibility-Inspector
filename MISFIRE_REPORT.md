@@ -78,6 +78,40 @@ I re-scanned the same 14 sites after the fixes.
 | 18 | axe's `region` dropped on a skip link to a landmark | gov.uk STR-06 2 → 1 (the remaining one is correct) |
 | 19 | Needs review severity uses axe's impact, at most Serious | Microsoft ARIA-02 Critical → Serious |
 
+### Fix status: step 2 (medium fixes), done 2026-10-15, not committed
+
+I re-scanned the same 14 sites after step 2.
+- **All findings:** 1,334 → 955. At the start of testing it was 1,650.
+- **Definite findings:** 683 → 537. At the start of testing it was 962.
+
+| # | Fix | Result on the live sites |
+|---|---|---|
+| 2 | Every part of a focus indicator is measured and the best part counts. Inset rings and outlines drawn inside the element (negative offset) are measured against the element's own fill. | CLR-05: gov.uk 80 → 1, Stack Overflow 42 → 1, Microsoft 9 → 0, W3C WAI 1 → 0 (definite) |
+| 2+ | Found while testing: two older bugs. (a) Border focus indicators were never measured, because `rgb(…)` colours were split on spaces. (b) The previous element's `:focus-within` style leaked into the next element's unfocused state. | W3C WAI search button and Microsoft skip link now judged correctly |
+| 3 | A no-repeat icon beside the text is ignored. A gradient is measured against each of its colours: pass on all = pass, fail on all = CLR-01, mixed = CLR-03 with the range. | CLR-03: Wikipedia 113 → 19, Python 106 → 22, Mars 86 → 60. Python CLR-01 48 → 56: 8 real failures that were hidden in Needs review (#999 on a near-white gradient, 2.77:1; footer #75a8d3 on dark blue, 4.2:1). |
+| 6 | Not targets: `pointer-events: none`, visually hidden (1×1, clip, opacity 0), clipped away, or covered at the centre | TGT-01: Apple 13 → 0, Stack Overflow 1 → 0, WordPress 1 → 0, W3C WAI 2 → 1. Mars 38 → 33 (links in hidden tabs and in carousel slides that are out of view). |
+| 7 | KBD-06 tabs through the elements in order with real `focus()`, keeping the scroll position like a keyboard user, starting at the top. Invisible covers (opacity 0, ≤ 2px) are ignored. | MDN 18 → 0, GitHub 1 → 0. Stack Overflow 5 → 23: **all** are the OneTrust cookie banner covering focused links at the bottom of the screen. That is a real 2.4.11 problem while the banner is shown; grouping (step 3) will make it one item. |
+| 12 | A hidden copy of a role already reported as not allowed is dropped | Apple ARIA-01 16 → 0 (needs review), Wikipedia 5 → 0 |
+| 14 | axe's open popup references are dropped when the id exists or the control is collapsed. `aria-labelledby` with no existing ids becomes definite. | Stack Overflow ARIA-03: 3 popup cases dropped, 1 now definite. The 40 broken `aria-describedby` remain for grouping. |
+| 13 | Microsoft ARIA-02 (custom elements) | Left as Needs review (now Serious, not Critical, from step 1). axe cannot see a custom element's built-in role, so a person must check. |
+
+### Fix status: step 3 (hard fixes), items 10 and 11 done 2026-10-15, not committed
+
+| # | Fix | Result on the live sites |
+|---|---|---|
+| 10 | ZM-03 now looks at where the text lines are, not at `scrollHeight` (paragraph margin raised it). Text shortened on purpose (line-clamp, ellipsis) goes to Needs review. | Mars 9 → 7, and the 7 are real: with the spacing, the last lines sit at 115–148 px in a 120 px slide. Stack Overflow's 12 clamped question excerpts are now Needs review (13). NASA 3 unchanged (correct). |
+| 11 | When the element itself does not change, its ::before/::after, 3 ancestors, first 20 descendants and its web component's shadow content are compared unfocused vs focused. Page transitions are switched off while measuring. | KBD-05: Apple 7 → 0, GitHub 1 → 0, Microsoft 2 → 1. Mars 2 unchanged (correct). |
+
+**Two new correct findings** appeared once transitions were switched off (checked live):
+- **GitHub:** a 2px outline drawn inside a #1f6feb button in the same #1f6feb, so it is invisible.
+- **Microsoft:** a dark #0e1726 outline on a #0e1726 band around a light button.
+
+**Grouping of repeated findings:** not built yet. The options are waiting for a decision.
+
+**Remaining focus-contrast findings (CLR-05), each checked live:**
+- **gov.uk skip link:** a yellow outline on white (1.34:1). The link is hidden until focused and then appears as a yellow block with black text; the yellow itself does not reach 3:1 against the page.
+- **Stack Overflow, 1 button:** a grey outline at 2.26:1. Correct.
+
 **Watch:**
 - **Apple, new CLR-01, "Today's Hits":** the gallery slide is off the left edge and its image had not loaded yet (a 1×1 placeholder), so the text was measured against the placeholder colour (#c69851). Correct for what is on screen, but the real image may change it.
 - **MDN STR-06 5 → 8:** `region` hits inside MDN's live-example frames, which were not loaded in the first scan. This is not caused by these changes; it fits item 18 / grouping later.

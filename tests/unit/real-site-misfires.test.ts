@@ -9,9 +9,9 @@ import rulesFile from "@shared/a11y-rules.json";
 import type { RulesFile } from "@shared/types";
 import { normalizeAxeResults } from "@src/content/normalizer";
 import { filterFrameLevelIssues } from "@src/content/scanner";
-import { isDefaultFocusRing } from "@src/content/rules/focus-visible";
+import { firstBorderColor, isDefaultFocusRing } from "@src/content/rules/focus-visible";
 import { isCodeTerm, rule as linkText } from "@src/content/rules/link-text";
-import { rule as contrast } from "@src/content/rules/contrast";
+import { gradientStops, rule as contrast } from "@src/content/rules/contrast";
 import { findingRuleId, makeIssue, makeRuleContext, setBody } from "./support/factories";
 
 const RULES = rulesFile as unknown as RulesFile;
@@ -44,6 +44,18 @@ describe("CLR-05: Chrome's default focus ring", () => {
   it("measures an author colour or a solid outline as usual", () => {
     expect(isDefaultFocusRing({ outlineStyle: "auto", outlineColor: "rgb(200, 200, 200)" })).toBe(false);
     expect(isDefaultFocusRing({ outlineStyle: "solid", outlineColor: "rgb(16, 16, 16)" })).toBe(false);
+  });
+});
+
+describe("CLR-05: border indicators", () => {
+  it("reads a border colour that contains spaces", () => {
+    const s = { borderColor: "rgb(255, 255, 255) rgb(255, 255, 255) rgb(255, 255, 255) rgb(255, 255, 255)", borderWidth: "2px 2px 2px 2px", borderStyle: "solid solid solid solid" };
+    expect(firstBorderColor(s)).toBe("rgb(255, 255, 255)");
+  });
+
+  it("takes the first side that is drawn", () => {
+    const s = { borderColor: "rgba(0, 0, 0, 0) rgba(0, 0, 0, 0) rgb(11, 12, 12) rgba(0, 0, 0, 0)", borderWidth: "0px 0px 4px 0px", borderStyle: "none none solid none" };
+    expect(firstBorderColor(s)).toBe("rgb(11, 12, 12)");
   });
 });
 
@@ -92,6 +104,48 @@ describe("axe results known to misfire", () => {
   });
 });
 
+describe("axe needs-review results this extension can settle", () => {
+  function reviewNode(selector: string, data: unknown, message = "msg"): NodeResult {
+    return { html: "<x>", target: [selector], any: [{ id: "c", message, data }], all: [], none: [], impact: "serious" } as unknown as NodeResult;
+  }
+  function result(id: string, nodes: NodeResult[]): Result {
+    return { id, tags: ["wcag2a", "wcag412"], help: "Help", helpUrl: "", description: "Description", impact: "serious", nodes } as unknown as Result;
+  }
+
+  it("drops a hidden copy of a role already reported as not allowed", () => {
+    setBody('<ul><li id="shown" role="tabpanel">a</li><li id="hidden" role="tabpanel" hidden>b</li><li id="other" role="slider" hidden>c</li></ul>');
+    const issues = normalizeAxeResults(
+      results([result("aria-allowed-role", [reviewNode("#shown", ["tabpanel"])])], [result("aria-allowed-role", [reviewNode("#hidden", ["tabpanel"]), reviewNode("#other", ["slider"])])]),
+      RULES,
+    );
+    expect(issues.map((i) => `${i.element.selector}/${i.type}`)).toEqual(["#shown/Auto", "#other/Semi"]);
+  });
+
+  it("drops a popup reference that exists, or belongs to a collapsed control", () => {
+    setBody('<button id="a" aria-haspopup="true" aria-controls="menu">A</button><div id="menu"></div><button id="b" aria-haspopup="true" aria-expanded="false" aria-controls="later">B</button><button id="c" aria-haspopup="true" aria-controls="gone">C</button>');
+    const nodes = [
+      reviewNode("#a", { messageKey: "controlsWithinPopup", needsReview: 'aria-controls="menu"' }),
+      reviewNode("#b", { messageKey: "controlsWithinPopup", needsReview: 'aria-controls="later"' }),
+      reviewNode("#c", { messageKey: "controlsWithinPopup", needsReview: 'aria-controls="gone"' }),
+    ];
+    const issues = normalizeAxeResults(results([], [result("aria-valid-attr-value", nodes)]), RULES);
+    expect(issues.map((i) => i.element.selector)).toEqual(["#c"]);
+  });
+
+  it("makes aria-labelledby with no existing ids a definite failure", () => {
+    setBody('<div id="d" role="dialog" aria-labelledby="t1 t2">x</div><div id="e" role="dialog" aria-describedby="n1">y</div>');
+    const issues = normalizeAxeResults(
+      results([], [result("aria-valid-attr-value", [
+        reviewNode("#d", { messageKey: "noId", needsReview: 'aria-labelledby="t1 t2"' }),
+        reviewNode("#e", { messageKey: "noId", needsReview: 'aria-describedby="n1"' }),
+      ])]),
+      RULES,
+    );
+    expect(issues.map((i) => `${i.element.selector}/${i.type}`)).toEqual(["#d/Auto", "#e/Semi"]);
+    expect(issues[0]?.description).toContain("no name from aria-labelledby");
+  });
+});
+
 describe("needs review severity", () => {
   it("uses axe's impact for an undecided result, not the project rule's severity", () => {
     setBody('<div id="d" aria-label="x">x</div>');
@@ -119,6 +173,15 @@ describe("LNK-03: a code term is not vague text", () => {
     const findings = await linkText.run(makeRuleContext(document));
     const vague = findings.filter((f) => findingRuleId(f, linkText.id) === "LNK-03").map((f) => f.element.id);
     expect(vague).toEqual(["b"]);
+  });
+});
+
+describe("CLR-01/03: gradients", () => {
+  it("reads the colour stops of a computed gradient", () => {
+    expect(gradientStops("linear-gradient(rgb(55, 118, 171) 10%, rgba(43, 91, 132, 0.5) 90%)")).toEqual([
+      [55, 118, 171, 1],
+      [43, 91, 132, 0.5],
+    ]);
   });
 });
 

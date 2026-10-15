@@ -1,15 +1,21 @@
 /**
  * KBD-06: focused element obscured by sticky/fixed content (WCAG 2.4.11).
  *
- * Method: for every focusable element (first 400) we scroll it into view
- * with `block: "nearest"` (what the browser does when focus moves), then hit
- * test with `elementFromPoint` on a 3x3 grid: the centre, the four corners
- * and the four edge midpoints, inset by 2px. If the element at the centre is
- * not the target (or inside it) and it, or one of its ancestors, is
- * `position: fixed` or `sticky` and is not an ancestor of the target, the
- * target is reported as obscured. Scroll positions (window and every
- * scrollable ancestor, including ones that started at 0) are restored
- * afterwards.
+ * Method: starting with the page scrolled to the top, we move focus to every
+ * focusable element (first 400) in order with `el.focus()`, and keep the
+ * scroll positions from one element to the next, as a keyboard user pressing
+ * Tab does. The browser scrolls each element into view exactly as it does
+ * for Tab (Chrome keeps a focused element clear of sticky headers in its
+ * scroll container, which `scrollIntoView` does not, and an element only
+ * reached after the ones before it is seen in the scroll state they left).
+ * Where focus cannot be moved, `scrollIntoView({ block: "nearest" })` is used
+ * instead. Then we hit test with `elementFromPoint` on a 3x3 grid: the centre,
+ * the four corners and the four edge midpoints, inset by 2px. If the element
+ * at the centre is not the target (or inside it) and it, or one of its
+ * ancestors, is a visible `position: fixed` or `sticky` element that is not
+ * an ancestor of the target, the target is reported as obscured. Focus and
+ * scroll positions (window and every scrollable ancestor, including ones that
+ * started at 0) are restored afterwards.
  *
  * Heuristics and their risks
  * --------------------------
@@ -24,6 +30,10 @@
  *    inert anyway.
  *  - `elementFromPoint` respects `pointer-events: none`; a sticky bar with
  *    pointer-events disabled is invisible to this check (false negative).
+ *  - A cover that cannot be seen (opacity 0, visibility hidden, or at most
+ *    2px in either direction, like an idle loading bar) does not count.
+ *  - Moving focus can trigger page behaviour (opening menus); the same is true
+ *    of the focus-indicator check, which focuses every element as well.
  *  - Scrolling happens for real (briefly); pages with scroll-driven effects
  *    may react. Everything is restored before the rule resolves.
  */
@@ -92,14 +102,22 @@ function restoreAncestorScroll(states: ScrollState[]): void {
   }
 }
 
-/** Nearest fixed/sticky element at or above `hit` that is not an ancestor of `target`. */
+/**
+ * Nearest fixed/sticky element at or above `hit` that is not an ancestor of
+ * `target` and that can be seen: nothing from `hit` up to it is transparent
+ * or hidden, and it is more than 2px in both directions.
+ */
 function coveringStickyElement(hit: Element, target: Element, view: Window): Element | null {
   let cur: Element | null = hit;
   while (cur && cur !== view.document.documentElement) {
     if (cur === target || cur.contains(target)) return null;
     try {
-      const pos = view.getComputedStyle(cur).position;
-      if (pos === "fixed" || pos === "sticky") return cur;
+      const cs = view.getComputedStyle(cur);
+      if (cs.opacity === "0" || cs.visibility === "hidden") return null;
+      if (cs.position === "fixed" || cs.position === "sticky") {
+        const box = cur.getBoundingClientRect();
+        return box.width > 2 && box.height > 2 ? cur : null;
+      }
     } catch {
       return null;
     }
@@ -147,6 +165,14 @@ export const rule: CustomRule = {
 
     const scrollX = view.scrollX;
     const scrollY = view.scrollY;
+    // Scroll containers touched during the walk, with their starting offsets, restored at the end.
+    const saved = new Map<Element, ScrollState>();
+    try {
+      view.scrollTo({ left: 0, top: 0, behavior: "instant" }); // a keyboard user starts at the top
+    } catch {
+      // ignore
+    }
+    const originalActive = doc.activeElement;
     const reported = new Set<Element>();
 
     try {
@@ -157,11 +183,13 @@ export const rule: CustomRule = {
         }
         const el = focusables[i];
         if (!el || reported.has(el)) continue;
-        const ancestors = recordAncestorScroll(el);
+        for (const s of recordAncestorScroll(el)) if (!saved.has(s.element)) saved.set(s.element, s);
         try {
           const cs = view.getComputedStyle(el);
           if (cs.position === "fixed" || cs.position === "sticky") continue; // it is itself the sticky content
-          el.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" });
+          // Let the browser scroll the element into view as it does for Tab.
+          el.focus();
+          if (doc.activeElement !== el) el.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" });
           const r = el.getBoundingClientRect();
           if (r.width <= 0 || r.height <= 0) continue;
           const vw = view.innerWidth;
@@ -209,8 +237,8 @@ export const rule: CustomRule = {
             const coverPos = view.getComputedStyle(centreCover).position;
             const tag = el.tagName.toLowerCase();
             const description = entirely
-              ? `When this ${tag} is scrolled into view and focused it is entirely hidden by the ${coverPos} element ${describe(centreCover)} (all ${probed} probe points covered).`
-              : `When this ${tag} is scrolled into view and focused, its centre is covered by the ${coverPos} element ${describe(centreCover)} (${coveredPoints.length} of ${probed} probe points covered). Partial obscuring conforms to 2.4.11 (AA) but fails 2.4.12 Focus Not Obscured (Enhanced) (AAA); verify the focused control remains visible.`;
+              ? `When this ${tag} receives focus (and the browser scrolls it into view) it is entirely hidden by the ${coverPos} element ${describe(centreCover)} (all ${probed} probe points covered).`
+              : `When this ${tag} receives focus (and the browser scrolls it into view), its centre is covered by the ${coverPos} element ${describe(centreCover)} (${coveredPoints.length} of ${probed} probe points covered). Partial obscuring conforms to 2.4.11 (AA) but fails 2.4.12 Focus Not Obscured (Enhanced) (AAA); verify the focused control remains visible.`;
             findings.push({
               element: el,
               type: entirely ? PRIMARY.type : "Semi",
@@ -228,11 +256,17 @@ export const rule: CustomRule = {
           }
         } catch {
           // continue with the next element
-        } finally {
-          restoreAncestorScroll(ancestors);
         }
       }
     } finally {
+      restoreAncestorScroll([...saved.values()]);
+      try {
+        const current = doc.activeElement;
+        if (current instanceof HTMLElement && current !== originalActive) current.blur();
+        if (originalActive instanceof HTMLElement && originalActive !== doc.body && originalActive.isConnected) originalActive.focus({ preventScroll: true });
+      } catch {
+        // ignore
+      }
       try {
         if (view.scrollX !== scrollX || view.scrollY !== scrollY) view.scrollTo({ left: scrollX, top: scrollY, behavior: "instant" });
       } catch {

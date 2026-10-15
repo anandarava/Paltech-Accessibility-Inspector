@@ -39,11 +39,62 @@
     .card { display: inline-block; width: 300px; height: 80px; position: relative; vertical-align: top; background: #c69851; }
     .card canvas { position: absolute; inset: 0; }
     #gallery-caption { position: absolute; left: 8px; top: 8px; margin: 0; color: #f5f5f7; }
+
+    /* Wikipedia: an external-link icon drawn in the link's right padding, beside the text. */
+    .ext { color: #3366cc; padding-right: 14px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12'%3E%3Crect width='12' height='12' fill='%23000'/%3E%3C/svg%3E") no-repeat 100% 50% / 12px auto; }
+    /* Still needs review: the same icon under the start of the text. */
+    #icon-under { color: #3366cc; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12'%3E%3Crect width='12' height='12' fill='%23000'/%3E%3C/svg%3E") no-repeat 0 50% / 12px auto; }
+    /* Python: gradients. Passes on every colour / fails on every colour / passes on part only. */
+    #grad-pass { color: #ffffff; background: linear-gradient(#1a3a5a 10%, #10243a 90%); padding: 8px; }
+    #grad-fail { color: #9a9a9a; background: linear-gradient(#a0a0a0 10%, #b0b0b0 90%); padding: 8px; }
+    #grad-mixed { color: #e6e8ea; background: linear-gradient(#3776ab 30%, #1d3f5c 95%); padding: 8px; }
+
+    /* Targets nobody can press, each next to small buttons that would otherwise make it fail. */
+    .tiny { width: 16px; height: 16px; padding: 0; margin: 0 2px 0 0; border: 1px solid #1a1a1a; background: #fff; }
+    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    #chevron { pointer-events: none; }
+    .cover-wrap { position: relative; display: inline-block; }
+    .cover { position: absolute; inset: -4px; background: #ffffff; }
+
+    /* Text spacing (ZM-03). Monospace keeps the widths predictable: 11 characters are about 100px,
+       and about 125px with the WCAG letter and word spacing. */
+    .zm { font: 16px/normal monospace; overflow: hidden; }
+    /* Mars: the paragraph spacing only adds margin below the text; no text is cut off. */
+    #zm-margin { height: 40px; width: 300px; }
+    #zm-margin p { margin: 0; }
+    /* Cut off: the text wraps to a second line that the 24px box hides. */
+    #zm-clip { height: 24px; width: 120px; }
+    /* Shortened on purpose: needs review. */
+    #zm-ellipsis { height: 24px; width: 110px; white-space: nowrap; text-overflow: ellipsis; }
+
+    /* MDN: a sidebar that scrolls on its own, with a sticky header inside it. */
+    #sidebar { height: 120px; overflow: auto; width: 240px; border: 1px solid #1a1a1a; }
+    #sidebar .sb-head { position: sticky; top: 0; height: 32px; background: #ffffff; border-bottom: 1px solid #1a1a1a; }
+    #sidebar a { display: block; padding: 4px 8px; color: #0b4f9c; }
   </style>
 </head>
 <body>
   <main>
     <h1>Real-site cases</h1>
+
+    <section id="targets">
+      <a class="sr-only" id="skip-hidden" href="#cited">Skip to content</a><button class="tiny" id="tiny-a" type="button" aria-label="A"></button><button class="tiny" id="tiny-a2" type="button" aria-label="A2"></button><button class="tiny" id="chevron" type="button" aria-label="Open menu"></button><span class="cover-wrap"><button class="tiny" id="covered" type="button" aria-label="Covered"></button><span class="cover"></span></span><button class="tiny" id="tiny-b" type="button" aria-label="B"></button>
+    </section>
+
+    <section>
+      <nav id="sidebar" aria-label="Sidebar">
+        <div class="sb-head">Menu</div>
+        <a id="sb-first" href="#s1">First page</a><a href="#s2">Second page</a><a href="#s3">Third page</a><a href="#s4">Fourth page</a><a href="#s5">Fifth page</a><a href="#s6">Sixth page</a><a href="#s7">Seventh page</a><a href="#s8">Eighth page</a>
+      </nav>
+      <!-- The reader has scrolled the sidebar down, as MDN does to show the current page. -->
+      <script>document.getElementById("sidebar").scrollTop = 10000;</script>
+    </section>
+
+    <section>
+      <div class="zm" id="zm-margin"><p>Order today</p></div>
+      <div class="zm" id="zm-clip">Order today</div>
+      <div class="zm" id="zm-ellipsis">Order today</div>
+    </section>
 
     <section class="dark">
       <a id="default-ring" href="#a">Default focus ring</a>
@@ -66,6 +117,14 @@
 
     <section class="gallery">
       <div class="card"></div><div class="card"><canvas width="300" height="80"></canvas><p id="gallery-caption">Today's hits</p></div>
+    </section>
+
+    <section>
+      <p>Read <a class="ext" id="ext-link" href="https://example.com/">an external source</a> for more.</p>
+      <p>Read <a id="icon-under" href="https://example.com/">a source with an icon under it</a> for more.</p>
+      <p id="grad-pass">White text on a dark gradient</p>
+      <p id="grad-fail">Grey text on a grey gradient</p>
+      <p id="grad-mixed">Pale text on a blue gradient</p>
     </section>
 
     <section>

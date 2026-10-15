@@ -25,18 +25,30 @@
  *    that option is unsupported and `el.matches(":focus-visible")` is false, a
  *    site that styles `:focus-visible` correctly would look unchanged, so the
  *    finding is reported as Semi (needs review) rather than a definite failure.
- *  - Focus indicators drawn on a *different* element (a parent `:focus-within`
- *    ring, a pseudo-element, an SVG underline) are invisible to this check and
- *    produce false positives.
+ *  - Focus indicators are often drawn on a *different* element. When nothing
+ *    changes on the element itself, its ::before/::after, up to three
+ *    ancestors (a `:focus-within` ring), its first 20 descendants and the
+ *    first 20 elements of its shadow root are compared unfocused vs
+ *    focused (with page transitions paused); a visible change there counts
+ *    as the indicator. Its contrast is not measured. Indicators drawn by
+ *    script on canvas or by other far-away elements are still missed.
  *  - Moving focus can trigger page behaviour (opening menus, validation).
  *    Focus is moved with `preventScroll` and restored, but side effects that
  *    the page itself performs on focus cannot be undone.
  *  - Chrome's default focus ring (`outline: auto` in the default colour) is a
  *    dark ring with a white ring around it, visible on any background; its
  *    computed colour only describes the dark part, so it is not measured.
- *  - Contrast of the indicator is measured against the background *around*
- *    the element (outlines sit outside the box). An inset ring against the
- *    element's own fill is approximated by the same value.
+ *  - An indicator is often made of several parts (a white ring inside a blue
+ *    one, a yellow highlight with a black underline shadow, an outline plus a
+ *    border). Every part is measured and the best one counts: the indicator
+ *    is visible when any one part stands out.
+ *  - Outer parts (outlines, box-shadows, borders) are measured against the
+ *    background *around* the element. Parts drawn inside it (inset
+ *    box-shadows, an outline with a negative offset at least its width) are
+ *    measured against the element's own focused fill.
+ *  - Before each element is measured, the previous element loses focus, so a
+ *    `:focus-within` style on a shared ancestor is not taken as part of the
+ *    unfocused state.
  *  - Pages with more than 400 focusables are skipped (one Semi note) to keep
  *    the scan responsive.
  *  - A page without focus gets no focus styles at all. The service worker
@@ -47,8 +59,9 @@
 import rulesJson from "@shared/a11y-rules.json";
 import type { RuleDefinition, RulesFile } from "@shared/types";
 import { contrastRatio, contrastRatioExact, hslToRgb, parseColor, rgbToHsl, suggestPassingColor, toHex, type RGB, type RGBA } from "@shared/color";
+import { EXT_MARKER_ATTR } from "@shared/constants";
 import { getFocusableElements } from "@src/content/dom-utils";
-import { isExtensionElement, paintOver, resolveBackground, type BackgroundCache } from "./contrast";
+import { isExtensionElement, paintOver, resolveBackground, type BackgroundCache, type BackgroundResolution } from "./contrast";
 import type { CustomRule, RuleContext, RuleFinding } from "./types";
 
 const RULES: RuleDefinition[] = (rulesJson as unknown as RulesFile).rules;
@@ -104,6 +117,65 @@ function snapshot(cs: CSSStyleDeclaration): StyleSnapshot {
   };
 }
 
+/** A related element (or one of its pseudo-elements) whose look may change when the element is focused. */
+interface RelatedPart {
+  element: Element;
+  pseudo: "::before" | "::after" | null;
+}
+
+/** Visual properties of a related part; opacity, visibility and size catch rings that fade or grow in. */
+function relatedSnapshot(part: RelatedPart, view: Window): string {
+  const cs = view.getComputedStyle(part.element, part.pseudo);
+  if (part.pseudo && (cs.content === "none" || cs.content === "normal" || cs.display === "none")) return "";
+  const s = snapshot(cs);
+  const outline = outlineVisible(s) ? `${s.outlineStyle} ${s.outlineWidth} ${s.outlineColor} ${s.outlineOffset}` : "";
+  const visible = parseFloat(cs.opacity) > 0.01 && cs.visibility !== "hidden" ? "shown" : "hidden";
+  const size = part.pseudo ? `${cs.width} ${cs.height}` : "";
+  return [outline, s.boxShadow, s.borderColor, s.borderWidth, s.borderStyle, s.backgroundColor, s.backgroundImage, s.color, s.textDecorationLine, s.textDecorationColor, s.filter, s.transform, visible, size].join("|");
+}
+
+const RELATED_ANCESTORS = 3;
+const RELATED_DESCENDANTS = 20;
+
+/** Parts that commonly draw a focus indicator for `el`: its pseudo-elements, ancestors, descendants and shadow content. */
+function relatedParts(el: Element): RelatedPart[] {
+  const parts: RelatedPart[] = [
+    { element: el, pseudo: "::before" },
+    { element: el, pseudo: "::after" },
+  ];
+  let node: Element | null = el;
+  for (let i = 0; i < RELATED_ANCESTORS; i++) {
+    const root: Node = node.getRootNode();
+    node = node.parentElement ?? (root instanceof ShadowRoot ? root.host : null);
+    if (!node || node === el.ownerDocument.body || node === el.ownerDocument.documentElement) break;
+    parts.push({ element: node, pseudo: null }, { element: node, pseudo: "::before" }, { element: node, pseudo: "::after" });
+  }
+  for (const child of Array.from(el.querySelectorAll("*")).slice(0, RELATED_DESCENDANTS)) parts.push({ element: child, pseudo: null });
+  // A web component draws its ring inside its shadow root (`:host(:focus) .ring`, or a focused inner control).
+  const shadow = el.shadowRoot;
+  if (shadow) {
+    for (const child of Array.from(shadow.querySelectorAll("*")).slice(0, RELATED_DESCENDANTS)) {
+      if (child.localName !== "style") parts.push({ element: child, pseudo: null }, { element: child, pseudo: "::before" }, { element: child, pseudo: "::after" });
+    }
+  }
+  return parts;
+}
+
+/**
+ * True when focusing `el` (currently focused) visibly changes one of its
+ * related parts. The element is briefly blurred to read the unfocused state,
+ * then focused again.
+ */
+function indicatorElsewhere(el: HTMLElement, view: Window): boolean {
+  const parts = relatedParts(el);
+  const focused = parts.map((p) => relatedSnapshot(p, view));
+  el.blur();
+  // Shadow content only has its focused element while focused: compare the same parts.
+  const unfocused = parts.map((p) => relatedSnapshot(p, view));
+  el.focus({ preventScroll: true, focusVisible: true } as FocusOptions);
+  return focused.some((f, i) => f !== unfocused[i] && (f !== "" || unfocused[i] !== ""));
+}
+
 function changedKeys(a: StyleSnapshot, b: StyleSnapshot): Array<keyof StyleSnapshot> {
   const keys = Object.keys(a) as Array<keyof StyleSnapshot>;
   return keys.filter((k) => a[k] !== b[k]);
@@ -127,33 +199,42 @@ function splitShadows(boxShadow: string): string[] {
   return parts.filter(Boolean);
 }
 
-/** Spread radius (4th length) of one shadow entry; 0 when absent. */
-function shadowSpread(entry: string): number {
+/** Offsets, blur and spread of one shadow entry, in px (missing ones are 0). */
+function shadowLengths(entry: string): number[] {
   const lengths = entry.replace(/(rgba?|hsla?|color)\([^)]*\)/gi, "").match(/-?[\d.]+(?:px)?(?=\s|$)/g) ?? [];
-  return lengths.length >= 4 ? parseFloat(lengths[3] ?? "0") || 0 : 0;
+  return lengths.map((l) => parseFloat(l) || 0);
+}
+
+export interface ShadowPart {
+  /** Colour with its own alpha: a translucent ring is blended with what is behind it before measuring. */
+  color: RGBA;
+  /** Drawn inside the element, on its own fill, rather than on the page around it. */
+  inset: boolean;
 }
 
 /**
- * Extract the indicator colour from a box-shadow list. A page often carries a
- * decorative shadow (e.g. `rgba(0,0,0,.075) 0 1px 1px inset`) before the focus
- * ring, so the entry that is new on focus (absent from `before`) is preferred,
- * then a non-inset entry with positive spread (a ring), then the first entry.
- * The alpha channel is preserved: a translucent ring such as Bootstrap's
- * `rgba(13, 110, 253, 0.25)` must be blended with the page background before its
- * contrast is measured, otherwise a ring that renders as a pale tint is judged as
- * if it were the opaque brand colour.
+ * The box-shadow entries that make up a focus indicator. A page often carries a
+ * decorative shadow (e.g. `rgba(0,0,0,.075) 0 1px 1px inset`) before focus, so
+ * the entries new on focus are returned when there are any, otherwise all of
+ * them. Entries that draw nothing (no offset, blur or spread) and transparent
+ * ones are left out. Indicators are often made of several entries (a white
+ * ring inside a blue one, a yellow highlight with a black underline); each is
+ * judged on its own and the best one counts.
  */
-export function shadowColor(boxShadow: string, before = "none"): RGBA | null {
-  if (!boxShadow || boxShadow === "none") return null;
+export function focusShadows(boxShadow: string, before = "none"): ShadowPart[] {
+  if (!boxShadow || boxShadow === "none") return [];
   const entries = splitShadows(boxShadow);
   const previous = new Set(splitShadows(before === "none" ? "" : before));
-  const isRing = (e: string): boolean => !/\binset\b/i.test(e) && shadowSpread(e) > 0;
   const added = entries.filter((e) => !previous.has(e));
-  const chosen = added.find(isRing) ?? added[0] ?? entries.find(isRing) ?? entries[0];
-  if (!chosen) return null;
-  const m = /(rgba?\([^)]*\)|color\([^)]*\)|#[0-9a-f]{3,8}\b|\b(?!inset\b)[a-z]+\b)/i.exec(chosen);
-  if (!m) return null;
-  return parseColor(m[1] ?? "");
+  const parts: ShadowPart[] = [];
+  for (const entry of added.length ? added : entries) {
+    if (!shadowLengths(entry).some((n) => n !== 0)) continue;
+    const m = /(rgba?\([^)]*\)|color\([^)]*\)|#[0-9a-f]{3,8}\b|\b(?!inset\b)[a-z]+\b)/i.exec(entry);
+    const color = m ? parseColor(m[1] ?? "") : null;
+    if (!color || color[3] <= 0.01) continue;
+    parts.push({ color, inset: /\binset\b/i.test(entry) });
+  }
+  return parts;
 }
 
 function outlineVisible(s: StyleSnapshot): boolean {
@@ -174,8 +255,21 @@ export function isDefaultFocusRing(s: Pick<StyleSnapshot, "outlineStyle" | "outl
   return !!c && c[0] === 16 && c[1] === 16 && c[2] === 16 && c[3] >= 0.99;
 }
 
-function firstBorderColor(s: StyleSnapshot): string {
-  return s.borderColor.split(" ")[0] ?? "";
+/**
+ * Colour of the first drawn border side (width > 0, style not none/hidden).
+ * The snapshot joins the four sides with spaces, and colours such as
+ * `rgb(255, 255, 255)` contain spaces themselves, so the colours are matched
+ * whole rather than split on spaces.
+ */
+export function firstBorderColor(s: Pick<StyleSnapshot, "borderColor" | "borderWidth" | "borderStyle">): string {
+  const colors = s.borderColor.match(/(?:rgba?|hsla?|color)\([^)]*\)|#[0-9a-f]{3,8}\b|[a-z]+/gi) ?? [];
+  const widths = s.borderWidth.split(/\s+/);
+  const styles = s.borderStyle.split(/\s+/);
+  for (let i = 0; i < 4; i++) {
+    if ((parseFloat(widths[i] ?? "0") || 0) <= 0 || styles[i] === "none" || styles[i] === "hidden") continue;
+    return colors[i] ?? colors[0] ?? "";
+  }
+  return "";
 }
 
 export const rule: CustomRule = {
@@ -237,8 +331,14 @@ export const rule: CustomRule = {
     const scrollX = view.scrollX;
     const scrollY = view.scrollY;
     const cache: BackgroundCache = new Map();
+    // Switch off transitions on the page while measuring, so a ring that fades or grows in on a
+    // pseudo-element or ancestor shows its end state at once (removed in `finally`).
+    const pause = doc.createElement("style");
+    pause.setAttribute(EXT_MARKER_ATTR, "focus-transition-pause");
+    pause.textContent = "*, *::before, *::after { transition: none !important; }";
 
     try {
+      (doc.head ?? doc.documentElement).appendChild(pause);
       for (let i = 0; i < focusables.length; i++) {
         if (i > 0 && i % CHUNK === 0) {
           await ctx.yieldToMain();
@@ -256,6 +356,10 @@ export const rule: CustomRule = {
           let after: StyleSnapshot;
           try {
             styleDecl.setProperty("transition", "none", "important");
+            // The unfocused state must not carry the previous element's focus: a `:focus-within`
+            // style on a shared ancestor (a search form) would already show in "before".
+            const previous = doc.activeElement;
+            if (previous instanceof HTMLElement && previous !== doc.body && previous !== el) previous.blur();
             before = snapshot(view.getComputedStyle(el));
             // focusVisible makes Chrome apply :focus-visible styles even though the last
             // interaction was a mouse click (pressing Scan); without it, sites that style
@@ -280,6 +384,7 @@ export const rule: CustomRule = {
           const showsOutline = outlineVisible(before) || outlineVisible(after);
           const diff = changedKeys(before, after).filter((k) => showsOutline || !k.startsWith("outline"));
 
+          if (diff.length === 0 && indicatorElsewhere(el, view)) continue; // drawn on a pseudo-element, ancestor or child
           if (diff.length === 0) {
             findings.push({
               element: el,
@@ -303,26 +408,52 @@ export const rule: CustomRule = {
           };
           const compose = (css: string): RGB | null => composeRgba(parseColor(css));
 
-          // Ring-like changes in order of preference. A transparent one (e.g. the common
-          // `outline: 2px solid transparent` kept for forced-colours mode) is not the
-          // indicator: keep looking at the other changes instead of reporting it.
-          const rings: Array<{ kind: string; indicator: RGB | null }> = [];
-          if (outlineVisible(after) && (diff.includes("outlineStyle") || diff.includes("outlineWidth") || diff.includes("outlineColor") || diff.includes("outlineOffset"))) {
-            rings.push({ kind: "outline", indicator: compose(after.outlineColor) });
+          // Every part of a ring-like change: the outline, each box-shadow entry, the border.
+          // A transparent part (e.g. the common `outline: 2px solid transparent` kept for
+          // forced-colours mode) draws nothing and is not the indicator. An inset shadow is
+          // drawn on the element's own fill, so it is measured against that fill.
+          const rings: Array<{ kind: string; indicator: RGB | null; adjacent: RGB }> = [];
+          const outlineChanged = diff.includes("outlineStyle") || diff.includes("outlineWidth") || diff.includes("outlineColor") || diff.includes("outlineOffset");
+          let ownFill: BackgroundResolution | null = null;
+          const fill = (): BackgroundResolution => (ownFill ??= resolveBackground(el, new Map())); // the focused fill: not from the shared cache
+          if (outlineVisible(after) && outlineChanged) {
+            // A negative outline-offset of at least the outline's width draws it inside the element, on its own fill.
+            const inside = parseFloat(after.outlineOffset) + parseFloat(after.outlineWidth) <= 0;
+            const outlineColor = parseColor(after.outlineColor);
+            if (inside) rings.push({ kind: "inset outline", indicator: outlineColor && outlineColor[3] > 0.01 ? paintOver(fill(), outlineColor) : null, adjacent: fill().color });
+            else rings.push({ kind: "outline", indicator: compose(after.outlineColor), adjacent: surrounding.color });
           }
-          if (diff.includes("boxShadow") && after.boxShadow !== "none") {
-            rings.push({ kind: "box-shadow", indicator: composeRgba(shadowColor(after.boxShadow, before.boxShadow)) });
+          if (diff.includes("boxShadow")) {
+            const parts = focusShadows(after.boxShadow, before.boxShadow);
+            // Only transparent or empty shadows changed: recorded so the change is reported as invisible.
+            if (parts.length === 0 && after.boxShadow !== "none") rings.push({ kind: "box-shadow", indicator: null, adjacent: surrounding.color });
+            for (const part of parts) {
+              if (part.inset) {
+                rings.push({ kind: "inset box-shadow", indicator: part.color[3] > 0.01 ? paintOver(fill(), part.color) : null, adjacent: fill().color });
+              } else {
+                rings.push({ kind: "box-shadow", indicator: composeRgba(part.color), adjacent: surrounding.color });
+              }
+            }
           }
           if (diff.includes("borderColor") || diff.includes("borderWidth") || diff.includes("borderStyle")) {
-            rings.push({ kind: "border", indicator: compose(firstBorderColor(after)) });
+            rings.push({ kind: "border", indicator: compose(firstBorderColor(after)), adjacent: surrounding.color });
           }
 
-          const ring = rings.find((r) => r.indicator);
-          if (ring?.kind === "outline" && isDefaultFocusRing(after)) continue; // the browser's two-colour ring
-          if (ring?.indicator) {
+          const visibleRings = rings.filter((r): r is { kind: string; indicator: RGB; adjacent: RGB } => r.indicator !== null);
+          if (visibleRings.length > 0) {
+            if (outlineVisible(after) && isDefaultFocusRing(after)) continue; // the browser's two-colour ring
             if (surrounding.hasImage) continue; // cannot judge contrast against an image
-            const ratio = contrastRatio(ring.indicator, surrounding.color);
-            if (contrastRatioExact(ring.indicator, surrounding.color) < 3) findings.push(contrastFinding(el, ring.kind, ring.indicator, surrounding.color, ratio));
+            // The indicator is visible when any one of its parts stands out: judge the best part.
+            let best = visibleRings[0] as (typeof visibleRings)[number];
+            let bestRatio = contrastRatioExact(best.indicator, best.adjacent);
+            for (const r of visibleRings.slice(1)) {
+              const ratio = contrastRatioExact(r.indicator, r.adjacent);
+              if (ratio > bestRatio) {
+                best = r;
+                bestRatio = ratio;
+              }
+            }
+            if (bestRatio < 3) findings.push(contrastFinding(el, best.kind, best.indicator, best.adjacent, contrastRatio(best.indicator, best.adjacent)));
             continue;
           }
 
@@ -358,6 +489,7 @@ export const rule: CustomRule = {
         }
       }
     } finally {
+      pause.remove();
       // Restore focus and scroll exactly as they were.
       try {
         const current = doc.activeElement;
