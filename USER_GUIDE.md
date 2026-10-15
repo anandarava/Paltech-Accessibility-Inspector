@@ -73,6 +73,8 @@ The top of the results is a summary: how many issues, how serious, and whether t
 - **Conformance.** *No critical WCAG issues* turns into a red *Not conformant (WCAG level)* label whenever an open Critical WCAG issue exists, whatever the score. The score is a trend indicator, not a certificate.
 - **Rules passed.** The green count shows how many rules passed.
 
+**More room for the list.** Drag the divider under the summary up to shrink the summary, or all the way up to hide it; drag it down to bring it back. Double-click the divider to hide or show the summary. From the keyboard, tab to the divider and use Arrow Up and Arrow Down, Home to hide the summary or End to show all of it. The panel remembers the size you choose.
+
 Below the summary, the tabs choose what the list shows:
 
 | Tab | What it shows |
@@ -80,6 +82,7 @@ Below the summary, the tabs choose what the list shows:
 | All | Every open issue |
 | WCAG issues | Failures of a WCAG success criterion |
 | Best practices | Recommendations that are not WCAG failures |
+| Needs review | Checks the automated rules could not decide, such as text over a background image. Check each by hand. They are not counted as failures or in the score |
 | Failed rules | One row per failed rule with its WCAG reference, severity and element count |
 | Passed rules | Rules that passed on this page |
 | Not applicable rules | Rules that found nothing to test (for example no video on the page) |
@@ -193,9 +196,18 @@ Use **Export** in the footer to download the current scan.
 | HTML report | A summary and developer details without screenshots. |
 | JSON | Raw results for tooling and CI. |
 
-The HTML report has two parts. **Part 1** is a plain-language summary for team leads and clients: the verdict, the score, the severity breakdown, the problems to fix first, who is affected, what was tested and the limits of automated testing. **Part 2** is for developers: every affected element with its measurements, a fix, the selector, the HTML and the screenshot.
+Every HTML report, for one scan or several saved scans, uses the same layout. **Part 1** is a plain-language summary for team leads and clients: the verdict, the score, the severity breakdown, the problems to fix first, who is affected, what was tested and the limits of automated testing. **Part 2** is for developers: one card per rule, listing every affected element with its measurements, a fix, the selector, the HTML and the screenshot. **Needs review** follows, with the same cards marked *Needs review · not counted*.
 
-**Filter by severity.** At the start of Part 2 of the HTML report, a **Show severity** row has one button per severity that occurs in the report (for example *Critical 4*, *Moderate 2*). All are on when you open the report. Click a button, or tab to it and press Space, to hide or show that severity. The *Failed rules* table, the rule cards and the individual elements follow your choice, and a notice appears if you switch every severity off. The filter works in any browser without scripts, and applies if you print the report. The summary in Part 1 always shows the full totals.
+**Filter and browse.** A filter bar sits above the rule cards in Part 2:
+
+| Filter | What it does |
+| --- | --- |
+| Severity | Show only Critical, Serious, Moderate or Minor findings (combine several) |
+| Show | All, only the issues, or only the Needs review findings |
+| Search | Matches element text, selector or fingerprint |
+| Rule, Category, Effort, Affects | Narrow to one rule, one category (for example Forms), one effort level or one group of users |
+
+Rules start collapsed to one line each (rule, severity, number of elements): click a rule, or tab to it and press Enter, to open it. Inside a rule, each element is one line you can open. **Expand all** opens every rule; click it again to open every element too. **Collapse all** closes everything. Links in the summary and the *Failed rules* table open the rule they point to. **Reset filters** brings everything back. The line under the filters says how many elements are shown. The summary in Part 1 always shows the full totals. A report of several saved scans adds a list of pages on the left and an overview of all pages. The report needs JavaScript to display: open it in a browser.
 
 The organisation name and the *Prepared by* line shown on the report are set in the Options page.
 
@@ -217,7 +229,7 @@ Changes are saved with the **Save** button. Settings changed in the side panel a
 
 - It finds roughly 30 to 40 percent of accessibility problems. Test with a keyboard and a screen reader (NVDA, JAWS, VoiceOver or TalkBack) as well.
 - It cannot judge whether alt text, labels or instructions are accurate. It catches obvious patterns such as filenames and generic words.
-- Contrast over images, gradients and video cannot be decided automatically, so those cases are not reported.
+- Contrast over images, gradients and video cannot be decided automatically. Those cases are listed on the **Needs review** tab for you to check.
 - Content in cross-origin iframes may not be scanned. Such frames are listed as not scanned.
 - Canvas content (charts, games) cannot be inspected.
 - Issues that only appear after an interaction (hover menus, error messages, later views of a single-page app) are found only if you trigger that state before scanning.
@@ -233,5 +245,6 @@ Changes are saved with the **Save** button. Settings changed in the side panel a
 | A count differs from axe DevTools | Tick **axe-core only** and use the same WCAG version and level. |
 | Cursor or layout looks wrong after an update | Reload the extension on `chrome://extensions` and reload the page. |
 | You want to start over on a tab | Press **Reset** in the footer. |
+| A yellow bar says the extension "started debugging this browser" | This is expected during a scan. To check focus indicators, the extension makes the page behave as if it had keyboard focus (the side panel has it while you work), then switches this off. The bar closes when the scan ends. If you cancel it, focus indicators are not checked and one note appears under **Needs review**. |
 
 **Privacy.** Scanning runs entirely in your browser and the extension makes no network requests of its own. Screenshots are taken only when you ask for them, input values are masked and elements matching your redaction selectors (by default password fields and `.pii`) are blurred before an image is stored.

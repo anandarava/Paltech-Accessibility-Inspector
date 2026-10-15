@@ -25,7 +25,7 @@ const DIST = path.resolve(ROOT, process.env.A11Y_E2E_DIST ?? "dist");
 const FIXTURES = path.join(ROOT, "fixtures");
 const HAS_DIST = existsSync(path.join(DIST, "manifest.json"));
 
-const FIXTURE_PAGES = ["images", "forms", "keyboard-trap", "contrast", "structure", "aria", "links", "spa"] as const;
+const FIXTURE_PAGES = ["images", "forms", "keyboard-trap", "contrast", "structure", "aria", "links", "spa", "labels-aria"] as const;
 
 type ExpectedCounts = Record<string, number>;
 
@@ -275,8 +275,8 @@ test.describe("PalTech A11y Inspector extension", () => {
           expect(issue.element.selector.length).toBeGreaterThan(0);
           expect(issue.element.selector).not.toContain("a11y-checker-overlay-host");
         }
-        // Only definite findings are reported.
-        expect(result.issues.filter((i) => i.type === "Semi")).toEqual([]);
+        // Needs-review findings are only ever "Semi"; definite findings stay "Auto".
+        expect(result.issues.filter((i) => i.type !== "Auto" && i.type !== "Semi")).toEqual([]);
       } finally {
         await page.close();
       }
@@ -427,14 +427,61 @@ test.describe("PalTech A11y Inspector extension", () => {
     }
   });
 
-  test("undeterminable findings are not reported", async () => {
+  test("undeterminable findings are reported for review, and can be switched off", async () => {
     const { page, tabId } = await openFixture("contrast");
     try {
       const result = await scan(tabId);
       // contrast.html plants text over a gradient (CLR-03), which cannot be decided automatically.
-      expect(result.issues.some((i) => i.ruleId === "CLR-03")).toBe(false);
-      expect(result.issues.filter((i) => i.type === "Semi")).toEqual([]);
-      expect(result.issues.some((i) => i.ruleId === "CLR-01")).toBe(true);
+      const clr03 = result.issues.filter((i) => i.ruleId === "CLR-03");
+      expect(clr03.length).toBeGreaterThan(0);
+      expect(clr03.every((i) => i.type === "Semi")).toBe(true);
+      expect(result.issues.some((i) => i.ruleId === "CLR-01" && i.type === "Auto")).toBe(true);
+
+      const off = await scan(tabId, { includeNeedsReview: false });
+      expect(off.issues.filter((i) => i.type === "Semi")).toEqual([]);
+      expect(off.issues.some((i) => i.ruleId === "CLR-01")).toBe(true);
+      // Review findings never move the score.
+      expect(off.score).toBe(result.score);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("focus indicators: transparent rings and invisible outline changes are not mistaken for the indicator", async () => {
+    const { page, tabId } = await openFixture("focus-indicators");
+    try {
+      // A tester clicks with the mouse before scanning, so Chrome would not apply
+      // :focus-visible to programmatic focus unless the rule forces it.
+      await page.click("#start");
+      // Reproduce the side panel: the tester's focus is elsewhere, so the page has no focus
+      // and Chrome draws no focus styles. Playwright normally fakes focus for every page;
+      // switch that off and bring another tab forward. The scan must emulate focus itself.
+      const cdp = await context.newCDPSession(page);
+      await cdp.send("Emulation.setFocusEmulationEnabled", { enabled: false });
+      await panel.bringToFront();
+      expect(await page.evaluate(() => document.hasFocus())).toBe(false);
+      const result = await scan(tabId);
+      const rulesFor = (id: string) =>
+        result.issues.filter((i) => i.element.selector === `#${id}` && ["KBD-05", "CLR-05"].includes(i.ruleId)).map((i) => i.ruleId);
+      expect(rulesFor("bg-strong")).toEqual([]);
+      expect(rulesFor("bg-faint")).toEqual(["CLR-05"]);
+      expect(rulesFor("outline-transparent-shadow")).toEqual([]);
+      expect(rulesFor("fv-strong")).toEqual([]);
+      expect(rulesFor("fv-faint")).toEqual(["CLR-05"]);
+      // A faint grey behind dark text cannot be darkened without hurting the text: suggest an outline.
+      const faint = result.issues.find((i) => i.element.selector === "#fv-faint" && i.ruleId === "CLR-05");
+      expect(faint?.fix?.suggestedValue).toMatch(/^outline: 2px solid #[0-9a-f]{6}; outline-offset: 2px$/);
+      // A background-only change is judged against the unfocused state, which WCAG requires only
+      // at AAA (2.4.13): an AA scan lists it for review, an AAA scan reports it as CLR-09.
+      expect(faint?.type).toBe("Semi");
+      expect(result.issues.find((i) => i.element.selector === "#bg-faint" && i.ruleId === "CLR-05")?.type).toBe("Semi");
+      const aaa = await scan(tabId, { wcagLevel: "AAA" });
+      const atAaa = (id: string) =>
+        aaa.issues.filter((i) => i.element.selector === `#${id}` && ["CLR-05", "CLR-09"].includes(i.ruleId)).map((i) => `${i.ruleId}/${i.type}`);
+      expect(atAaa("fv-faint")).toEqual(["CLR-09/Auto"]);
+      expect(atAaa("bg-faint")).toEqual(["CLR-09/Auto"]);
+      expect(rulesFor("transparent-only")).toEqual(["KBD-05"]);
+      expect(rulesFor("nothing")).toEqual(["KBD-05"]);
     } finally {
       await page.close();
     }
@@ -456,6 +503,86 @@ test.describe("PalTech A11y Inspector extension", () => {
       expect(na.filter((r) => axeOnly.passedRules.includes(r))).toEqual([]);
       expect(na.filter((r) => axeOnly.issues.some((i) => i.data?.axeRuleId === r))).toEqual([]);
     } finally {
+      await page.close();
+    }
+  });
+
+  test("visible labels and strict ARIA: exactly the planted elements, each classified correctly", async () => {
+    const { page, tabId } = await openFixture("labels-aria");
+    try {
+      const result = await scan(tabId);
+      const found = (ruleId: string) =>
+        result.issues
+          .filter((i) => i.ruleId === ruleId)
+          .map((i) => `${/id="([^"]+)"/.exec(i.element.html)?.[1] ?? i.element.selector}/${i.type}`)
+          .sort();
+      // Item 3: named only by aria-label, a visually hidden label or hidden text; never the labelled look-alikes.
+      expect(found("FRM-11")).toEqual(["f1/Semi", "f2/Semi", "f3/Semi", "f4/Semi"]);
+      // Item 4: definite where axe-core says "incomplete", and no leftover needs-review duplicate.
+      expect(found("ARIA-02")).toEqual(["a1/Auto", "a2/Auto"]);
+      // One issue per element: where axe-core already fails it (the focusable span), its finding is kept.
+      expect(result.issues.filter((i) => i.ruleId === "ARIA-02" && i.element.html.includes('id="a1"'))).toHaveLength(1);
+      expect(found("ARIA-03")).toEqual(["c1/Auto", "c2/Semi"]);
+      expect(found("STR-08")).toEqual(["dup-note/Auto", "dup-note/Auto"]);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("target size: 24px at AA with the spacing exception, 44px at AAA without it", async () => {
+    const { page, tabId } = await openFixture("target-size");
+    try {
+      const ids = (result: ScanResult, ruleId: string) =>
+        result.issues.filter((i) => i.ruleId === ruleId).map((i) => /id="([^"]+)"/.exec(i.element.html)?.[1] ?? i.element.selector).sort();
+      const aa = await scan(tabId);
+      expect(ids(aa, "TGT-01")).toEqual(["t-tiny1", "t-tiny2"]);
+      expect(ids(aa, "TGT-02")).toEqual([]);
+      const aaa = await scan(tabId, { wcagLevel: "AAA" });
+      expect(ids(aaa, "TGT-02")).toEqual(["t-30", "t-tiny1", "t-tiny2", "t-wide"]);
+      expect(ids(aaa, "TGT-01")).toEqual(["t-tiny1", "t-tiny2"]);
+      expect(aaa.issues.find((i) => i.ruleId === "TGT-02")?.wcag).toMatchObject({ criterion: "2.5.5", level: "AAA" });
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("the summary can be resized to give the issue list more room", async () => {
+    const { page, tabId } = await openFixture("images");
+    const panelTab = await context.newPage();
+    try {
+      await panelTab.setViewportSize({ width: 420, height: 800 });
+      await panelTab.goto(`chrome-extension://${extensionId}/src/sidepanel/index.html?tabId=${tabId}`, { waitUntil: "load" });
+      await scan(tabId);
+      const divider = panelTab.getByRole("separator", { name: "Resize summary" });
+      await expect(divider).toBeVisible();
+      const summaryHeight = () => panelTab.locator("#summary-region").evaluate((el) => el.getBoundingClientRect().height);
+      const full = await summaryHeight();
+      expect(full).toBeGreaterThan(100);
+
+      // Drag the divider up by 100px: the summary shrinks by the same amount.
+      const box = (await divider.boundingBox())!;
+      await panelTab.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await panelTab.mouse.down();
+      await panelTab.mouse.move(box.x + box.width / 2, box.y + box.height / 2 - 100, { steps: 5 });
+      await panelTab.mouse.up();
+      expect(Math.round(await summaryHeight())).toBe(Math.round(full - 100));
+
+      // Keyboard: Home hides it (and takes it out of the tab order), End shows all of it.
+      await divider.focus();
+      await panelTab.keyboard.press("Home");
+      expect(await summaryHeight()).toBe(0);
+      await expect(panelTab.locator("#summary-region")).toHaveCSS("visibility", "hidden");
+      await expect(divider).toHaveAttribute("aria-valuetext", "Summary hidden");
+      await panelTab.keyboard.press("End");
+      expect(Math.round(await summaryHeight())).toBe(Math.round(full));
+
+      // The chosen size is remembered when the panel is opened again.
+      await panelTab.keyboard.press("Home");
+      await panelTab.reload({ waitUntil: "load" });
+      await expect(panelTab.getByRole("separator", { name: "Resize summary" })).toHaveAttribute("aria-valuetext", "Summary hidden");
+      await panelTab.getByRole("separator", { name: "Resize summary" }).press("End");
+    } finally {
+      await panelTab.close();
       await page.close();
     }
   });

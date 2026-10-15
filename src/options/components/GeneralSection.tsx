@@ -83,6 +83,13 @@ export function GeneralSection(props: { settings: Settings; onChange: (patch: Pa
           onChange={(v) => onChange({ includeBestPractices: v })}
         />
         <Checkbox
+          id="include-needs-review"
+          label="Include findings that need manual review"
+          hint="Lists checks the automated rules could not decide (for example text over background images) in a separate Needs review tab. They never count as failures or toward the score."
+          checked={settings.includeNeedsReview}
+          onChange={(v) => onChange({ includeNeedsReview: v })}
+        />
+        <Checkbox
           id="axe-only"
           label="axe-core rules only"
           hint="Skip the extension's own rules (alpha-blended contrast, focus indicators, text spacing, target spacing, reflow, alt and link quality…) and run only axe-core, so results line up with axe DevTools."

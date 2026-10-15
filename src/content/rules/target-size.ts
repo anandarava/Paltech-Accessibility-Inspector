@@ -1,6 +1,11 @@
 /**
  * TGT-01: pointer target smaller than 24x24 CSS px without sufficient
  * spacing (WCAG 2.5.8 Target Size (Minimum), AA).
+ * TGT-02: pointer target smaller than 44x44 CSS px (WCAG 2.5.5 Target Size
+ * (Enhanced), AAA). Checked in AAA scans only; spacing is no exception at
+ * AAA, the inline and user-agent-control exceptions below apply. The
+ * threshold is `thresholds.enhancedMinSize` (default 44). A target below
+ * 24px without spacing fails both criteria and is reported under both.
  *
  * Only interactive targets are considered: `a[href]`, `button`, `input`
  * (not hidden), and elements with role button / link / checkbox / radio /
@@ -40,7 +45,9 @@ function ruleDef(id: string): RuleDefinition {
 }
 
 const PRIMARY = ruleDef("TGT-01");
+const ENHANCED = ruleDef("TGT-02");
 const DEFAULT_MIN_SIZE = 24;
+const DEFAULT_ENHANCED_SIZE = 44;
 const CHUNK = 200;
 const MAX_TARGETS = 3000;
 
@@ -95,6 +102,7 @@ function isInlineInSentence(el: Element, cs: CSSStyleDeclaration): boolean {
 
 export const rule: CustomRule = {
   id: PRIMARY.id,
+  emits: [ENHANCED.id],
   title: PRIMARY.check,
   category: PRIMARY.category,
   wcag: PRIMARY.wcag,
@@ -108,6 +116,9 @@ export const rule: CustomRule = {
     const findings: RuleFinding[] = [];
     const minSizeRaw = ctx.thresholds?.minSize;
     const minSize = Number.isFinite(minSizeRaw) && (minSizeRaw as number) > 0 ? (minSizeRaw as number) : DEFAULT_MIN_SIZE;
+    const enhancedRaw = ctx.thresholds?.enhancedMinSize;
+    const enhancedSize = Number.isFinite(enhancedRaw) && (enhancedRaw as number) > 0 ? (enhancedRaw as number) : DEFAULT_ENHANCED_SIZE;
+    const checkEnhanced = ctx.wcagLevel === "AAA";
     const doc = ctx.root.ownerDocument ?? (ctx.root as Document);
     const view = doc.defaultView ?? window;
 
@@ -121,6 +132,7 @@ export const rule: CustomRule = {
     // Pass 1: measure every target (needed for the spacing exception).
     const targets: Target[] = [];
     const small: Array<{ target: Target; cs: CSSStyleDeclaration }> = [];
+    const belowEnhanced: Array<{ target: Target; cs: CSSStyleDeclaration }> = [];
     for (let i = 0; i < candidates.length; i++) {
       if (i > 0 && i % CHUNK === 0) {
         await ctx.yieldToMain();
@@ -151,14 +163,16 @@ export const rule: CustomRule = {
           undersized,
         };
         targets.push(target);
-        if (undersized) {
+        const belowEnhancedSize = checkEnhanced && (rect.width + 0.5 < enhancedSize || rect.height + 0.5 < enhancedSize);
+        if (undersized || belowEnhancedSize) {
           const cs = view.getComputedStyle(el);
           // User-agent drawn checkbox/radio at default size.
           if (el instanceof HTMLInputElement && (el.type === "checkbox" || el.type === "radio")) {
             const appearance = (cs as unknown as { appearance?: string }).appearance ?? "";
             if (appearance !== "none") continue;
           }
-          small.push({ target, cs });
+          if (undersized) small.push({ target, cs });
+          if (belowEnhancedSize) belowEnhanced.push({ target, cs });
         }
       } catch {
         // next
@@ -225,6 +239,33 @@ export const rule: CustomRule = {
         // next
       }
     }
+    // TGT-02 (AAA): no spacing exception, only the inline one.
+    for (let i = 0; i < belowEnhanced.length; i++) {
+      if (i > 0 && i % CHUNK === 0) await ctx.yieldToMain();
+      const entry = belowEnhanced[i];
+      if (!entry) continue;
+      const { target, cs } = entry;
+      try {
+        if (isInlineInSentence(target.element, cs)) continue;
+        const w = Math.round(target.width * 10) / 10;
+        const h = Math.round(target.height * 10) / 10;
+        findings.push({
+          element: target.element,
+          type: ENHANCED.type,
+          severity: ENHANCED.severity ?? "Minor",
+          description: `This ${target.element.tagName.toLowerCase()} target is ${w}x${h}px; WCAG 2.5.5 (AAA) asks for at least ${enhancedSize}x${enhancedSize}px, whatever the spacing around it.`,
+          data: { ruleId: ENHANCED.id, width: w, height: h, minSize: enhancedSize },
+          fix: {
+            summary: `Make the target at least ${enhancedSize}x${enhancedSize}px, for example with padding or min-width/min-height. A larger invisible hit area (padding on the element itself) counts; one drawn with ::before/::after is not measured here.`,
+            suggestedValue: `min-width: ${enhancedSize}px; min-height: ${enhancedSize}px;`,
+            docsUrl: "https://www.w3.org/WAI/WCAG22/Understanding/target-size-enhanced.html",
+          },
+        });
+      } catch {
+        // next
+      }
+    }
+
     ctx.progress?.(100);
     return findings;
   },

@@ -808,6 +808,7 @@ async function handleScanStart(options: ScanOptions): Promise<Response<FrameScan
     wcagVersion: options?.wcagVersion === "2.0" || options?.wcagVersion === "2.1" ? options.wcagVersion : "2.2",
     rules: readStringArray(options?.rules),
     includeBestPractices: options?.includeBestPractices !== false,
+    includeNeedsReview: options?.includeNeedsReview !== false,
     axeOnly: options?.axeOnly === true,
   };
   lastScanOptions = scanOptions;

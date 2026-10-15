@@ -155,6 +155,8 @@ export interface Settings {
   enabledCategories: Category[];
   autoRescan: boolean;
   includeBestPractices: boolean;
+  /** Report findings that need manual review (axe-core "incomplete", custom "Semi") in their own tab. */
+  includeNeedsReview: boolean;
   /** Run only axe-core's own rules (no custom rules), for results comparable with axe DevTools. */
   axeOnly: boolean;
   environment: string;

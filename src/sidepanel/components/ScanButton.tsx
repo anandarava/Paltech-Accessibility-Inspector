@@ -26,6 +26,7 @@ export function useStartScan(): () => Promise<void> {
         wcagVersion: settings.wcagVersion,
         rules: [],
         includeBestPractices: settings.includeBestPractices,
+        includeNeedsReview: settings.includeNeedsReview,
         axeOnly: settings.axeOnly,
       },
     });

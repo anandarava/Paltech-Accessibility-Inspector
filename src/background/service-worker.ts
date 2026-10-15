@@ -30,6 +30,7 @@ import type { FrameScanOutput } from "@src/content/scanner";
 import { fingerprint } from "@src/content/fingerprint";
 import { buildMultiPageReport, buildReport, type ReportMeta } from "@src/background/exporters/index";
 import { ensureContentScript } from "./injector";
+import { disableFocusEmulation, enableFocusEmulation } from "./focus-emulation";
 import {
   addBaseline,
   addIgnored,
@@ -224,6 +225,7 @@ function defaultScanOptions(settings: Settings): ScanOptions {
     wcagVersion: settings.wcagVersion,
     rules: [],
     includeBestPractices: settings.includeBestPractices,
+    includeNeedsReview: settings.includeNeedsReview,
     axeOnly: settings.axeOnly,
   };
 }
@@ -355,8 +357,8 @@ async function performScan(tabId: number, requested: ScanOptions | undefined): P
     // from other frames (e.g. a same-document about:blank child) or the reflow pass.
     const seenFingerprints = new Set<string>();
     const pushIssue = (issue: Issue, frameId: number): void => {
-      // Only definite findings are reported; undeterminable ("Semi") ones are dropped.
-      if (issue.type === "Semi") return;
+      // Needs-review ("Semi") findings are kept only when the scan asked for them.
+      if (issue.type === "Semi" && options.includeNeedsReview === false) return;
       // Selectors are frame-local, so identical widgets in two iframes share a fingerprint;
       // only repeats within one frame are duplicates.
       const dedupeKey = `${frameId}:${issue.fingerprint}`;
@@ -369,33 +371,41 @@ async function performScan(tabId: number, requested: ScanOptions | undefined): P
       issues.push(issue);
     };
 
-    for (let idx = 0; idx < frameIds.length; idx++) {
-      const frameId = frameIds[idx];
-      broadcast({
-        type: "SCAN_PROGRESS",
-        tabId,
-        percent: Math.round((idx / Math.max(1, frameIds.length)) * 80),
-        stage: frameId === 0 ? "Scanning page" : `Scanning frame ${idx} of ${frameIds.length - 1}`,
-      });
-      const res = await scanFrame(tabId, frameId, options);
-      if (!res.ok || !isFrameScanOutput(res.data)) {
-        const label = frameId === 0 ? "top frame" : `frame ${frameId}`;
-        unscannedFrames.push(`${label}: ${res.error ?? "no result"}`);
-        if (frameId === 0) throw new Error(res.error ?? "The page scan returned no result.");
-        continue;
+    // While the tester works in the side panel the page has no focus, and Chrome then
+    // draws no focus styles: emulate a focused page so the focus-indicator rules see
+    // them (see focus-emulation.ts). axe-core-only scans have no focus rules.
+    const emulatingFocus = options.axeOnly ? false : await enableFocusEmulation(tabId);
+    try {
+      for (let idx = 0; idx < frameIds.length; idx++) {
+        const frameId = frameIds[idx];
+        broadcast({
+          type: "SCAN_PROGRESS",
+          tabId,
+          percent: Math.round((idx / Math.max(1, frameIds.length)) * 80),
+          stage: frameId === 0 ? "Scanning page" : `Scanning frame ${idx} of ${frameIds.length - 1}`,
+        });
+        const res = await scanFrame(tabId, frameId, options);
+        if (!res.ok || !isFrameScanOutput(res.data)) {
+          const label = frameId === 0 ? "top frame" : `frame ${frameId}`;
+          unscannedFrames.push(`${label}: ${res.error ?? "no result"}`);
+          if (frameId === 0) throw new Error(res.error ?? "The page scan returned no result.");
+          continue;
+        }
+        const out = res.data;
+        for (const issue of out.issues) {
+          if (!isIssue(issue)) continue;
+          pushIssue(issue, frameId);
+        }
+        for (const r of out.passedRules ?? []) passedRules.add(r);
+        Object.assign(passedRuleSeverity, out.passedRuleSeverity ?? {});
+        inapplicableByFrame.push(new Set(Array.isArray(out.inapplicableRules) ? out.inapplicableRules : []));
+        const extraUnscanned = (out as unknown as { unscannedFrames?: unknown; unscanned?: unknown });
+        for (const u of [extraUnscanned.unscannedFrames, extraUnscanned.unscanned]) {
+          if (Array.isArray(u)) for (const f of u) if (typeof f === "string") unscannedFrames.push(f);
+        }
       }
-      const out = res.data;
-      for (const issue of out.issues) {
-        if (!isIssue(issue)) continue;
-        pushIssue(issue, frameId);
-      }
-      for (const r of out.passedRules ?? []) passedRules.add(r);
-      Object.assign(passedRuleSeverity, out.passedRuleSeverity ?? {});
-      inapplicableByFrame.push(new Set(Array.isArray(out.inapplicableRules) ? out.inapplicableRules : []));
-      const extraUnscanned = (out as unknown as { unscannedFrames?: unknown; unscanned?: unknown });
-      for (const u of [extraUnscanned.unscannedFrames, extraUnscanned.unscanned]) {
-        if (Array.isArray(u)) for (const f of u) if (typeof f === "string") unscannedFrames.push(f);
-      }
+    } finally {
+      if (emulatingFocus) await disableFocusEmulation(tabId);
     }
 
     broadcast({ type: "SCAN_PROGRESS", tabId, percent: 92, stage: "Applying baseline" });
@@ -959,9 +969,12 @@ async function reportMeta(): Promise<ReportMeta> {
 async function captureReportScreenshots(tabId: number, result: ScanResult): Promise<void> {
   const seen = new Set<string>();
   const wanted: string[] = [];
-  for (const issue of result.issues) {
+  // One screenshot per rule card. Failures come first so needs-review cards never use up
+  // the limit; a rule can have a failure card and a needs-review card, each gets its own.
+  const ordered = [...result.issues.filter((i) => i.type !== "Semi"), ...result.issues.filter((i) => i.type === "Semi")];
+  for (const issue of ordered) {
     if (issue.status !== "new") continue;
-    const key = `${issue.ruleId} ${issue.title}`;
+    const key = `${issue.type === "Semi" ? "review" : "issue"} ${issue.ruleId} ${issue.title}`;
     if (seen.has(key)) continue;
     seen.add(key);
     if (!issue.evidence?.screenshot) wanted.push(issue.id);

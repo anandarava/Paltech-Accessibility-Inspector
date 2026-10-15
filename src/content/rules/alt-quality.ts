@@ -7,6 +7,9 @@
  *  - IMG-08  inline <svg> with no role, no accessible name and no aria-hidden
  *            (Semi, Moderate): it may be decorative, but a screen reader will
  *            still expose it (often as "group" or by reading its <title>).
+ *  - IMG-09  <img alt=""> that also has a title (Auto, Serious): the image is
+ *            marked decorative, yet the title says it carries meaning, and
+ *            screen readers disagree on whether to read it.
  *
  * Heuristics and their risks
  * --------------------------
@@ -25,6 +28,9 @@
  *  - IMG-08 skips svgs inside a control that already has an accessible name
  *    (an icon inside `<button aria-label="Close">`) because the icon is
  *    harmless there; it also skips hidden images.
+ *  - IMG-09 looks only at `title`. An `aria-label` or `aria-labelledby` on an
+ *    `alt=""` image names it reliably (ARIA wins over the empty alt), so that
+ *    is not reported. Images hidden with aria-hidden are skipped.
  */
 import rulesJson from "@shared/a11y-rules.json";
 import type { RuleDefinition, RulesFile } from "@shared/types";
@@ -43,6 +49,7 @@ function ruleDef(id: string): RuleDefinition {
 const PRIMARY = ruleDef("IMG-02");
 const GENERIC = ruleDef("IMG-03");
 const SVG = ruleDef("IMG-08");
+const TITLED = ruleDef("IMG-09");
 const CHUNK = 200;
 
 export const FILENAME_RE = /\.(jpe?g|png|gif|svg|webp|avif|bmp|tiff?|ico)$/i;
@@ -136,6 +143,35 @@ function altFinding(el: Element, alt: string, kind: "filename" | "generic", sour
   };
 }
 
+/**
+ * Title of an `<img alt="">` that is exposed to assistive technology, or null.
+ * aria-label / aria-labelledby name the image reliably, so they are not a conflict.
+ */
+function decorativeImageTitle(el: Element, ctx: RuleContext): string | null {
+  if (el.tagName.toLowerCase() !== "img") return null;
+  const title = (el.getAttribute("title") ?? "").trim();
+  if (!title) return null;
+  if ((el.getAttribute("aria-label") ?? "").trim() || (el.getAttribute("aria-labelledby") ?? "").trim()) return null;
+  if (el.closest("[aria-hidden='true']")) return null;
+  if (!ctx.isVisible(el)) return null;
+  return title;
+}
+
+function titledDecorativeFinding(el: Element, title: string): RuleFinding {
+  return {
+    element: el,
+    type: TITLED.type,
+    severity: TITLED.severity ?? "Serious",
+    description: `This image has alt="" (decorative) but also title="${title}". Screen readers disagree on whether to announce the title, so some users hear it and others do not.`,
+    data: { ruleId: TITLED.id, title },
+    fix: {
+      summary: `If the image is decorative, remove the title. If it carries meaning, move it into the alt text (alt="${title}") and remove the title.`,
+      suggestedValue: `alt="${title}"`,
+      docsUrl: "https://www.w3.org/WAI/WCAG22/Understanding/non-text-content.html",
+    },
+  };
+}
+
 function hasSvgName(svg: Element): boolean {
   const label = svg.getAttribute("aria-label");
   if (label && label.trim()) return true;
@@ -160,7 +196,7 @@ function insideNamedControl(svg: Element): boolean {
 
 export const rule: CustomRule = {
   id: PRIMARY.id,
-  emits: [GENERIC.id, SVG.id],
+  emits: [GENERIC.id, SVG.id, TITLED.id],
   title: PRIMARY.check,
   category: PRIMARY.category,
   wcag: PRIMARY.wcag,
@@ -187,7 +223,12 @@ export const rule: CustomRule = {
       try {
         if (isExtensionElement(el, ctx)) continue;
         const alt = el.getAttribute("alt") ?? "";
-        if (!alt.trim()) continue; // decorative
+        if (!alt.trim()) {
+          // Decorative, unless a title says otherwise (IMG-09).
+          const title = decorativeImageTitle(el, ctx);
+          if (title) findings.push(titledDecorativeFinding(el, title));
+          continue;
+        }
         if (el.getAttribute("role") === "presentation" || el.getAttribute("role") === "none") continue;
         if (el.getAttribute("aria-hidden") === "true") continue;
         // aria-label / aria-labelledby override alt in the accessible name; judge what is actually announced.

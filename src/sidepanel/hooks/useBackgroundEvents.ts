@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { isMessage, type Message } from "@shared/messages";
 import type { Issue, ScanResult } from "@shared/types";
-import { isBestPracticeIssue, matchesFilters, matchesTab, ruleGroupKey, useStore, type Filters } from "@src/sidepanel/store";
+import { isBestPracticeIssue, isNeedsReviewIssue, matchesFilters, matchesTab, ruleGroupKey, useStore, type Filters, type ResultTab } from "@src/sidepanel/store";
 
 /** Window event fired in the panel when the on-page picker returns a selector (ScopeControl starts the scan). */
 export const PICKED_EVENT = "a11y-checker:picked";
@@ -38,7 +38,7 @@ export function useBackgroundEvents(): void {
           store.setProgress({ percent: clampPercent(msg.percent), stage: msg.stage });
           break;
         case "SCAN_RESULT": {
-          const count = msg.result.issues.length;
+          const count = msg.result.issues.filter((i) => !isNeedsReviewIssue(i)).length;
           const message = `${count} issue${count === 1 ? "" : "s"} found`;
           // A live result arriving while a saved scan is shown must not silently throw the
           // user out of it: park the result as the live one and say so.
@@ -144,9 +144,11 @@ function revealIssue(issue: Issue): string {
   const changes: string[] = [];
   let tab = store.resultTab;
   if (tab === "failed" || tab === "passed" || tab === "na" || !matchesTab(issue, tab)) {
-    tab = "all";
-    store.setResultTab("all");
-    changes.push("switched to the All tab");
+    // Needs-review findings are listed only in their own tab.
+    const target: ResultTab = isNeedsReviewIssue(issue) ? "review" : "all";
+    tab = target;
+    store.setResultTab(target);
+    changes.push(target === "review" ? "switched to the Needs review tab" : "switched to the All tab");
   }
   const f = store.filters;
   const patch: Partial<Filters> = {};
@@ -156,7 +158,7 @@ function revealIssue(issue: Issue): string {
   if (f.sources.length > 0 && !f.sources.includes(issue.source)) patch.sources = [];
   if (tab === "all" && !f.showBestPractice && isBestPracticeIssue(issue)) patch.showBestPractice = true;
   const open: Filters = { statuses: [], severities: [], categories: [], sources: [], showBestPractice: true, search: f.search };
-  if (!matchesFilters(issue, open, "all")) patch.search = "";
+  if (!matchesFilters(issue, open, tab)) patch.search = "";
   if (Object.keys(patch).length > 0) {
     store.setFilters(patch);
     changes.push("cleared filters that hid it");

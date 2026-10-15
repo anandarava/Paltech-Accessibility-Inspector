@@ -635,7 +635,7 @@ function renderSeverityFilter(counts: Record<Severity, number>, body: string): s
 </div>`;
 }
 
-function renderRuleDetails(group: RuleGroup): string {
+function renderRuleDetails(group: RuleGroup, prefix = "rule", review = false): string {
   const first = group.issues[0];
   const g = group.guidance;
   const bp = isBestPractice(group.wcag);
@@ -644,12 +644,14 @@ function renderRuleDetails(group: RuleGroup): string {
   const shared = sharedAdviceOf(group);
   const n = group.issues.length;
   const technicalTitle = group.title !== g.headline ? `<p class="rule-sub">${escapeHtml(group.title)}</p>` : "";
-  return `<article id="${groupId(group)}" class="rule" data-sevs="${severitiesOf(group)}" style="--c:${groupColor(group)}" aria-labelledby="${groupId(group)}-h">
+  const id = groupId(group, prefix);
+  const reviewBadge = review ? `<span class="badge badge-review">Needs review · not counted</span> ` : "";
+  return `<article id="${id}" class="rule" data-sevs="${severitiesOf(group)}" style="--c:${groupColor(group)}" aria-labelledby="${id}-h">
 <header class="rule-h">
 <p class="eyebrow"><code>${escapeHtml(group.ruleId)}</code> · ${wcagLink(group.wcag)} · ${escapeHtml(group.category)}</p>
-<h3 id="${groupId(group)}-h">${escapeHtml(g.headline)}</h3>
+<h3 id="${id}-h">${escapeHtml(g.headline)}</h3>
 ${technicalTitle}
-<p class="rule-meta">${severityBadge(group.severity, bp)} <span class="muted">${escapeHtml(SEVERITY_MEANING[group.severity])}</span> · <b>${plural(n, "element")}</b> · ${effortChip(g.effort)}</p>
+<p class="rule-meta">${reviewBadge}${severityBadge(group.severity, bp)} <span class="muted">${escapeHtml(SEVERITY_MEANING[group.severity])}</span> · <b>${plural(n, "element")}</b> · ${effortChip(g.effort)}</p>
 </header>
 <div class="rule-info">
 <div class="info"><h4>Why it matters</h4><p>${escapeHtml(g.impact)}</p>${userChips(g.users)}</div>
@@ -660,26 +662,67 @@ ${patternNote(group)}
 </article>`;
 }
 
-function renderFailedRulesTable(groups: RuleGroup[]): string {
+interface RulesTableOptions {
+  /** Id prefix of the rule cards the rows link to. */
+  prefix: string;
+  headingId: string;
+  heading: string;
+  caption: string;
+}
+
+const FAILED_RULES_TABLE: RulesTableOptions = {
+  prefix: "rule",
+  headingId: "h-failed",
+  heading: "Failed rules",
+  caption: "Rules with open issues: WCAG failures first, then by severity",
+};
+
+function renderFailedRulesTable(groups: RuleGroup[], options: RulesTableOptions = FAILED_RULES_TABLE): string {
   if (groups.length === 0) return "";
   const max = Math.max(...groups.map((g) => g.issues.length));
   const rows = groups
     .map((g) => {
       const width = ((g.issues.length / max) * 100).toFixed(1);
       const color = groupColor(g);
-      return `<tr data-sevs="${severitiesOf(g)}"><td><a href="#${groupId(g)}"><b>${escapeHtml(g.guidance.headline)}</b></a><br><span class="muted small"><code>${escapeHtml(g.ruleId)}</code> · ${escapeHtml(wcagText(g.wcag))}</span></td>
+      return `<tr data-sevs="${severitiesOf(g)}"><td><a href="#${groupId(g, options.prefix)}"><b>${escapeHtml(g.guidance.headline)}</b></a><br><span class="muted small"><code>${escapeHtml(g.ruleId)}</code> · ${escapeHtml(wcagText(g.wcag))}</span></td>
 <td class="nowrap">${severityBadge(g.severity, isBestPractice(g.wcag))}</td>
 <td class="nowrap small">${escapeHtml(g.guidance.effort)}</td>
 <td class="barcell" aria-hidden="true"><span class="bar"><i style="width:${width}%;background:${color}"></i></span></td>
 <td class="num">${g.issues.length}</td></tr>`;
     })
     .join("");
-  return `<section class="card" aria-labelledby="h-failed">
-<h3 id="h-failed" class="label">Failed rules</h3>
-<div class="scroll"><table class="grid rules"><caption class="sr-only">Rules with open issues: WCAG failures first, then by severity</caption>
+  return `<section class="card" aria-labelledby="${options.headingId}">
+<h3 id="${options.headingId}" class="label">${escapeHtml(options.heading)}</h3>
+<div class="scroll"><table class="grid rules"><caption class="sr-only">${escapeHtml(options.caption)}</caption>
 <thead><tr><th scope="col">Problem</th><th scope="col">Severity</th><th scope="col">Effort</th><th scope="col"><span class="sr-only">Share of elements</span></th><th scope="col" class="num">Elements</th></tr></thead>
 <tbody>${rows}</tbody></table></div>
 </section>`;
+}
+
+/** Undeterminable ("Semi") findings: listed for manual checking, never counted. */
+function isNeedsReview(issue: Issue): boolean {
+  return issue.type === "Semi";
+}
+
+/**
+ * Needs review: the same rule cards as the developer details (why it matters,
+ * how to fix, every element with its finding, screenshot, selector and HTML),
+ * in their own part, badged "Needs review" and outside the severity filter and
+ * all totals.
+ */
+function renderNeedsReview(review: Issue[]): string {
+  if (review.length === 0) return "";
+  const groups = groupByRule(review);
+  const table = renderFailedRulesTable(groups, {
+    prefix: "review",
+    headingId: "h-review-rules",
+    heading: "Rules to review",
+    caption: "Rules with findings the automated checks could not decide",
+  });
+  return `<div class="part" id="h-review"><h2>Needs review (${review.length})</h2><span>Checks the automated rules could not decide</span></div>
+<p class="intro">The automated checks could not decide these. Each one is shown the same way as the problems above. Check each element by hand: these are not counted in the totals or the score.</p>
+${table}
+${groups.map((g) => renderRuleDetails(g, "review", true)).join("\n")}`;
 }
 
 function renderExcluded(excluded: Issue[]): string {
@@ -939,6 +982,7 @@ details.tech summary{cursor:pointer;color:var(--muted);font-weight:600}
 .badge-serious{background:#ffe8d6;color:#7a2e00;border-color:#c2410c}
 .badge-moderate{background:#fff4c2;color:#5c4a00;border-color:#a16207}
 .badge-minor{background:#e4e7ec;color:#2f3744;border-color:#6b7280}
+.badge-review{background:#e0f2fe;color:#0c4a6e;border-color:#0369a1}
 .badge-bp{background:#ede9fe;color:#3b2a86;border-color:#6d28d9}
 .lists details{margin:.3rem 0}.lists summary{padding:.3rem 0;font-weight:600;cursor:pointer}
 .lists ul{columns:3;column-gap:1.5rem;margin:.3rem 0 .6rem;padding-left:1.1rem;font-size:.86rem}
@@ -957,8 +1001,10 @@ footer{color:var(--muted);font-size:.84rem;padding-bottom:2rem}
 export function buildHtmlReport(result: ScanResult, meta: ReportMeta = {}): string {
   const tool = toolInfo();
   const issues = result.issues ?? [];
-  const active = issues.filter((i) => i.status === "new");
-  const excluded = issues.filter((i) => i.status !== "new");
+  const review = issues.filter((i) => isNeedsReview(i) && i.status === "new");
+  const counted = issues.filter((i) => !isNeedsReview(i));
+  const active = counted.filter((i) => i.status === "new");
+  const excluded = counted.filter((i) => i.status !== "new");
   const passed = effectivePassedRules(active, result.passedRules ?? []);
   const inapplicable = result.inapplicableRules ?? [];
   const unscanned = result.unscannedFrames ?? [];
@@ -987,7 +1033,7 @@ export function buildHtmlReport(result: ScanResult, meta: ReportMeta = {}): stri
   ).join("");
 
   const detailsHtml = groups.length
-    ? groups.map(renderRuleDetails).join("\n")
+    ? groups.map((g) => renderRuleDetails(g)).join("\n")
     : `<section class="card"><h3 class="label">Issue details</h3><p>No open issues were found by the automated checks.</p></section>`;
 
   const list = (ids: string[]) => ids.map((r) => `<li><code>${escapeHtml(r)}</code></li>`).join("");
@@ -1024,7 +1070,7 @@ ${unscanned.length ? `<details open><summary>${plural(unscanned.length, "frame")
 <dl aria-label="Report facts">${coverFacts}</dl>
 </div></header>
 <nav class="toc" aria-label="Report sections"><ul class="wrap">
-<li><a href="#part-summary">Summary</a></li>${groups.length ? `<li><a href="#h-top">Fix these first</a></li>` : ""}<li><a href="#h-tested">What was tested</a></li><li><a href="#part-dev">Developer details</a></li>${excluded.length ? `<li><a href="#h-excluded">Excluded issues</a></li>` : ""}<li><a href="#h-scan">Scan details</a></li>
+<li><a href="#part-summary">Summary</a></li>${groups.length ? `<li><a href="#h-top">Fix these first</a></li>` : ""}<li><a href="#h-tested">What was tested</a></li><li><a href="#part-dev">Developer details</a></li>${review.length ? `<li><a href="#h-review">Needs review</a></li>` : ""}${excluded.length ? `<li><a href="#h-excluded">Excluded issues</a></li>` : ""}<li><a href="#h-scan">Scan details</a></li>
 </ul></nav>
 
 <main id="main" class="wrap">
@@ -1077,6 +1123,7 @@ ${renderSeverityFilter(counts, `${renderFailedRulesTable(groups)}
 
 ${detailsHtml}`)}
 
+${renderNeedsReview(review)}
 ${renderExcluded(excluded)}
 
 ${listsHtml}
@@ -1165,6 +1212,8 @@ interface TemplatePage {
   issuesExcluded: number;
   allFramesScanned: boolean;
   rules: TemplateRule[];
+  /** Open findings the checks could not decide: same cards, listed apart and never counted. */
+  review: TemplateRule[];
 }
 
 /** The JSON the multi-page template's renderer reads (field names are the template's). */
@@ -1174,6 +1223,9 @@ export interface MultiPageReportData {
   standard: string;
   rulesets: string;
   site: { name: string; origin: string };
+  /** From the Options page; empty when not set. */
+  organisation: string;
+  preparedBy: string;
   batch: { id: string; startedAt: string; finishedAt: string };
   pages: TemplatePage[];
 }
@@ -1253,8 +1305,9 @@ function templateRule(group: RuleGroup): TemplateRule {
 }
 
 function templatePage(result: ScanResult, n: number): TemplatePage {
-  const issues = result.issues ?? [];
+  const issues = (result.issues ?? []).filter((i) => !isNeedsReview(i));
   const active = issues.filter((i) => i.status === "new");
+  const review = (result.issues ?? []).filter((i) => isNeedsReview(i) && i.status === "new");
   const url = safeHref(result.url) ?? result.url ?? "";
   return {
     id: `page-${n}`,
@@ -1272,6 +1325,7 @@ function templatePage(result: ScanResult, n: number): TemplatePage {
     issuesExcluded: issues.length - active.length,
     allFramesScanned: (result.unscannedFrames ?? []).length === 0,
     rules: groupByRule(active).map(templateRule),
+    review: groupByRule(review).map(templateRule),
   };
 }
 
@@ -1298,6 +1352,8 @@ export function multiPageReportData(results: ScanResult[], meta: ReportMeta = {}
       name: meta.organisation?.trim() || (origins.length === 1 ? new URL(origins[0]).hostname : `${origins.length} sites`),
       origin: origins.join(", "),
     },
+    organisation: meta.organisation?.trim() ?? "",
+    preparedBy: meta.preparedBy?.trim() ?? "",
     batch: {
       id: `batch_${now.toISOString().replace(/[:.]/g, "-")}`,
       startedAt: times.length ? formatDate(times[0]) : "",

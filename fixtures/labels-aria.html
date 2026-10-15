@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Visible labels and strict ARIA fixture - A11y Checker</title>
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: #1a1a1a; background: #ffffff; margin: 0; line-height: 1.5; }
+    main { max-width: 760px; margin: 0 auto; padding: 24px; }
+    .field { margin: 12px 0; }
+    input, button { font: inherit; padding: 6px 8px; border: 1px solid #3a3a3a; color: #1a1a1a; background: #ffffff; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+    .box { display: inline-block; width: 24px; height: 24px; border: 2px solid #3a3a3a; }
+    a { color: #0b4f9c; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Visible labels and strict ARIA</h1>
+
+    <h2>Fields without a visible label (FRM-11, needs review)</h2>
+    <form action="#" method="get">
+      <!-- FRM-11: named only by aria-label -->
+      <div class="field"><input id="f1" type="email" aria-label="Email address"></div>
+      <!-- FRM-11: the label is visually hidden -->
+      <div class="field"><label for="f2" class="sr-only">Phone number</label><input id="f2" type="tel"></div>
+      <!-- FRM-11: aria-labelledby points at hidden text -->
+      <div class="field"><span id="f3-label" hidden>Postcode</span><input id="f3" aria-labelledby="f3-label"></div>
+      <!-- FRM-11: custom checkbox named only by aria-label -->
+      <div class="field"><div id="f4" class="box" role="checkbox" aria-checked="false" tabindex="0" aria-label="Subscribe to updates"></div></div>
+    </form>
+
+    <h2>Fields with a visible label (not FRM-11)</h2>
+    <form action="#" method="get">
+      <div class="field"><label for="n1">Full name</label> <input id="n1"></div>
+      <!-- WCAG G167: a visible button beside the field labels it -->
+      <div class="field"><input id="n2" type="search" aria-label="Search the site"> <button type="submit">Search</button></div>
+      <!-- visible text next to the field says the same as its name -->
+      <div class="field"><span>City</span> <input id="n3" aria-label="City"></div>
+      <!-- no name at all: FRM-01, not FRM-11 -->
+      <div class="field"><input id="n4"></div>
+      <!-- unlabelled drop-down: its option text is not a label, so FRM-01, not FRM-11 -->
+      <div class="field"><select id="n8"><option>Choose a city</option><option>Kabul</option></select></div>
+      <!-- placeholder only: FRM-02, not FRM-11 -->
+      <div class="field"><input id="n5" placeholder="Department"></div>
+      <!-- wrapping label with visible text -->
+      <div class="field"><label>Age <input id="n7" type="number"></label></div>
+    </form>
+    <!-- a hidden form (password-manager helper): not shown, not checked -->
+    <form id="hidden-form" style="display: none"><input id="n6" aria-label="Username"></form>
+
+    <h2>Names on elements that cannot be named (ARIA-02)</h2>
+    <!-- ARIA-02: a div without a role cannot be named -->
+    <div id="a1" aria-label="Product filters"><a href="#red">Red</a> <a href="#blue">Blue</a></div>
+    <!-- ARIA-02 (focusable, so Serious): a focusable span without a role -->
+    <p><span id="a2" class="box" tabindex="0" aria-label="Help"></span></p>
+    <!-- fine: these roles can be named -->
+    <nav id="b1" aria-label="Secondary"><a href="#one">One</a></nav>
+    <div id="b2" role="region" aria-label="Results"><p>No results yet.</p></div>
+    <button id="b3" type="button" aria-label="Close">x</button>
+
+    <h2>Broken ARIA references (ARIA-03)</h2>
+    <!-- ARIA-03 (definite): one of two aria-labelledby ids does not exist -->
+    <span id="c1-text">Delete</span>
+    <button id="c1" type="button" aria-labelledby="c1-text c1-missing">X</button>
+    <!-- ARIA-03 (needs review): an aria-describedby id may be added later -->
+    <p><label for="c2">Discount code</label> <input id="c2" aria-describedby="c2-hint c2-error"></p>
+    <p id="c2-hint">Codes are 8 characters.</p>
+    <!-- fine: a collapsed control may point at panels that render later -->
+    <button id="c3" type="button" aria-expanded="false" aria-controls="c3-panel c3-later">More</button>
+    <div id="c3-panel" hidden>Panel</div>
+
+    <h2>Duplicate referenced ids (STR-08)</h2>
+    <p id="dup-note">First note with this id.</p>
+    <p id="dup-note">Second note with the same id.</p>
+    <p><label for="d1">Notes</label> <input id="d1" aria-describedby="dup-note"></p>
+  </main>
+
+  <!-- Definite (Auto) findings the extension must report, per project rule id. -->
+  <script type="application/json" id="expected">
+    { "ARIA-02": 2, "ARIA-03": 1, "STR-08": 2, "FRM-01": 2, "FRM-02": 1 }
+  </script>
+</body>
+</html>

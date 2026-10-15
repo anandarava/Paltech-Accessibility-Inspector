@@ -31,6 +31,8 @@ export interface ScanOptions {
   /** Rule ids to run; empty means all enabled rules. */
   rules: string[];
   includeBestPractices: boolean;
+  /** Keep needs-review ("Semi") findings; defaults to true when absent. */
+  includeNeedsReview?: boolean;
   /** Run only axe-core's own rules; custom rules and the reflow check are skipped. */
   axeOnly?: boolean;
 }

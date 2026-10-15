@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildHtmlReport, buildMultiPageHtmlReport, multiPageReportData } from "@src/background/exporters/html-report";
-import { buildMultiPageReport } from "@src/background/exporters/index";
+import { buildMultiPageReport, buildReport } from "@src/background/exporters/index";
 import { makeIssue, makeScanResult } from "./support/factories";
 
 describe("buildHtmlReport", () => {
@@ -191,12 +191,26 @@ describe("multi-page report", () => {
     expect(/script-src 'nonce-([0-9a-f]{32})'/.exec(b)?.[1]).not.toBe(nonce);
   });
 
-  it("names one file for all pages, and falls back to the single-page report for one scan", () => {
+  it("names one file for all pages; one scan gets its own file name and the same interactive template", () => {
     const now = new Date(2026, 9, 12, 9, 30, 0);
     expect(buildMultiPageReport("html", [home, checkout], {}, now).filename).toBe("a11y-report_2-pages_20261012-093000.html");
     expect(JSON.parse(buildMultiPageReport("json", [home, checkout], {}, now).content).pages).toHaveLength(2);
-    const single = buildMultiPageReport("html", [home], {}, now).content;
-    expect(single).toContain("Part 1 · Summary");
-    expect(single).not.toContain('id="report-data"');
+    const single = buildMultiPageReport("html", [home], {}, now);
+    expect(single.filename).not.toContain("pages");
+    expect(single.content).toContain('id="report-data"');
+    expect(single.content).toMatch(/script-src 'nonce-[0-9a-f]{32}'/);
+  });
+
+  it("every HTML export, single scan included, uses the interactive template", () => {
+    const html = buildReport("html", home).content;
+    expect(html).toContain('id="report-data"');
+    expect(html).toContain("Accessibility report template (multi-page)");
+  });
+
+  it("carries the Options page organisation and prepared-by into the template", () => {
+    const data = multiPageReportData([home], { organisation: "PalTech", preparedBy: "QA team" });
+    expect(data.organisation).toBe("PalTech");
+    expect(data.preparedBy).toBe("QA team");
+    expect(multiPageReportData([home]).preparedBy).toBe("");
   });
 });

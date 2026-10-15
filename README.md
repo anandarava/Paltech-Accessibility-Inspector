@@ -49,7 +49,7 @@ axe DevTools-style workflow:
   extension's own rules and lets axe's own
   `color-contrast` / `target-size` run, so counts line up with axe DevTools at
   the same WCAG version and level
-- **Result tabs**: All / WCAG issues / Best practices / Passed,
+- **Result tabs**: All / WCAG issues / Best practices / Needs review / Passed,
   free-text search, a **Status** filter (Open / Ignored / Baselined, with
   "Open only" and "Excluded only" shortcuts) to review ignored or baselined
   issues across all rules, results **grouped by rule** ("Text contrast (12)") with a
@@ -102,7 +102,7 @@ report, keyed by project rule id:
 
 ```html
 <script type="application/json" id="expected">
-  { "IMG-01": 2, "IMG-02": 2, "IMG-03": 2, "IMG-05": 1, "IMG-06": 2 }
+  { "IMG-01": 2, "IMG-02": 2, "IMG-03": 2, "IMG-05": 1, "IMG-06": 2, "IMG-09": 1 }
 </script>
 ```
 
@@ -193,6 +193,7 @@ window. If you see "chromium distribution not found", run
 | `unlimitedStorage` | Saved scans keep full results including evidence screenshots, which quickly exceed the default 10 MB `chrome.storage.local` quota (up to 100 saved scans are kept) |
 | `downloads` | Save exported HTML and JSON reports |
 | `offscreen` | Crop evidence screenshots and build large report downloads: the MV3 service worker has no DOM canvas and no `URL.createObjectURL` |
+| `debugger` | Check focus indicators correctly (KBD-05, CLR-05). While you work in the side panel the page does not have focus, and Chrome then draws no focus styles at all. During a scan the extension turns on "emulate a focused page" (the same switch as in DevTools' Rendering panel) and turns it off again afterwards. Chrome shows a "started debugging this browser" bar while this runs. If it cannot attach, the focus check is skipped with one Needs review note |
 
 The extension asks for no optional permissions.
 
@@ -315,6 +316,7 @@ custom).
 | IMG-01 | &lt;img&gt; missing alt attribute | 1.1.1 Non-text Content (A) | Auto | Critical | axe: `image-alt` | yes |
 | IMG-02 | Alt text is a filename | 1.1.1 Non-text Content (A) | Auto | Serious | custom | yes |
 | IMG-03 | Alt text is generic ("image", "photo", "icon") | 1.1.1 Non-text Content (A) | Auto | Moderate | custom | yes |
+| IMG-09 | Image marked decorative (alt="") but has a title | 1.1.1 Non-text Content (A) | Auto | Serious | custom | yes |
 | IMG-05 | &lt;svg role="img"&gt; with no &lt;title&gt;, aria-label, or aria-labelledby | 1.1.1 Non-text Content (A) | Auto | Serious | axe: `svg-img-alt`, `role-img-alt` | yes |
 | IMG-06 | &lt;input type="image"&gt;, &lt;area&gt;, or &lt;object&gt; without text alternative | 1.1.1 Non-text Content (A) | Auto | Critical | axe: `input-image-alt`, `area-alt`, `object-alt`, `server-side-image-map` | yes |
 
@@ -325,6 +327,7 @@ custom).
 | IMG-04 | Alt text starts with "image of" / "picture of" | Best practice | Auto | Minor | axe: `image-redundant-alt` | yes |
 | CLR-08 | Text contrast below 7:1 (enhanced) | 1.4.6 Contrast (Enhanced) (AAA) | Auto | Minor | axe: `color-contrast-enhanced` | no |
 | FRM-10 | Form field has multiple labels | Best practice | Auto | Minor | axe: `form-field-multiple-labels` | yes |
+| FRM-11 | Field has no visible label (named only by aria-label or hidden text) | 3.3.2 Labels or Instructions (A) | Semi | Moderate | custom | yes |
 | KBD-03 | Positive tabindex value used | 2.4.3 Focus Order (A) | Auto | Serious | axe: `tabindex` | yes |
 | KBD-11 | Duplicate accesskey values | Best practice | Auto | Minor | axe: `accesskeys` | yes |
 | STR-03 | No &lt;h1&gt; on the page | Best practice | Auto | Moderate | axe: `page-has-heading-one` | yes |
@@ -344,6 +347,7 @@ custom).
 | CLR-02 | Large text (24px, or 18.66px bold) contrast below 3:1 | 1.4.3 Contrast (Minimum) (AA) | Auto | Serious | custom | yes |
 | CLR-04 | UI component borders/icons below 3:1 | 1.4.11 Non-text Contrast (AA) | Auto | Serious | custom | yes |
 | CLR-05 | Focus indicator below 3:1 against adjacent colors | 1.4.11 Non-text Contrast (AA) | Auto | Serious | custom | yes |
+| CLR-09 | Focus highlight is only a subtle background change (below 3:1 against the unfocused state) | 2.4.13 Focus Appearance (AAA) | Auto | Moderate | custom | yes |
 
 #### Forms
 
@@ -374,7 +378,7 @@ custom).
 | STR-01 | Missing or empty &lt;title&gt; | 2.4.2 Page Titled (A) | Auto | Serious | axe: `document-title` | yes |
 | STR-02 | &lt;html&gt; missing valid lang | 3.1.1 Language of Page (A) | Auto | Serious | axe: `html-has-lang`, `html-lang-valid`, `html-xml-lang-mismatch` | yes |
 | STR-07 | Data table without proper header association (&lt;th&gt;/scope/headers) | 1.3.1 Info and Relationships (A) | Auto | Serious | axe: `td-headers-attr`, `th-has-data-cells`, `table-duplicate-name`, `scope-attr-valid`, `table-fake-caption` | yes |
-| STR-08 | Duplicate id referenced by ARIA or &lt;label for&gt; | 4.1.2 Name, Role, Value (A) | Auto | Critical | axe: `duplicate-id-aria` | yes |
+| STR-08 | Duplicate id referenced by ARIA or &lt;label for&gt; | 4.1.2 Name, Role, Value (A) | Auto | Critical | axe: `duplicate-id-aria` (incomplete); custom: definite | yes |
 | STR-09 | &lt;iframe&gt; missing or duplicate title | 4.1.2 Name, Role, Value (A) | Auto | Serious | axe: `frame-title`, `frame-title-unique` | yes |
 | STR-11 | Invalid lang attribute on an element | 3.1.2 Language of Parts (AA) | Auto | Moderate | axe: `valid-lang` | yes |
 | STR-14 | List structure invalid (&lt;li&gt; outside &lt;ul&gt;/&lt;ol&gt;, invalid &lt;dl&gt;) | 1.3.1 Info and Relationships (A) | Auto | Serious | axe: `list`, `listitem`, `definition-list`, `dlitem` | yes |
@@ -384,8 +388,8 @@ custom).
 | Rule | Check | WCAG 2.2 | Type | Severity | Source | Enabled by default |
 |---|---|---|---|---|---|---|
 | ARIA-01 | Invalid, deprecated, or disallowed role | 4.1.2 Name, Role, Value (A) | Auto | Critical | axe: `aria-roles`, `aria-allowed-role`, `aria-deprecated-role`, `presentation-role-conflict`, `aria-text` | yes |
-| ARIA-02 | Required ARIA attribute missing or attribute not allowed | 4.1.2 Name, Role, Value (A) | Auto | Critical | axe: `aria-required-attr`, `aria-valid-attr`, `aria-allowed-attr`, `aria-prohibited-attr`, `aria-conditional-attr`, `aria-braille-equivalent` | yes |
-| ARIA-03 | ARIA attribute value invalid or references missing id | 4.1.2 Name, Role, Value (A) | Auto | Serious | axe: `aria-valid-attr-value` | yes |
+| ARIA-02 | Required ARIA attribute missing or attribute not allowed | 4.1.2 Name, Role, Value (A) | Auto | Critical | axe: `aria-required-attr`, `aria-valid-attr`, `aria-allowed-attr`, `aria-prohibited-attr`, `aria-conditional-attr`, `aria-braille-equivalent`; custom: aria-label on a div/span/p without a role | yes |
+| ARIA-03 | ARIA attribute value invalid or references missing id | 4.1.2 Name, Role, Value (A) | Auto | Serious | axe: `aria-valid-attr-value`; custom: partly broken id lists | yes |
 | ARIA-04 | aria-hidden="true" on focusable element or &lt;body&gt; | 4.1.2 Name, Role, Value (A) | Auto | Serious | axe: `aria-hidden-focus`, `aria-hidden-body` | yes |
 | ARIA-05 | Required child/parent role missing | 1.3.1 Info and Relationships (A) | Auto | Serious | axe: `aria-required-children`, `aria-required-parent` | yes |
 | ARIA-07 | ARIA widget (dialog, meter, progressbar, tooltip, treeitem) without accessible name | 4.1.2 Name, Role, Value (A) | Auto | Serious | axe: `aria-dialog-name`, `aria-meter-name`, `aria-progressbar-name`, `aria-tooltip-name`, `aria-treeitem-name` | yes |
@@ -397,6 +401,7 @@ custom).
 | LNK-01 | Link with no accessible name | 2.4.4 Link Purpose (In Context) (A) | Auto | Critical | axe: `link-name` | yes |
 | LNK-02 | Button or command with no accessible name | 4.1.2 Name, Role, Value (A) | Auto | Critical | axe: `button-name`, `input-button-name`, `aria-command-name`, `summary-name` | yes |
 | TGT-01 | Target smaller than 24x24 CSS px without sufficient spacing | 2.5.8 Target Size (Minimum) (AA) | Auto | Moderate | axe: `target-size` | yes |
+| TGT-02 | Target smaller than 44x44 CSS px (enhanced) | 2.5.5 Target Size (Enhanced) (AAA) | Auto | Minor | custom (AAA scans only) | yes |
 
 #### Responsiveness and Zoom
 
@@ -415,10 +420,12 @@ custom).
 | OTH-03 | Orientation locked via CSS | 1.3.4 Orientation (AA) | Auto | Serious | axe: `css-orientation-lock` | yes |
 
 Notes: results axe cannot decide (`aria-hidden-focus`, `duplicate-id-aria`,
-`th-has-data-cells`, `color-contrast` over images…) are not requested, and the
-catalogue's undeterminable ("Semi") rules (CLR-03, CLR-06, FRM-05, FRM-06,
-IMG-08, KBD-04, KBD-08, MED-01, MED-02, STR-13) are kept only as ids and never
-reported. `label-content-name-mismatch` is an experimental axe rule and is off
+`th-has-data-cells`, `color-contrast` over images…) and the catalogue's
+undeterminable ("Semi") rules (CLR-03, CLR-06, FRM-05, FRM-06, IMG-08, KBD-04,
+KBD-08, MED-01, MED-02, STR-13) are listed on the **Needs review** tab and in a
+"Needs review" section of the HTML report. They never count as failures or
+toward the score. Untick "Include findings that need manual review" in the
+options to leave them out. `label-content-name-mismatch` is an experimental axe rule and is off
 unless enabled explicitly.
 
 ## Known limitations

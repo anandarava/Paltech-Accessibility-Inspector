@@ -5,6 +5,7 @@ import { AXE_TO_RULE } from "@shared/wcag-map";
 import {
   CATEGORY_ORDER,
   failedRules,
+  isNeedsReviewIssue,
   issueNumbers,
   matchesFilters,
   ruleGroupKey,
@@ -309,12 +310,17 @@ export function IssueList({ onOpen, wide = false }: { onOpen(issueId: string): v
         </h2>
       </div>
       <div ref={listRef} className="relative min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-        {result.issues.length === 0 && (
+        {tab === "review" && (
+          <p className="px-1 pb-2 text-xs text-slate-700">
+            The automated checks could not decide these. Check each one by hand: they are not counted as failures or in the score.
+          </p>
+        )}
+        {tab !== "review" && result.issues.every(isNeedsReviewIssue) && (
           <p className="px-1 py-4 text-sm text-green-800">
             No issues found by the automated checks. Automated checks do not cover everything: also test the page with a keyboard and a screen reader.
           </p>
         )}
-        {result.issues.length > 0 && groups.length === 0 && (
+        {(tab === "review" || !result.issues.every(isNeedsReviewIssue)) && groups.length === 0 && (
           <p className="px-1 py-4 text-sm text-slate-700">
             No issues match the current tab and filters.
           </p>

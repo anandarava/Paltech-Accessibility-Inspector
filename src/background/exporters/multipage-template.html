@@ -74,6 +74,7 @@ ol.top{list-style:none;margin:0;padding:0;display:grid;gap:.7rem}
 .chip{display:inline-block;border-radius:6px;padding:.02rem .5rem;font-size:.76rem;font-weight:600;border:1px solid var(--line);background:var(--soft)}
 .pill{display:inline-flex;align-items:center;gap:.35rem;border-radius:999px;padding:.05rem .6rem;font-size:.78rem;font-weight:600;border:1px solid var(--c);background:color-mix(in srgb,var(--c) 12%,var(--card))}
 .pill .dot{width:.5rem;height:.5rem}
+.rvbadge{display:inline-block;border:1px solid var(--accent);color:var(--link);background:color-mix(in srgb,var(--accent) 10%,var(--card));border-radius:999px;padding:.05rem .6rem;font-size:.78rem;font-weight:600}
 .user{display:inline-block;background:color-mix(in srgb,var(--accent) 12%,var(--card));color:var(--link);border-radius:999px;padding:.08rem .65rem;font-size:.78rem;font-weight:600}
 .who{list-style:none;margin:0;padding:0;display:grid;gap:.5rem}
 .who li{display:flex;justify-content:space-between;gap:.5rem;align-items:center;border:1px solid var(--line);border-radius:10px;padding:.5rem .7rem;font-size:.88rem;color:var(--muted)}
@@ -100,11 +101,46 @@ th{font-size:.78rem;color:var(--muted);font-weight:600}
 .sel{display:inline-flex;align-items:center;gap:.4rem;font-size:.82rem;color:var(--muted);min-width:0;max-width:100%}
 .sel select{border:1px solid var(--line);border-radius:8px;padding:.38rem .5rem;background:var(--card);color:var(--ink);font-size:.86rem;min-width:0;max-width:100%;text-overflow:ellipsis}
 .fmeta{display:flex;flex-wrap:wrap;justify-content:space-between;gap:.4rem 1rem;font-size:.86rem;color:var(--muted)}
+/* filter bar, layout B */
+.filterbar.fb{display:block;padding:0}
+.fb-tabs{display:flex;flex-wrap:wrap;gap:.25rem;border-bottom:1px solid var(--line);padding:0 .9rem}
+.fb-tabs button{border:0;border-bottom:3px solid transparent;background:none;padding:.7rem .7rem .55rem;font-weight:600;color:var(--muted);cursor:pointer;font-size:.92rem}
+.fb-tabs button b{background:var(--soft);border-radius:999px;padding:0 .5rem;margin-left:.3rem;font-size:.78rem;color:var(--ink);font-variant-numeric:tabular-nums}
+.fb-tabs button[aria-pressed="true"]{color:var(--link);border-bottom-color:var(--accent)}
+.fb-tabs button[aria-pressed="true"] b{background:var(--sel);color:var(--link)}
+.fb-tabs button:disabled{opacity:.45;cursor:not-allowed}
+.fb-row{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;padding:.7rem .9rem}
+.fb-sev{display:inline-flex;flex-wrap:wrap;gap:.3rem}
+.fb-sev button{display:inline-flex;align-items:center;gap:.35rem;border:1px solid var(--line);background:var(--card);border-radius:999px;padding:.25rem .65rem;font-size:.84rem;cursor:pointer;color:var(--ink)}
+.fb-sev button .dot{background:var(--c)}
+.fb-sev button b{font-variant-numeric:tabular-nums}
+.fb-sev button[aria-pressed="true"]{border-color:var(--c);background:color-mix(in srgb,var(--c) 16%,var(--card));font-weight:600}
+.fb-sev button:disabled{opacity:.45;cursor:not-allowed}
+.fb-search{flex:1 1 16rem;min-width:0;border:1px solid var(--line);border-radius:999px;padding:.42rem .9rem;background:var(--soft);color:var(--ink)}
+.fb-pd{display:inline-flex;align-items:center;gap:.15rem;border:1px solid var(--line);border-radius:999px;padding:0 .2rem 0 .7rem;background:var(--card);font-size:.84rem;max-width:100%;min-width:0}
+.fb-pd>span{color:var(--muted);white-space:nowrap}
+.fb-pd select{field-sizing:content;border:0;background:transparent;color:var(--ink);font:inherit;font-weight:600;padding:.38rem .4rem;max-width:16rem;min-width:0;text-overflow:ellipsis;cursor:pointer}
+.fb-pd.on{border-color:var(--accent);background:var(--sel)}
+.fb-pd:focus-within,.fb-search:focus-visible{outline:3px solid var(--focus);outline-offset:1px}
+.fb-pd select:focus-visible{outline:none}
+.fb-foot{display:flex;flex-wrap:wrap;justify-content:space-between;gap:.4rem 1rem;border-top:1px solid var(--line);padding:.45rem .9rem;font-size:.86rem;color:var(--muted)}
 .linkbtn{background:none;border:0;color:var(--link);cursor:pointer;padding:0;font-weight:600;font-size:.86rem}
 .linkbtn+.linkbtn{margin-left:.9rem}
 /* rule + element */
 .rule{display:grid;gap:.8rem}
 .rule-code{font-size:.82rem;color:var(--muted)}
+/* collapsible rule cards */
+.rule-h{margin:0;font-size:1.05rem}
+.rule-toggle{display:flex;align-items:center;gap:.55rem;width:100%;text-align:left;background:none;border:0;padding:.1rem 0;font:inherit;font-weight:700;color:var(--ink);cursor:pointer}
+.rule-toggle:hover .rs-title{text-decoration:underline}
+.rule-toggle:focus-visible{outline:3px solid var(--focus);outline-offset:3px;border-radius:6px}
+.rs-code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.8rem;font-weight:600;color:var(--muted);background:var(--soft);border:1px solid var(--line);border-radius:6px;padding:0 .4rem;white-space:nowrap}
+.rs-title{min-width:0}
+.rs-meta{margin:0;padding-left:1.45rem}
+.rule:not(.is-open){gap:.35rem}
+.rule-body{display:grid;gap:.8rem}
+.rule-body[hidden]{display:none}
+@media print{.rule-body[hidden]{display:grid!important}}
 .rule h3{margin:.1rem 0;font-size:1.15rem}
 .meta{display:flex;flex-wrap:wrap;gap:.35rem;align-items:center;font-size:.84rem;color:var(--muted)}
 .whyfix{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
@@ -186,8 +222,6 @@ body.sb-dragging{cursor:col-resize;user-select:none}
 .ovbtn{background:var(--soft);border-color:var(--line);grid-template-columns:auto 1fr auto}
 .plist{list-style:none;margin:0;padding:0;display:grid;gap:.2rem}
 .sb-foot{margin-top:auto;border-top:1px solid var(--line);padding:.7rem .3rem 0;font-size:.78rem;color:var(--muted)}
-.crumb{background:var(--card);border-bottom:1px solid var(--line)}
-.crumb .wrap{display:flex;flex-wrap:wrap;gap:.5rem 1rem;align-items:center;justify-content:space-between;padding-top:.5rem;padding-bottom:.5rem;font-size:.88rem}
 .btn{display:inline-flex;align-items:center;gap:.35rem;border:1px solid var(--line);background:var(--card);border-radius:8px;padding:.3rem .7rem;cursor:pointer;font-size:.86rem}
 .btn:disabled{opacity:.45;cursor:not-allowed}
 .ptable td:first-child{min-width:12rem}
@@ -200,7 +234,7 @@ body.sb-dragging{cursor:col-resize;user-select:none}
 /* Narrow report area (small window, or a wide sidebar): stack the two-column blocks. */
 @container (max-width:52rem){.two,.whyfix,.cols{grid-template-columns:minmax(0,1fr)}details.inst>summary{grid-template-columns:auto auto minmax(0,1fr) auto}.selc{display:none}}
 @container (max-width:34rem){.tiles{grid-template-columns:minmax(0,1fr)}details.inst>summary{grid-template-columns:auto minmax(0,1fr);row-gap:.2rem}details.inst>summary .n{grid-column:2}details.inst>summary .what,details.inst>summary .ratio{grid-column:2;justify-self:start}.chev{grid-row:1/span 3}.part h2{font-size:1.15rem}}
-@media (max-width:40rem){.wrap{padding-left:1rem;padding-right:1rem}.filterbar{position:static}.cover .wrap{align-items:flex-start}.crumb .wrap>span:last-child{flex-wrap:wrap}.card{padding:1rem}}
+@media (max-width:40rem){.wrap{padding-left:1rem;padding-right:1rem}.filterbar{position:static}.cover .wrap{align-items:flex-start}.card{padding:1rem}}
 @media (max-width:60rem){.hero,.two,.whyfix,.cols,.tiles{grid-template-columns:1fr}.app,.app.collapsed{grid-template-columns:1fr}.sb-wrap{position:static;height:auto}.sidebar{max-height:none;height:auto}.sidebar{border-right:0;border-bottom:1px solid var(--line)}.sb-resize{display:none}.sidebar.rail{flex-direction:row;justify-content:flex-start;padding:.6rem 1rem}.rail-count{writing-mode:horizontal-tb;transform:none}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -230,12 +264,15 @@ const sum=a=>a.reduce((x,y)=>x+y,0);
 const plural=(n,w)=>n+' '+w+(n===1?'':'s');
 const counts=p=>SEVS.map(s=>sum(p.rules.filter(r=>r.severity===s).map(r=>r.elements.length)));
 const total=p=>sum(p.rules.map(r=>r.elements.length));
+const rtotal=p=>sum((p.review||[]).map(r=>r.elements.length));
+// Elements per severity among the findings the Show filter includes (issues, needs review, or both).
+const shownSev=p=>SEVS.map(s=>sum([...(st.show!=='review'?p.rules:[]),...(st.show!=='issues'?(p.review||[]):[])].filter(r=>r.severity===s).map(r=>r.elements.length)));
 const band=s=>s>=90?{c:'var(--good)',t:'Good'}:s>=75?{c:'var(--mid)',t:'Needs work'}:{c:'var(--poor)',t:'Poor'};
 const byPriority=(a,b)=>RANK[a.severity]-RANK[b.severity]||b.elements.length-a.elements.length;
 const foundBy=e=>((e.technical||[]).find(t=>t[0]==='Found by')||['',''])[1];
 
 // ---------- state ----------
-const st={page:MULTI?-1:0,sev:new Set(),rule:'',effort:'',who:'',q:'',pq:'',pf:'all',sort:'issues'};
+const st={page:MULTI?-1:0,sev:new Set(),rule:'',effort:'',who:'',cat:'',show:'all',openRules:new Set(),q:'',pq:'',pf:'all',sort:'issues'};
 // Sidebar width and collapsed state, remembered per viewer (storage may be unavailable: then defaults).
 const SB_KEY='a11y-report-sidebar',SB_MIN=220,SB_DEF=310;
 const sbMax=()=>Math.max(SB_MIN,Math.min(640,Math.round(window.innerWidth*0.6)));
@@ -252,11 +289,12 @@ const applyTheme=()=>{document.documentElement.setAttribute('data-theme',theme);
 applyTheme();
 const themeToggle=()=>{const dark=theme==='dark';return `<button type="button" class="theme-toggle" data-theme-toggle aria-pressed="${dark}" title="${dark?'Switch to light mode':'Switch to dark mode'}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true" style="stroke:currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${dark?'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>':'<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>'}</svg><span class="sr-only">Dark mode</span></button>`;};
 const applySbWidth=()=>{sb.w=clampW(sb.w);document.documentElement.style.setProperty('--sbw',sb.w+'px');const h=document.querySelector('.sb-resize');if(h){h.setAttribute('aria-valuenow',sb.w);h.setAttribute('aria-valuemax',sbMax());}};
-const resetFilters=()=>{st.sev=new Set();st.rule='';st.effort='';st.who='';st.q='';};
+const resetFilters=()=>{st.sev=new Set();st.rule='';st.effort='';st.who='';st.cat='';st.show='all';st.q='';};
 const cur=()=>PAGES[Math.max(0,st.page)];
-function match(e,r){if(st.sev.size&&!st.sev.has(r.severity))return false;if(st.rule&&st.rule!==r.code)return false;if(st.effort&&r.effort!==st.effort)return false;if(st.who&&!r.affects.includes(st.who))return false;
+function match(e,r){if(st.sev.size&&!st.sev.has(r.severity))return false;if(st.rule&&st.rule!==r.code)return false;if(st.effort&&r.effort!==st.effort)return false;if(st.who&&!r.affects.includes(st.who))return false;if(st.cat&&r.category!==st.cat)return false;
  if(st.q){const q=st.q.toLowerCase();if(![e.element,e.selector,e.html,e.finding,...(e.technical||[]).map(t=>t[1])].join(' ').toLowerCase().includes(q))return false;}return true;}
-const filtered=p=>p.rules.map(r=>({r,els:r.elements.map((e,i)=>({e,i})).filter(x=>match(x.e,r))})).filter(x=>x.els.length).sort((a,b)=>byPriority(a.r,b.r));
+const filterRules=rules=>(rules||[]).map(r=>({r,els:r.elements.map((e,i)=>({e,i})).filter(x=>match(x.e,r))})).filter(x=>x.els.length).sort((a,b)=>byPriority(a.r,b.r));
+const filtered=p=>filterRules(p.rules);
 
 // ---------- pieces ----------
 const pill=s=>`<span class="pill" style="--c:var(--${SK[s]})"><i class="dot"></i>${s}</span>`;
@@ -267,8 +305,8 @@ const stack=(c,w)=>`<span class="stack" ${w?`style="width:${w}px"`:''} aria-hidd
 const logo=()=>R.tool.logo?`<img src="${esc(R.tool.logo)}" alt="">`:'<span class="logo"></span>';
 
 // ---------- page report ----------
-function cover(p,i){return `<header class="cover"><div class="wrap"><div class="brand">${logo()}<div><h1>${esc(MULTI?p.title:'Accessibility report')}</h1><p class="page">${MULTI?`Page ${i+1} of ${PAGES.length} in this export`:esc(p.title)} · <a href="${esc(p.url)}">${esc(p.url)}</a></p></div></div><dl><dt>Date</dt><dd>${esc(p.scannedAt)}</dd><dt>Standard</dt><dd>${esc(R.standard)}</dd></dl>${MULTI?'':themeToggle()}</div></header>`;}
-const toc=id=>`<nav class="toc" aria-label="Report sections"><ul class="wrap"><li><a href="#${id}-summary">Summary</a></li><li><a href="#${id}-top">Fix these first</a></li><li><a href="#${id}-tested">What was tested</a></li><li><a href="#${id}-dev">Developer details</a></li><li><a href="#${id}-scan">Scan details</a></li></ul></nav>`;
+function cover(p,i){return `<header class="cover"><div class="wrap"><div class="brand">${logo()}<div><h1>${esc(MULTI?p.title:'Accessibility report')}</h1><p class="page">${MULTI?`Page ${i+1} of ${PAGES.length} in this export`:esc(p.title)} · <a href="${esc(p.url)}">${esc(p.url)}</a></p></div></div><dl><dt>Date</dt><dd>${esc(p.scannedAt)}</dd><dt>Standard</dt><dd>${esc(R.standard)}</dd>${R.organisation?`<dt>Organisation</dt><dd>${esc(R.organisation)}</dd>`:''}${R.preparedBy?`<dt>Prepared by</dt><dd>${esc(R.preparedBy)}</dd>`:''}</dl>${MULTI?'':themeToggle()}</div></header>`;}
+const toc=id=>`<nav class="toc" aria-label="Report sections"><ul class="wrap"><li><a href="#${id}-summary">Summary</a></li><li><a href="#${id}-top">Fix these first</a></li><li><a href="#${id}-tested">What was tested</a></li><li><a href="#${id}-dev">Developer details</a></li>${(PAGES.find(x=>x.id===id)||{}).review?.length?`<li><a href="#${id}-review">Needs review</a></li>`:''}<li><a href="#${id}-scan">Scan details</a></li></ul></nav>`;
 function summary(p){const c=counts(p),t=sum(c),b=band(p.score),nR=p.rules.length,crit=p.rules.filter(r=>r.severity==='Critical').length,ser=p.rules.filter(r=>r.severity==='Serious').length;
  const vcls=crit?'poor':t?'mid':'good',vt=t?`Does not meet ${R.standard} yet`:'No problems found by automated checks';
  const vx=t?`We found ${plural(nR,'accessibility problem')} affecting ${plural(t,'element')}. `+(crit?`${crit} block${crit===1?'s':''} some users completely.`:`None blocks users completely, but ${ser} make${ser===1?'s':''} tasks very difficult for some people.`):'Automated checks found nothing to fix. Manual checks are still needed.';
@@ -287,28 +325,48 @@ function summary(p){const c=counts(p),t=sum(c),b=band(p.score),nR=p.rules.length
  <div class="two"><section class="card" id="${p.id}-tested"><p class="label">What was tested</p><dl class="facts"><dt>Page</dt><dd>${esc(p.title)} <a href="${esc(p.url)}">${esc(p.url)}</a></dd><dt>Scope</dt><dd>${esc(p.scope)}</dd><dt>Standard</dt><dd>${esc(R.standard)}</dd><dt>Method</dt><dd>Automated checks (${esc(R.rulesets)})</dd><dt>Date</dt><dd>${esc(p.scannedAt)}</dd><dt>Browser</dt><dd>${esc(p.browser)} · ${esc(p.viewport)}</dd></dl></section>
  <section class="card limits"><p class="label">About this report</p><p class="small">Automated tools find roughly 30–40% of accessibility problems. Passing these checks does not mean the page is fully accessible or WCAG conformant.</p><p class="small"><b>Still to be checked by a person:</b></p><ul class="small"><li>Using the page with only a keyboard and with a screen reader</li><li>Whether alt text, labels and headings are meaningful</li><li>Captions, transcripts and audio description quality</li><li>Error handling, timeouts and complex widgets</li></ul></section></div>`;}
 function failedTable(p){const t=total(p);if(!t)return '';return `<section class="card"><p class="label">Failed rules</p><p class="small muted">Rules with open issues: WCAG failures first, then by severity</p><div class="scroll-x"><table><thead><tr><th scope="col">Problem</th><th scope="col">Severity</th><th scope="col">Effort</th><th scope="col">Share of elements</th><th scope="col">Elements</th></tr></thead><tbody>${[...p.rules].sort(byPriority).map(r=>`<tr><td><a href="#${p.id}-${r.code}"><b>${esc(r.title)}</b></a><br><span class="small muted">${esc(r.code)} · ${esc(r.wcag)}</span></td><td>${pill(r.severity)}</td><td>${chip(r.effort)}</td><td><span class="share"><i style="width:${Math.max(2,r.elements.length/t*100)}%;background:var(--${SK[r.severity]})"></i></span></td><td><b>${r.elements.length}</b></td></tr>`).join('')}</tbody></table></div></section>`;}
-function filterOpts(p){const efforts={},users={};p.rules.forEach(r=>{efforts[r.effort]=(efforts[r.effort]||0)+r.elements.length;r.affects.forEach(u=>users[u]=(users[u]||0)+r.elements.length);});return {c:counts(p),efforts,users};}
-function filterBar(p){if(!total(p))return '';const o=filterOpts(p),t=total(p);
- return `<section class="filterbar" aria-label="Filter issues"><div class="seg" role="group" aria-label="Severity"><span class="flabel">Severity</span><button type="button" class="segbtn" data-sev="All" aria-pressed="${!st.sev.size}">All <b>${t}</b></button>${SEVS.map((s,i)=>`<button type="button" class="segbtn" data-sev="${s}" aria-pressed="${st.sev.has(s)}" ${o.c[i]?'':'disabled'}><i class="dot" style="--c:var(--${SK[s]})"></i>${s} <b>${o.c[i]}</b></button>`).join('')}</div>
- <div class="frow"><label class="sr-only" for="q-${p.id}">Search elements</label><input id="q-${p.id}" type="search" data-q placeholder="Search text, selector or fingerprint" value="${esc(st.q)}">
- <label class="sel">Rule <select data-f="rule"><option value="">All rules (${p.rules.length})</option>${p.rules.map(r=>`<option value="${esc(r.code)}" ${st.rule===r.code?'selected':''}>${esc(r.code)} · ${esc(r.title)} (${r.elements.length})</option>`).join('')}</select></label>
- <label class="sel">Effort <select data-f="effort"><option value="">Any</option>${Object.entries(o.efforts).map(([k,v])=>`<option ${st.effort===k?'selected':''} value="${esc(k)}">${esc(k)} (${v})</option>`).join('')}</select></label>
- <label class="sel">Affects <select data-f="who"><option value="">Anyone</option>${Object.entries(o.users).map(([k,v])=>`<option ${st.who===k?'selected':''} value="${esc(k)}">${esc(k)} (${v})</option>`).join('')}</select></label></div>
- <div class="fmeta"><span data-count aria-live="polite"></span><span><button type="button" class="linkbtn" data-act="expand">Expand all</button><button type="button" class="linkbtn" data-act="collapse">Collapse all</button><button type="button" class="linkbtn" data-act="reset">Reset filters</button></span></div></section>`;}
+function filterOpts(p){const efforts={},users={},cats={},codes={};[...p.rules,...(p.review||[])].forEach(r=>{efforts[r.effort]=(efforts[r.effort]||0)+r.elements.length;cats[r.category]=(cats[r.category]||0)+r.elements.length;const c=codes[r.code]||(codes[r.code]={code:r.code,title:r.title,n:0});c.n+=r.elements.length;r.affects.forEach(u=>users[u]=(users[u]||0)+r.elements.length);});return {c:counts(p),efforts,users,cats,codes:Object.values(codes)};}
+// Filter bar (layout B): Show as tabs; severity chips, search and compact "Rule: All" dropdowns on one wrapping line.
+function filterBar(p){if(!total(p)&&!rtotal(p))return '';const o=filterOpts(p),t=total(p),rt=rtotal(p),sc=shownSev(p);
+ const pd=(f,label,all,opts)=>`<label class="fb-pd${st[f]?' on':''}"><span>${label}:</span><select data-f="${f}"><option value="">${all}</option>${opts}</select></label>`;
+ return `<section class="filterbar fb" aria-label="Filter issues">${rt?`<div class="fb-tabs" role="group" aria-label="Show"><button type="button" data-show="all" aria-pressed="${st.show==='all'}">All <b>${t+rt}</b></button><button type="button" data-show="issues" aria-pressed="${st.show==='issues'}" ${t?'':'disabled'}>Issues <b>${t}</b></button><button type="button" data-show="review" aria-pressed="${st.show==='review'}">Needs review <b>${rt}</b></button></div>`:''}
+ <div class="fb-row"><div class="fb-sev" role="group" aria-label="Severity">${SEVS.map((s,i)=>`<button type="button" data-sev="${s}" style="--c:var(--${SK[s]})" aria-pressed="${st.sev.has(s)}" ${sc[i]?'':'disabled'}><i class="dot"></i>${s} <b>${sc[i]}</b></button>`).join('')}</div>
+ ${pd('rule','Rule','All',o.codes.map(r=>`<option value="${esc(r.code)}" ${st.rule===r.code?'selected':''}>${esc(r.code)} · ${esc(r.title)} (${r.n})</option>`).join(''))}
+ ${pd('cat','Category','All',Object.entries(o.cats).map(([k,v])=>`<option ${st.cat===k?'selected':''} value="${esc(k)}">${esc(k)} (${v})</option>`).join(''))}
+ ${pd('effort','Effort','Any',Object.entries(o.efforts).map(([k,v])=>`<option ${st.effort===k?'selected':''} value="${esc(k)}">${esc(k)} (${v})</option>`).join(''))}
+ ${pd('who','Affects','Anyone',Object.entries(o.users).map(([k,v])=>`<option ${st.who===k?'selected':''} value="${esc(k)}">${esc(k)} (${v})</option>`).join(''))}
+ <label class="sr-only" for="q-${p.id}">Search elements</label><input id="q-${p.id}" class="fb-search" type="search" data-q placeholder="Search text, selector or fingerprint" value="${esc(st.q)}"></div>
+ <div class="fb-foot"><span data-count aria-live="polite"></span><span><button type="button" class="linkbtn" data-act="expand">Expand all</button><button type="button" class="linkbtn" data-act="collapse">Collapse all</button><button type="button" class="linkbtn" data-act="reset">Reset filters</button></span></div></section>`;}
 function instBody(e){const tl=e.contrast&&e.contrast.length?`<div class="tiles">${e.contrast.map((t,i)=>`<div class="tile"><div class="tile-sample" style="color:${esc(t.fg)};background:${esc(t.bg)}">${e.sampleText?esc(e.sampleText):`<span class="uisample" style="border-color:${esc(t.fg)};background:${esc(t.bg)}">Control</span>`}</div><div class="tile-meta"><span class="muted">${i?'Suggested':'Current'}</span> <b>${esc(t.ratio)}</b> ${i?'<span class="ok">✓ Passes</span>':'<span class="bad">✗ Fails</span>'}<br><span class="small"><code>${esc(t.fg)}</code> on <code>${esc(t.bg)}</code></span></div></div>`).join('')}</div>`:'';
  const ms=e.measurements&&e.measurements.length?`<div class="meas"><b class="small">Measurements</b><dl class="facts">${e.measurements.map(m=>`<dt>${esc(m[0])}</dt><dd>${esc(m[1])}</dd>`).join('')}</dl></div>`:'';
  const shot=e.screenshot?`<figure class="shot"><img src="${esc(e.screenshot)}" alt="Screenshot of ${esc(e.element)}"><figcaption>How it looks on the page</figcaption></figure>`:`<div class="noshot">No screenshot captured for this element</div>`;
  return `<div class="inst-body"><p>${esc(e.finding)}</p>${tl}${ms}<div class="cols"><div><p class="code-label">Suggested fix</p><pre><code>${esc(e.suggestedFix)}</code></pre><p class="code-label">Selector</p><pre><code>${esc(e.selector)}</code></pre><p class="code-label">HTML</p><pre><code>${esc(e.html)}</code></pre></div><div><p class="code-label">How it looks on the page</p>${shot}</div></div><details class="tech"><summary>Technical details</summary><table><tbody>${(e.technical||[]).map(t=>`<tr><th scope="row">${esc(t[0])}</th><td>${t[0]!=='Found by'?`<code>${esc(t[1])}</code>`:esc(t[1])}</td></tr>`).join('')}</tbody></table></details></div>`;}
 const ratioOf=e=>e.contrast&&e.contrast.length?`<span class="ratio">${esc(e.contrast[0].ratio)} fails</span>`:'<span></span>';
 const emptyState=()=>`<div class="card empty"><p><b>No elements match these filters.</b></p><p>Change the severity or search, or <button type="button" class="linkbtn" data-act="reset">reset all filters</button>.</p></div>`;
-function issues(p){if(!total(p))return '';const f=filtered(p);if(!f.length)return emptyState();let first=true;
- return f.map(({r,els})=>`<section class="card rule" id="${p.id}-${esc(r.code)}"><div><p class="rule-code">${esc(r.code)} · ${esc(r.wcag)} · ${esc(r.category)}</p><h3>${esc(r.title)}</h3><p class="small muted">${esc(r.summary)}</p><p class="meta">${pill(r.severity)} ${SDESC[r.severity]} · ${els.length===r.elements.length?r.elements.length:els.length+' of '+r.elements.length} element${r.elements.length===1?'':'s'} · ${esc(r.effort)}</p></div>
+// One collapsible card per rule. The heading holds a disclosure button (aria-expanded), so screen
+// readers can still move by heading; the summary line shows enough to decide whether to open it.
+// Review cards get their own ids and a "Needs review" badge. Open state survives filtering.
+function cards(p,f,review){
+ return f.map(({r,els})=>{const id=`${p.id}-${review?'review-':''}${r.code}`,open=st.openRules.has(id),n=els.length===r.elements.length?r.elements.length:els.length+' of '+r.elements.length;
+ return `<section class="card rule${review?' review':''}${open?' is-open':''}" id="${esc(id)}"><h3 class="rule-h"><button type="button" class="rule-toggle" data-rule="${esc(id)}" aria-expanded="${open}" aria-controls="${esc(id)}-body"><i class="chev" aria-hidden="true"></i><span class="rs-code">${esc(r.code)}</span><span class="rs-title">${esc(r.title)}</span></button></h3>
+ <p class="meta rs-meta">${review?'<span class="rvbadge">Needs review · not counted</span> ':''}${pill(r.severity)} ${SDESC[r.severity]} · ${n} element${r.elements.length===1?'':'s'} · ${esc(r.effort)}</p>
+ <div class="rule-body" id="${esc(id)}-body" ${open?'':'hidden'}><p class="rule-code">${esc(r.code)} · ${esc(r.wcag)} · ${esc(r.category)}</p><p class="small muted">${esc(r.summary)}</p>
  <div class="whyfix"><div><h4>Why it matters</h4><p class="small">${esc(r.why)}</p><p>${r.affects.map(u=>`<span class="user">${esc(u)}</span>`).join(' ')}</p></div><div><h4>How to fix</h4><p class="small">${esc(r.howToFix)}</p>${r.learnMore?`<p class="small"><a href="${esc(r.learnMore)}">Learn more about this requirement</a></p>`:''}</div></div>
  ${r.sharedComponents&&r.sharedComponents.length?`<div class="shared"><b>Likely fewer fixes than elements.</b> These elements come from the same component or style, so one change there should fix all of them:<ul>${r.sharedComponents.map(s=>`<li><b>${s.count} elements</b> share <code>${esc(s.selector)}</code></li>`).join('')}</ul></div>`:''}
- <ol class="insts">${els.map(({e,i})=>{const o=first;first=false;return `<li><details class="inst" ${o?'open':''}><summary><i class="chev" aria-hidden="true"></i><span class="n">${i+1} of ${r.elements.length}</span><span class="what">${esc(e.element)}</span>${ratioOf(e)}<code class="selc">${esc(e.selector)}</code></summary>${instBody(e)}</details></li>`;}).join('')}</ol></section>`).join('');}
+ <ol class="insts">${els.map(({e,i},k)=>`<li><details class="inst" ${k===0?'open':''}><summary><i class="chev" aria-hidden="true"></i><span class="n">${i+1} of ${r.elements.length}</span><span class="what">${esc(e.element)}</span>${ratioOf(e)}<code class="selc">${esc(e.selector)}</code></summary>${instBody(e)}</details></li>`).join('')}</ol></div></section>`;}).join('');}
+// Open or close one rule card in place (no re-render), remembering the choice.
+function setRuleOpen(sec,open){if(!sec)return;const b=sec.querySelector(':scope>.rule-h>.rule-toggle'),body=sec.querySelector(':scope>.rule-body');
+ if(open)st.openRules.add(sec.id);else st.openRules.delete(sec.id);sec.classList.toggle('is-open',open);if(b)b.setAttribute('aria-expanded',String(open));if(body)body.hidden=!open;}
+// A link to a rule (summary, failed rules table, page menu) opens it before scrolling to it.
+function openTarget(hash){if(!hash||hash.length<2)return;let t=null;try{t=document.getElementById(decodeURIComponent(hash.slice(1)));}catch(e){}const sec=t&&t.closest('section.rule');if(sec)setRuleOpen(sec,true);}
+// Issues, then Needs review (same cards, never counted); both follow the filters and the Show choice.
+function issues(p){const rt=rtotal(p);if(!total(p)&&!rt)return '';
+ const fi=st.show!=='review'?filtered(p):[],fr=st.show!=='issues'&&rt?filterRules(p.review):[];
+ if(!fi.length&&!fr.length)return emptyState();
+ return (fi.length?cards(p,fi,false):'')+(fr.length?`<div class="part" id="${p.id}-review"><h2>Needs review (${rt})</h2><span>Checks the automated rules could not decide</span></div><p class="muted">Shown the same way as the issues. Check each element by hand: these are not counted in the totals or the score.</p>${cards(p,fr,true)}`:'');}
 const rulesChecked=p=>`<section class="card"><p class="label">Rules checked</p><details class="blk" open><summary>${p.rulesPassed.length} rules passed</summary><ul class="rulechips pass">${p.rulesPassed.map(r=>`<li>${esc(r)}</li>`).join('')}</ul></details><details class="blk"><summary>${p.rulesNotApplicable.length} rules not applicable (nothing on the page to test)</summary><ul class="rulechips">${p.rulesNotApplicable.map(r=>`<li>${esc(r)}</li>`).join('')}</ul></details>${p.allFramesScanned?'<p class="small muted">All frames on the page were scanned.</p>':''}</section>`;
 const scan=p=>`<section class="card" id="${p.id}-scan"><p class="label">Scan details</p><dl class="facts"><dt>Page</dt><dd>${esc(p.title)}</dd><dt>URL</dt><dd>${esc(p.url)}</dd><dt>Scanned at</dt><dd>${esc(p.scannedAt)}</dd><dt>Browser</dt><dd>${esc(p.browser)}</dd><dt>Viewport</dt><dd>${esc(p.viewport)}</dd><dt>Standard</dt><dd>${esc(R.standard)}</dd><dt>Rules</dt><dd>${esc(R.rulesets)}</dd><dt>Scope</dt><dd>${esc(p.scope)}</dd><dt>Scan duration</dt><dd>${esc(p.scanDuration)}</dd><dt>Scan id</dt><dd><code>${esc(p.scanId)}</code></dd></dl></section>`;
-const foot=p=>`<footer class="foot">Generated by ${esc(R.tool.name)} v${esc(R.tool.version)} on ${esc(R.generatedAt)}. The score is a trend indicator, not a compliance certificate.${p&&p.sampleData?' This page shows sample data.':''}</footer>`;
+const foot=p=>`<footer class="foot">Generated by ${esc(R.tool.name)} v${esc(R.tool.version)} on ${esc(R.generatedAt)}${R.preparedBy?`, prepared by ${esc(R.preparedBy)}`:''}. The score is a trend indicator, not a compliance certificate.${p&&p.sampleData?' This page shows sample data.':''}</footer>`;
 const devIntro=p=>`<div class="part" id="${p.id}-dev"><h2>Part 2 · Developer details</h2><span>Everything needed to find and fix each issue</span></div><p class="muted">Each problem below explains why it matters and how to fix it, then lists every affected element with its own measurements, suggested fix, code location and HTML.</p>`;
 const fullReport=p=>`<main class="report wrap" id="main">${summary(p)}${devIntro(p)}${failedTable(p)}${filterBar(p)}<div data-issues>${issues(p)}</div>${rulesChecked(p)}${scan(p)}${foot(p)}</main>`;
 
@@ -324,7 +382,7 @@ function sidebar(){
  <p class="label" style="margin:.3rem .3rem 0">Pages (${list.length})</p>
  <ul class="plist">${list.map(({p,i})=>{const c=counts(p),b=band(p.score);return `<li><button type="button" class="pitem" data-page="${i}" ${st.page===i?'aria-current="page"':''}><span class="score" style="--c:${b.c}" aria-label="Score ${p.score}">${p.score}</span><span style="min-width:0"><span class="pt">${esc(p.title)}</span><span class="pu">${esc(p.url.replace(/^https?:\/\//,''))}</span><span class="pbar">${stack(c)}${c[0]?c[0]+' critical':''}</span></span><span class="ptot">${total(p)}<small>issues</small></span></button></li>`;}).join('')||'<li class="small muted" style="padding:.5rem">No pages match.</li>'}</ul></aside>
  <div class="sb-resize" role="separator" tabindex="0" aria-orientation="vertical" aria-controls="sidebar-pages" aria-label="Resize the pages list" aria-valuemin="${SB_MIN}" aria-valuemax="${sbMax()}" aria-valuenow="${sb.w}" title="Drag to resize. Double-click to reset."></div></div>`;}
-function pageView(){const p=cur(),i=st.page;return `<div class="crumb"><div class="wrap"><span><button type="button" class="linkbtn" data-page="-1">Application summary</button> <span class="muted">/</span> <b>${esc(p.title)}</b></span><span style="display:flex;gap:.5rem;align-items:center"><span class="muted small">Page ${i+1} of ${PAGES.length}</span><button type="button" class="btn" data-page="${i-1}" ${i===0?'disabled':''}>‹ Previous</button><button type="button" class="btn" data-page="${i+1}" ${i===PAGES.length-1?'disabled':''}>Next${i<PAGES.length-1?': '+esc(PAGES[i+1].title):''} ›</button></span></div></div>${cover(p,i)}${toc(p.id)}${fullReport(p)}`;}
+function pageView(){const p=cur(),i=st.page;return `${cover(p,i)}${toc(p.id)}${fullReport(p)}`;}
 function overview(){const cs=SEVS.map((s,i)=>sum(PAGES.map(p=>counts(p)[i]))),T=sum(cs),avg=Math.round(sum(PAGES.map(p=>p.score))/PAGES.length),b=band(avg),critPages=PAGES.filter(p=>counts(p)[0]).length,low=PAGES.filter(p=>p.score<80).length,passing=PAGES.filter(p=>!total(p)).length;
  const lo=[...PAGES].sort((a,b)=>a.score-b.score);
  let rows=PAGES.map((p,i)=>({p,i}));if(st.sort==='issues')rows.sort((a,b)=>total(b.p)-total(a.p));if(st.sort==='score')rows.sort((a,b)=>a.p.score-b.p.score);
@@ -352,17 +410,25 @@ function render(keepScroll){const y=window.scrollY;
  else{root.innerHTML=`<div class="app${sb.collapsed?' collapsed':''}">${sidebar()}<div style="min-width:0">${st.page===-1?overview():pageView()}</div></div>`;applySbWidth();}
  document.title=MULTI&&st.page===-1?'Accessibility report: application summary':'Accessibility report: '+cur().title;
  updateCount();window.scrollTo(0,keepScroll?y:0);}
-function updateCount(){if(st.page===-1)return;const p=cur(),f=filtered(p),n=sum(f.map(x=>x.els.length));document.querySelectorAll('[data-count]').forEach(el=>el.textContent=`Showing ${n} of ${total(p)} elements in ${plural(f.length,'rule')}`);}
+function updateCount(){if(st.page===-1)return;const p=cur(),fi=st.show!=='review'?filtered(p):[],fr=st.show!=='issues'?filterRules(p.review):[],f=[...fi,...fr],n=sum(f.map(x=>x.els.length)),of=(st.show!=='review'?total(p):0)+(st.show!=='issues'?rtotal(p):0);document.querySelectorAll('[data-count]').forEach(el=>el.textContent=`Showing ${n} of ${of} elements in ${plural(f.length,'rule')}`);}
 function refresh(){const box=document.querySelector('[data-issues]');if(box)box.innerHTML=issues(cur());
  document.querySelectorAll('[data-sev]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.sev==='All'?!st.sev.size:st.sev.has(b.dataset.sev))));
- document.querySelectorAll('select[data-f]').forEach(s=>s.value=st[s.dataset.f]);
+ document.querySelectorAll('[data-show]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.show===st.show)));
+ if(st.page!==-1){const sc=shownSev(cur());document.querySelectorAll('[data-sev]').forEach(b=>{const i=SEVS.indexOf(b.dataset.sev),n=i<0?sum(sc):sc[i],el=b.querySelector('b');if(el)el.textContent=n;if(i>=0)b.disabled=!n;});}
+ document.querySelectorAll('select[data-f]').forEach(s=>{s.value=st[s.dataset.f];s.closest('.fb-pd')?.classList.toggle('on',!!st[s.dataset.f]);});
  document.querySelectorAll('input[data-q]').forEach(i=>{if(i!==document.activeElement)i.value=st.q;});updateCount();}
-document.addEventListener('click',ev=>{const t=ev.target.closest('[data-sev],[data-page],[data-act],[data-pf]');if(!t||t.disabled)return;
- if(t.dataset.sev){const s=t.dataset.sev;if(s==='All')st.sev.clear();else if(st.sev.has(s))st.sev.delete(s);else st.sev.add(s);refresh();}
+document.addEventListener('click',ev=>{const t=ev.target.closest('[data-rule],[data-sev],[data-show],[data-page],[data-act],[data-pf]');if(!t||t.disabled)return;
+ if(t.dataset.rule){setRuleOpen(t.closest('section.rule'),t.getAttribute('aria-expanded')!=='true');}
+ else if(t.dataset.show){st.show=t.dataset.show;refresh();}
+ else if(t.dataset.sev){const s=t.dataset.sev;if(s==='All')st.sev.clear();else if(st.sev.has(s))st.sev.delete(s);else st.sev.add(s);refresh();}
  else if(t.dataset.page!=null){const i=+t.dataset.page;if(i<-1||i>=PAGES.length)return;st.page=i;resetFilters();render();}
  else if(t.dataset.pf){st.pf=t.dataset.pf;render(true);}
  else if(t.dataset.act==='reset'){resetFilters();refresh();}
- else if(t.dataset.act==='expand'||t.dataset.act==='collapse'){const o=t.dataset.act==='expand';document.querySelectorAll('[data-issues] details.inst').forEach(d=>d.open=o);}});
+ // Expand all: first opens every rule, a second click also opens every element. Collapse all closes both.
+ else if(t.dataset.act==='expand'||t.dataset.act==='collapse'){const o=t.dataset.act==='expand',secs=[...document.querySelectorAll('[data-issues] section.rule')];
+  if(!o){secs.forEach(s=>setRuleOpen(s,false));document.querySelectorAll('[data-issues] details.inst').forEach(d=>d.open=false);}
+  else if(secs.some(s=>!st.openRules.has(s.id)))secs.forEach(s=>setRuleOpen(s,true));
+  else document.querySelectorAll('[data-issues] details.inst').forEach(d=>d.open=true);}});
 document.addEventListener('input',ev=>{const t=ev.target;if(t.matches('[data-q]')){st.q=t.value.trim();refresh();}
  else if(t.matches('[data-pq]')){st.pq=t.value;const pos=t.selectionStart;render(true);const n=document.getElementById('pagesearch');n.focus();n.setSelectionRange(pos,pos);}});
 // ---------- theme toggle ----------
@@ -388,7 +454,11 @@ document.addEventListener('pointerdown',ev=>{const h=ev.target.closest('.sb-resi
  h.addEventListener('pointermove',move);h.addEventListener('pointerup',up);h.addEventListener('pointercancel',up);});
 window.addEventListener('resize',()=>{if(MULTI&&!sb.collapsed)applySbWidth();});
 document.addEventListener('change',ev=>{const t=ev.target;if(t.matches('select[data-f]')){st[t.dataset.f]=t.value;refresh();}else if(t.matches('[data-sort]')){st.sort=t.value;render(true);}});
+// In-page links to a rule open it first, so the scroll lands on its content.
+document.addEventListener('click',ev=>{const a=ev.target.closest('a[href^="#"]');if(a)openTarget(a.getAttribute('href'));},true);
+window.addEventListener('hashchange',()=>openTarget(location.hash));
 render();
+openTarget(location.hash);
 })();
 </script>
 </body>

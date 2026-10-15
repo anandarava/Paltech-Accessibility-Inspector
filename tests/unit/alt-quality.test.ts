@@ -25,6 +25,7 @@ describe("alt-quality rule", () => {
     expect(ids.has("IMG-02")).toBe(true);
     expect(ids.has("IMG-03")).toBe(true);
     expect(ids.has("IMG-08")).toBe(true);
+    expect(ids.has("IMG-09")).toBe(true);
     expect(rule.category).toBe("Images and Media");
     expect(rule.wcag.criterion).toBe("1.1.1");
   });
@@ -56,6 +57,29 @@ describe("alt-quality rule", () => {
       <img id="missing" src="${SRC}">
       <img id="pres" role="presentation" alt="" src="${SRC}">`);
     expect(findings.filter((f) => ["IMG-02", "IMG-03"].includes(f.ruleId))).toHaveLength(0);
+  });
+
+  it("flags decorative images that also have a title (IMG-09)", async () => {
+    const findings = await run(`
+      <img id="titled" alt="" title="Company logo" src="${SRC}">
+      <img id="spaces" alt="  " title="Chart" src="${SRC}">
+      <img id="pres" role="presentation" alt="" title="Divider" src="${SRC}">`);
+    const hits = byRule(findings, "IMG-09");
+    expect(hits.map((f) => f.element.id).sort()).toEqual(["pres", "spaces", "titled"]);
+    expect(hits[0].type ?? rule.type).toBe("Auto");
+    expect(hits.find((f) => f.element.id === "titled")?.fix?.suggestedValue).toBe('alt="Company logo"');
+  });
+
+  it("does not flag decorative images whose title is empty, or that are named or hidden (IMG-09)", async () => {
+    const findings = await run(`
+      <img id="plain" alt="" src="${SRC}">
+      <img id="blank-title" alt="" title="  " src="${SRC}">
+      <img id="described" alt="Company logo" title="Company logo" src="${SRC}">
+      <img id="aria" alt="" aria-label="Company logo" title="Logo" src="${SRC}">
+      <img id="labelledby" alt="" aria-labelledby="cap" title="Logo" src="${SRC}"><span id="cap">Logo</span>
+      <div aria-hidden="true"><img id="hidden" alt="" title="Logo" src="${SRC}"></div>
+      <input id="btn" type="image" alt="" title="Search" src="${SRC}">`);
+    expect(byRule(findings, "IMG-09")).toHaveLength(0);
   });
 
   it("flags a bare inline svg as needs-review (IMG-08, Semi)", async () => {

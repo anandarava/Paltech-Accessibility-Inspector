@@ -7,6 +7,8 @@ import type { CustomRule } from "./types";
 import { rule as altQuality } from "./alt-quality";
 import { rule as linkText } from "./link-text";
 import { rule as forms } from "./forms";
+import { rule as visibleLabel } from "./visible-label";
+import { rule as ariaStrict } from "./aria-strict";
 import { rule as keyboard } from "./keyboard";
 import { rule as targetSize } from "./target-size";
 import { rule as contrast } from "./contrast";
@@ -18,6 +20,8 @@ export const CUSTOM_RULES: CustomRule[] = [
   altQuality,
   linkText,
   forms,
+  visibleLabel,
+  ariaStrict,
   keyboard,
   targetSize,
   contrast,

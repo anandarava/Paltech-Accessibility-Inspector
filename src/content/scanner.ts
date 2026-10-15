@@ -114,8 +114,8 @@ function buildAxeRunOptions(options: ScanOptions, rulesFile: RulesFile, disabled
 
   const base: axe.RunOptions = {
     reporter: "v1",
-    // "incomplete" (axe could not decide) is not requested: only definite findings are reported.
-    resultTypes: ["violations"],
+    // "incomplete" (axe could not decide) is requested only for the Needs review tab.
+    resultTypes: options.includeNeedsReview === false ? ["violations"] : ["violations", "incomplete"],
     iframes: false,
     elementRef: true,
     selectors: true,
@@ -197,7 +197,7 @@ async function runAxe(root: Document | Element, runOptions: axe.RunOptions): Pro
   return axe.run(context, runOptions);
 }
 
-function makeRuleContext(root: Document | Element, rule: CustomRule, ruleConfig: RuleConfig, extras: ScanContextExtras, progress: (p: number) => void): RuleContext {
+function makeRuleContext(root: Document | Element, rule: CustomRule, ruleConfig: RuleConfig, extras: ScanContextExtras, progress: (p: number) => void, wcagLevel: RuleContext["wcagLevel"]): RuleContext {
   const thresholds: Record<string, number> = {};
   for (const id of ruleIdsOf(rule)) Object.assign(thresholds, ruleConfig.thresholds?.[id] ?? {});
   return {
@@ -207,6 +207,7 @@ function makeRuleContext(root: Document | Element, rule: CustomRule, ruleConfig:
     isVisible,
     yieldToMain,
     progress,
+    wcagLevel,
   };
 }
 
@@ -224,7 +225,7 @@ export async function runCustomRule(
   progress: (p: number) => void = () => undefined,
 ): Promise<Issue[]> {
   const disabled = disabledRuleIds(rulesFile, ruleConfig);
-  const ctx = makeRuleContext(root, rule, ruleConfig, extras, progress);
+  const ctx = makeRuleContext(root, rule, ruleConfig, extras, progress, options.wcagLevel ?? "AA");
   const findings = await rule.run(ctx);
   const safeFindings = (Array.isArray(findings) ? findings : []).filter((f) => f && f.element instanceof Element && !extras.isExtensionNode(f.element));
   const issues = normalizeCustomFindings(rule, safeFindings, rulesFile);
@@ -303,10 +304,11 @@ export async function scanFrame(options: ScanOptions, rulesFile: RulesFile, rule
     }
 
     safeProgress(96, "Deduplicating issues");
-    // Keep only definite findings (custom rules report undeterminable cases as
-    // "Semi"), for success criteria that are part of the selected WCAG version.
+    // Keep findings for success criteria in the selected WCAG version. Undeterminable
+    // ("Semi") findings are kept for the Needs review tab unless the scan opted out.
     const version = options.wcagVersion ?? "2.2";
-    issues = dedupeIssues(issues).filter((issue) => issue.type !== "Semi" && criterionInVersion(issue.wcag.criterion, version));
+    const keepReview = options.includeNeedsReview !== false;
+    issues = dedupeIssues(issues).filter((issue) => (keepReview || issue.type !== "Semi") && criterionInVersion(issue.wcag.criterion, version));
     safeProgress(100, "Scan complete");
     return {
       issues,

@@ -18,6 +18,8 @@ export interface RuleContext {
   yieldToMain(): Promise<void>;
   /** Report progress 0..100 for this rule (optional). */
   progress?(percent: number): void;
+  /** WCAG conformance level the scan targets; rules may classify borderline findings by it. Defaults to "AA". */
+  wcagLevel?: "A" | "AA" | "AAA";
 }
 
 export interface RuleFinding {

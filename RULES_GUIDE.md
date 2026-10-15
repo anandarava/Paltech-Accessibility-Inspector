@@ -136,10 +136,16 @@ These run only when **axe-core only** is ✗. They are counted under
 |---|---|---|---|---|
 | IMG-02 | 1.1.1 A | Serious | Alt text is a filename (e.g. `IMG_2031.jpg`) | axe's `image-alt` only checks that alt text exists, not what it says |
 | IMG-03 | 1.1.1 A | Moderate | Alt text is generic ("image", "photo", "icon") | Same: axe does not judge alt wording |
+| IMG-09 | 1.1.1 A | Serious | Image marked decorative (`alt=""`) but has a `title` | axe treats `alt=""` as decorative and passes the image without looking at the title |
 | CLR-04 | 1.4.11 AA | Serious | UI component borders or icons below 3:1 | axe has no rule for 1.4.11 Non-text Contrast |
-| CLR-05 | 1.4.11 AA | Serious | Focus indicator below 3:1 against its surroundings | Same criterion (1.4.11) |
+| CLR-05 | 1.4.11 AA | Serious | Focus ring (outline, shadow or border) below 3:1 against its surroundings. A focus shown only by a subtle background change is listed under **Needs review** in A/AA scans, because WCAG AA does not require an element's focused and unfocused states to contrast | Same criterion (1.4.11) |
+| CLR-09 | 2.4.13 AAA | Moderate | Focus shown only by a background change below 3:1 against the unfocused state (AAA scans only) | axe has no rule for 2.4.13 |
 | FRM-02 | 3.3.2 A | Serious | Placeholder is the only label | axe's `label-title-only` covers title-only labels; FRM-02 covers the placeholder case |
 | FRM-03 | 1.3.1 A | Moderate | Radio or checkbox group without a group label | axe once had `radiogroup` / `checkboxgroup` rules but removed them |
+| FRM-11 | 3.3.2 A | Moderate | Field named only by aria-label, a visually hidden label or hidden text, with no label shown on screen (Needs review). Not flagged when a visible button sits beside the field or nearby visible text says the same | axe accepts any accessible name, visible or not |
+| ARIA-02 | 4.1.2 A | Moderate (Serious if focusable) | aria-label / aria-labelledby on a div, span, p and similar without a role, which ARIA forbids | axe's `aria-prohibited-attr` reports this only as "incomplete" |
+| ARIA-03 | 4.1.2 A | Serious | An ARIA id list where some ids do not exist (aria-labelledby: definite; aria-describedby, -controls, -owns, -flowto, -details: Needs review) | axe fails an attribute only when none of its ids exist |
+| STR-08 | 4.1.2 A | Serious | An id used by more than one element and referenced by ARIA or `<label for>` | axe's `duplicate-id-aria` reports this only as "incomplete" |
 | FRM-04 | 3.3.2 A | Moderate | Required field not marked as required in code | axe's only 3.3.2 rule is `form-field-multiple-labels` |
 | KBD-01 | 2.1.1 A | Critical | Clickable element that cannot be reached with the keyboard | axe does not test click handlers |
 | KBD-02 | 2.1.2 A | Critical | Keyboard trap (found by the **Keyboard test**) | axe cannot press keys |
@@ -156,6 +162,7 @@ These run only when **axe-core only** is ✗. They are counted under
 | CLR-01 | 1.4.3 AA | Serious | Normal text contrast: handles semi-transparent text and backgrounds, and suggests a passing colour | Replaces `color-contrast` |
 | CLR-02 | 1.4.3 AA | Serious | Large text contrast (3:1) as its own rule, with a suggested colour | Replaces `color-contrast` (large text) |
 | TGT-01 | 2.5.8 AA | Moderate | Target size, applying WCAG's 24 px spacing exception correctly | Replaces `target-size` |
+| TGT-02 | 2.5.5 AAA | Minor | Target smaller than 44 x 44 px; no spacing exception. Runs in AAA scans only | axe has no rule for 2.5.5 |
 | ZM-03 | 1.4.12 AA | Moderate | Applies the 1.4.12 text spacing to the page and looks for clipped text | Runs alongside `avoid-inline-spacing` |
 
 ### 4c. WCAG requirements only the advanced rules check

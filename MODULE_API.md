@@ -13,7 +13,11 @@ Shared contracts (already written, read them first):
 
 - `src/background/service-worker.ts` is the MV3 service worker (module). It is the
   only place that calls `chrome.scripting`, `chrome.tabs.captureVisibleTab`,
-  `chrome.downloads` and `chrome.offscreen`.
+  `chrome.downloads`, `chrome.offscreen` and `chrome.debugger`.
+- `src/background/focus-emulation.ts` attaches `chrome.debugger` to the tab for the
+  duration of a scan and sends `Emulation.setFocusEmulationEnabled`, so the page
+  behaves as focused and draws its focus styles while the side panel has focus.
+  Failures leave the scan running without it.
 - `src/content/content-script.iife.ts` is injected programmatically with
   `chrome.scripting.executeScript({ target: { tabId, allFrames: true }, files: [csFile] })`
   where `import csFile from "@src/content/content-script.iife.ts?script"` (CRXJS builds
@@ -153,17 +157,20 @@ export function isNotConformant(issues: Issue[]): boolean  // any Critical, non-
 
 ## `src/content/rules/*.ts` (each exports `rule: CustomRule`)
 
-Findings a rule marks `Semi` (undeterminable) are dropped by the scanner and
-the service worker; only definite findings are reported.
+Findings a rule marks `Semi` (undeterminable) are listed on the Needs review
+tab, never counted as failures or in the score. With `includeNeedsReview: false`
+in the scan options, the scanner and the service worker drop them.
 
 | File | Emits | Notes |
 |---|---|---|
 | `contrast.ts` | CLR-01, CLR-02, CLR-03, CLR-04 | Walk visible text nodes, ancestor background with alpha blending (`shared/color.ts`), large text 24px / 18.66px bold (weight >= 700), CLR-03 Semi when background-image/gradient/video/canvas; CLR-04 for input/button/select borders vs surrounding background. Suggest nearest passing colour by stepping lightness in HSL. Chunk work with `yieldToMain` every 200 nodes. |
-| `focus-visible.ts` | KBD-05, CLR-05 | For each focusable: snapshot outline/box-shadow/border/background/color/text-decoration, `el.focus({ preventScroll: true })`, compare; if identical -> KBD-05 (type Semi when `:focus-visible` may not have applied, i.e. when `el.matches(":focus-visible")` is false after focus); if different compute indicator contrast vs adjacent background -> CLR-05 when < 3:1. Restore original activeElement. Skip if the page has > 400 focusables (report one Semi finding on body explaining the cap). |
+| `focus-visible.ts` | KBD-05, CLR-05, CLR-09 | For each focusable: snapshot outline/box-shadow/border/background/color/text-decoration, `el.focus({ preventScroll: true })`, compare; if identical -> KBD-05 (type Semi when `:focus-visible` may not have applied, i.e. when `el.matches(":focus-visible")` is false after focus); if different compute indicator contrast vs adjacent background -> CLR-05 when < 3:1. A background-only change is measured against the unfocused state: CLR-09 (2.4.13 AAA) in AAA scans, CLR-05 Semi (Needs review) in A/AA scans. Restore original activeElement. Skip if the page has > 400 focusables (report one Semi finding on body explaining the cap). |
 | `focus-obscured.ts` | KBD-06 | For each focusable (cap 400): scrollIntoView block "nearest", check `elementFromPoint` at centre and at the four corners inset by 2px; if a `position: fixed|sticky` element that is not an ancestor covers the centre -> KBD-06. Restore scroll position. |
-| `alt-quality.ts` | IMG-02, IMG-03, IMG-08 | Filename regex `\.(jpe?g|png|gif|svg|webp|avif|bmp)$` or `^(IMG|DSC|DCIM)[_-]?\d+`; generic words list; inline svg without role/name/aria-hidden -> IMG-08 Semi. |
+| `alt-quality.ts` | IMG-02, IMG-03, IMG-08, IMG-09 | Filename regex `\.(jpe?g|png|gif|svg|webp|avif|bmp)$` or `^(IMG|DSC|DCIM)[_-]?\d+`; generic words list; inline svg without role/name/aria-hidden -> IMG-08 Semi; `<img alt="">` with a non-empty `title` and no aria-label/aria-labelledby -> IMG-09. |
 | `link-text.ts` | LNK-03, LNK-05 | Vague text list (click here, here, read more, more, learn more, link, details); `target=_blank` with no visible/sr text or aria-label containing "new window"/"new tab"/"opens in" and no rel-annotated icon. |
-| `target-size.ts` | TGT-01 | Only interactive targets (a[href], button, input, [role=button|link|checkbox|radio|tab|menuitem|switch]); compute bounding box < 24x24; pass if inline-in-sentence link or if the 24px circle centred on the target does not intersect any other target's circle (spacing exception). Threshold key `minSize`. |
+| `target-size.ts` | TGT-01, TGT-02 | Only interactive targets (a[href], button, input, [role=button|link|checkbox|radio|tab|menuitem|switch]); compute bounding box < 24x24; pass if inline-in-sentence link or if the 24px circle centred on the target does not intersect any other target's circle (spacing exception). Threshold key `minSize`. TGT-02 (AAA scans only, `ctx.wcagLevel === "AAA"`): every target below `thresholds.enhancedMinSize` (default 44) in either dimension, with the inline and user-agent-control exceptions but no spacing exception. |
+| `visible-label.ts` | FRM-11 | Visible field with an author-provided name (aria-label, aria-labelledby or a <label>) but no label text shown on screen (not clipped, larger than 1x1 px, on screen). Skipped when a named button sits beside a text field (G167) or visible text within three ancestor levels matches the name. Semi. |
+| `aria-strict.ts` | ARIA-02, ARIA-03, STR-08 | aria-label/aria-labelledby on div, span, p and similar without a role (Auto); ARIA id lists with some missing ids (aria-labelledby Auto, others Semi; aria-controls skipped while aria-expanded="false"); ids referenced by ARIA or <label for> that occur more than once (Auto, on every copy). A definite finding replaces axe-core's "incomplete" one for the same element (dedupeIssues). |
 | `forms.ts` | FRM-03, FRM-04, FRM-05, FRM-06 | Group detection by shared `name` across >= 2 radio/checkbox inputs; required via `required`/`aria-required`; error text heuristics: elements with role=alert / `.error`, `[class*=error]`, `[id*=error]` near an input that lack `aria-describedby` linkage; `aria-invalid` missing when such an error is visible. FRM-05/06 are Semi. |
 | `keyboard.ts` | KBD-01, KBD-08 | KBD-01: elements with `onclick` attribute or `cursor: pointer` computed style and a click listener heuristic (`onclick`, `role` in interactive set, `data-*click`), that are not focusable (no tabindex/native focusable) and no focusable descendant -> Critical. KBD-08: open `[role=dialog]`/`dialog[open]` that does not contain `document.activeElement` -> Semi. |
 | `reflow.ts` | ZM-02, ZM-03 | ZM-02 only when `window.innerWidth <= 320` (the page must already be that narrow); check `document.documentElement.scrollWidth > innerWidth`. ZM-03: inject a style tag applying the 1.4.12 spacing (line-height 1.5, paragraph spacing 2em, letter 0.12em, word 0.16em) for a moment, detect elements whose `scrollWidth/scrollHeight` exceed client size with `overflow: hidden` and text inside, then remove the style. |

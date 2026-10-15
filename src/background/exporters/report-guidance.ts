@@ -54,6 +54,13 @@ const RULES: Record<string, RuleGuidance> = {
     users: [SR],
     effort: "Quick fix",
   },
+  "IMG-09": {
+    headline: "Images are marked decorative but have a title",
+    impact: "alt=\"\" tells screen readers to skip the image, but the title says it means something. Some screen readers read the title, others skip it, so users get different information.",
+    fix: "Decide what the image is for: if it is decorative, remove the title; if it carries meaning, put that meaning in the alt text.",
+    users: [SR],
+    effort: "Quick fix",
+  },
   "IMG-03": {
     headline: "Image descriptions are too generic",
     impact: "Words like \"image\" or \"photo\" tell screen reader users that an image exists, but not what it shows.",
@@ -107,6 +114,13 @@ const RULES: Record<string, RuleGuidance> = {
     headline: "The keyboard focus highlight is hard to see",
     impact: "Keyboard users lose track of where they are on the page when the focus outline blends into the background.",
     fix: "Use a focus outline colour with at least 3:1 contrast against its surroundings.",
+    users: [KB, LV],
+    effort: "Quick fix",
+  },
+  "CLR-09": {
+    headline: "The keyboard focus highlight is a barely visible colour change",
+    impact: "The focused item only turns a slightly different shade, so keyboard users with low vision, or on a bright screen, struggle to see where they are.",
+    fix: "Make the focused state contrast at least 3:1 with the unfocused state, or add an outline around the focused item.",
     users: [KB, LV],
     effort: "Quick fix",
   },
@@ -164,6 +178,20 @@ const RULES: Record<string, RuleGuidance> = {
     impact: "Screen readers may announce the wrong label or a confusing combination.",
     fix: "Keep one <label> per field.",
     users: [SR],
+    effort: "Quick fix",
+  },
+  "FRM-11": {
+    headline: "Form fields have no visible label",
+    impact: "The field's name exists only for screen readers, so sighted users, people with memory or attention difficulties, and voice-control users cannot see what to enter or what to say to select it.",
+    fix: "Show a visible label with the field (a <label>, or visible text referenced with aria-labelledby).",
+    users: [CO, MO, LV],
+    effort: "Quick fix",
+  },
+  "TGT-02": {
+    headline: "Click and tap targets are smaller than the enhanced 44 × 44 px",
+    impact: "People with tremors, limited dexterity or large fingers on touch screens find small targets hard to hit, even when they are spaced apart.",
+    fix: "Make targets at least 44 × 44 px, for example with padding.",
+    users: [MO],
     effort: "Quick fix",
   },
   "KBD-01": {
