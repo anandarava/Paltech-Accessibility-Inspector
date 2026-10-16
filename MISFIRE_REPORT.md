@@ -563,3 +563,28 @@ None of the fixed patterns misfired on these sites.
 | A1 | KBD-06: a cover over ≥85% of the viewport (cookie scrim, modal backdrop) is reported once as a Needs-review overlay note, and that scan's per-element results (which describe the open dialog) are dropped | NPR 305 → 1, Guardian 33 → 1. Al Jazeera's 13 real banner findings are kept (no full-screen scrim). |
 | A2 | `region`: when the page has no main landmark, all "outside landmarks" findings are collapsed into one, with the count and examples | W3Schools 128 → 1, Tailwind 82 → 1, W3C survey 20 → 1, Guardian 8 → 2 |
 | B1 | KBD-05: one simulated Tab keydown/keyup before measuring, so pages that show rings only in keyboard mode show them | Spotify 19 → 0, NPR 2 → 0, Guardian consent frame 6 → 0. These 6 were marked "correct" in round 2, but live they show a 4px blue ring after a key press. Duolingo's 120 real ones are unchanged. |
+
+## A3 fixed: card patterns in KBD-01 (2026-10-16)
+
+**Not reported any more:**
+- an empty `onclick=""`;
+- an element with no area;
+- an element inside one already reported;
+- a card part whose action the keyboard already has:
+  - `onclick="location.href=X"` (its own or its card's) when the card has a focusable link to X;
+  - a link drawn on top of the element's centre (hit-tested on screen; off screen, an absolutely positioned link that contains it);
+  - a range input beside a slider track.
+
+**Result on the live sites:**
+
+| Site | Before | After | Note |
+|---|---|---|---|
+| Guardian | 95 | 1 | The remaining one is axe's real scrollable region |
+| A11Y Project | 7 | 0 | |
+| Duolingo | 1 | 0 | |
+| Spotify | 1 | 0 | |
+| W3Schools | 3 | 3 | Unchanged; the 1 review left is a scroll button |
+| Mars | 7 | 6 | Real `<a>` without href and icon buttons kept |
+| Python | 5 | 5 | Real `<a>` without href kept |
+
+**Caught while testing:** a first version that accepted any nearby form control removed real Mars findings ("Add Another Trip", "Add A Traveler"). Narrowed to range sliders and hit-testing before committing.

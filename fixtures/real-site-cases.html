@@ -79,6 +79,11 @@
     /* Shortened on purpose: needs review. */
     #zm-ellipsis { height: 24px; width: 110px; white-space: nowrap; text-overflow: ellipsis; }
 
+    /* KBD-01 card patterns (Guardian, A11Y Project). */
+    .kcard { position: relative; width: 240px; padding: 8px; border: 1px solid #1a1a1a; margin: 4px 0; }
+    .kcard .overlay-link { position: absolute; inset: 0; }
+    .kcard .media { height: 30px; background: #ddd; cursor: pointer; }
+
     /* MDN: a sidebar that scrolls on its own, with a sticky header inside it. */
     #sidebar { height: 120px; overflow: auto; width: 240px; border: 1px solid #1a1a1a; }
     #sidebar .sb-head { position: sticky; top: 0; height: 32px; background: #ffffff; border-bottom: 1px solid #1a1a1a; }
@@ -106,6 +111,17 @@
       <div class="zm" id="zm-margin"><p>Order today</p></div>
       <div class="zm" id="zm-clip">Order today</div>
       <div class="zm" id="zm-ellipsis">Order today</div>
+    </section>
+
+    <section>
+      <!-- Guardian: a pointer-cursor image under a link that covers the whole card. -->
+      <div class="kcard"><div class="media" id="k-overlay-media"></div><a class="overlay-link" href="#story" aria-label="Story"></a><p>Story title</p></div>
+      <!-- A11Y Project: onclick goes where the card's own link goes. -->
+      <div class="kcard"><div class="media" id="k-same-href" onclick="location.href='#spotlight'"></div><a href="#spotlight">Meet Frank</a></div>
+      <!-- Duolingo: an empty handler does nothing. -->
+      <div id="k-empty" onclick="">Empty handler</div>
+      <!-- Still reported: a clickable div with no keyboard equivalent. -->
+      <div class="kcard"><div id="k-real" onclick="location.href='#elsewhere'">Open the gallery</div><a href="#other">Other page</a></div>
     </section>
 
     <section class="dark">

@@ -601,6 +601,9 @@ test.describe("PalTech A11y Inspector extension", () => {
       expect(zm("zm-ellipsis")).toEqual(["Semi"]);
       // Focus scrolls a link in a scrolled sidebar clear of the sidebar's sticky header.
       expect(rulesOn("sb-first")).not.toContain("KBD-06");
+      // KBD-01: card parts with a keyboard equivalent are not flagged; a clickable div without one is.
+      for (const id of ["k-overlay-media", "k-same-href", "k-empty"]) expect(rulesOn(id), id).not.toContain("KBD-01");
+      expect(rulesOn("k-real")).toContain("KBD-01");
       // Hidden, click-through and covered targets are not targets; the visible tiny ones still fail.
       for (const id of ["skip-hidden", "chevron", "covered"]) expect(rulesOn(id).filter((r) => r.startsWith("TGT"))).toEqual([]);
       expect(rulesOn("tiny-a")).toContain("TGT-01");
