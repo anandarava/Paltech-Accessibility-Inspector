@@ -46,6 +46,10 @@
  *    background *around* the element. Parts drawn inside it (inset
  *    box-shadows, an outline with a negative offset at least its width) are
  *    measured against the element's own focused fill.
+ *  - `outline: auto` in any colour is drawn by Chrome with a white outer ring;
+ *    that ring is one more part. A strong background change next to a ring
+ *    counts as a part too. An element that comes into view only when focused
+ *    (a skip link) has appearing as its indicator.
  *  - Before each element is measured, the previous element loses focus, so a
  *    `:focus-within` style on a shared ancestor is not taken as part of the
  *    unfocused state.
@@ -131,11 +135,12 @@ function relatedSnapshot(part: RelatedPart, view: Window): string {
   const outline = outlineVisible(s) ? `${s.outlineStyle} ${s.outlineWidth} ${s.outlineColor} ${s.outlineOffset}` : "";
   const visible = parseFloat(cs.opacity) > 0.01 && cs.visibility !== "hidden" ? "shown" : "hidden";
   const size = part.pseudo ? `${cs.width} ${cs.height}` : "";
-  return [outline, s.boxShadow, s.borderColor, s.borderWidth, s.borderStyle, s.backgroundColor, s.backgroundImage, s.color, s.textDecorationLine, s.textDecorationColor, s.filter, s.transform, visible, size].join("|");
+  return [outline, s.boxShadow, s.borderColor, s.borderWidth, s.borderStyle, s.backgroundColor, s.backgroundImage, cs.backgroundSize, cs.backgroundPosition, s.color, s.textDecorationLine, s.textDecorationColor, s.filter, s.transform, visible, size].join("|");
 }
 
 const RELATED_ANCESTORS = 3;
 const RELATED_DESCENDANTS = 20;
+const RELATED_SIBLING_PARTS = 30;
 
 /** Parts that commonly draw a focus indicator for `el`: its pseudo-elements, ancestors, descendants and shadow content. */
 function relatedParts(el: Element): RelatedPart[] {
@@ -151,6 +156,12 @@ function relatedParts(el: Element): RelatedPart[] {
     parts.push({ element: node, pseudo: null }, { element: node, pseudo: "::before" }, { element: node, pseudo: "::after" });
   }
   for (const child of Array.from(el.querySelectorAll("*")).slice(0, RELATED_DESCENDANTS)) parts.push({ element: child, pseudo: null });
+  // A ring on a sibling (a card's "Read the story" button lights up when the card link has focus).
+  const parent = el.parentElement;
+  if (parent && parent !== el.ownerDocument.body) {
+    const siblings = Array.from(parent.querySelectorAll("*")).filter((n) => n !== el && !el.contains(n)).slice(0, RELATED_SIBLING_PARTS);
+    for (const s of siblings) parts.push({ element: s, pseudo: null }, { element: s, pseudo: "::before" }, { element: s, pseudo: "::after" });
+  }
   // A web component draws its ring inside its shadow root (`:host(:focus) .ring`, or a focused inner control).
   const shadow = el.shadowRoot;
   if (shadow) {
@@ -174,6 +185,23 @@ function indicatorElsewhere(el: HTMLElement, view: Window): boolean {
   const unfocused = parts.map((p) => relatedSnapshot(p, view));
   el.focus({ preventScroll: true, focusVisible: true } as FocusOptions);
   return focused.some((f, i) => f !== unfocused[i] && (f !== "" || unfocused[i] !== ""));
+}
+
+/**
+ * True when the element is out of sight unfocused and comes into view on focus:
+ * a skip link parked off-screen (`top: -40px`, `left: -9999px`) or clipped
+ * (`clip: rect(0 0 0 0)`) that appears when tabbed to. Appearing is the indicator.
+ */
+function hiddenUntilFocused(el: Element, view: Window, before: { rect: DOMRect; clipped: boolean; opacity: number }): boolean {
+  const out = (r: DOMRect, clipped: boolean, opacity: number): boolean =>
+    clipped || opacity <= 0.01 || r.width <= 1 || r.height <= 1 || r.right + view.scrollX <= 0 || r.bottom + view.scrollY <= 0 || r.bottom <= 0;
+  if (!out(before.rect, before.clipped, before.opacity)) return false;
+  const cs = view.getComputedStyle(el);
+  return !out(el.getBoundingClientRect(), isClipped(cs), parseFloat(cs.opacity));
+}
+
+function isClipped(cs: CSSStyleDeclaration): boolean {
+  return /^rect\(\s*0(px)?[\s,]+0(px)?[\s,]+0(px)?[\s,]+0(px)?\s*\)$/.test(cs.clip) || /^inset\(\s*(50|100)%/.test(cs.clipPath);
 }
 
 function changedKeys(a: StyleSnapshot, b: StyleSnapshot): Array<keyof StyleSnapshot> {
@@ -354,13 +382,16 @@ export const rule: CustomRule = {
           const prevPriority = styleDecl.getPropertyPriority("transition");
           let before: StyleSnapshot;
           let after: StyleSnapshot;
+          let placement: { rect: DOMRect; clipped: boolean; opacity: number };
           try {
             styleDecl.setProperty("transition", "none", "important");
             // The unfocused state must not carry the previous element's focus: a `:focus-within`
             // style on a shared ancestor (a search form) would already show in "before".
             const previous = doc.activeElement;
             if (previous instanceof HTMLElement && previous !== doc.body && previous !== el) previous.blur();
-            before = snapshot(view.getComputedStyle(el));
+            const beforeStyle = view.getComputedStyle(el);
+            before = snapshot(beforeStyle);
+            placement = { rect: el.getBoundingClientRect(), clipped: isClipped(beforeStyle), opacity: parseFloat(beforeStyle.opacity) };
             // focusVisible makes Chrome apply :focus-visible styles even though the last
             // interaction was a mouse click (pressing Scan); without it, sites that style
             // only :focus-visible look unchanged. Browsers without the option ignore it.
@@ -384,7 +415,8 @@ export const rule: CustomRule = {
           const showsOutline = outlineVisible(before) || outlineVisible(after);
           const diff = changedKeys(before, after).filter((k) => showsOutline || !k.startsWith("outline"));
 
-          if (diff.length === 0 && indicatorElsewhere(el, view)) continue; // drawn on a pseudo-element, ancestor or child
+          if (hiddenUntilFocused(el, view, placement)) continue; // appears only when focused: that is the indicator
+          if (diff.length === 0 && indicatorElsewhere(el, view)) continue; // drawn on a pseudo-element, ancestor, child or sibling
           if (diff.length === 0) {
             findings.push({
               element: el,
@@ -422,6 +454,8 @@ export const rule: CustomRule = {
             const outlineColor = parseColor(after.outlineColor);
             if (inside) rings.push({ kind: "inset outline", indicator: outlineColor && outlineColor[3] > 0.01 ? paintOver(fill(), outlineColor) : null, adjacent: fill().color });
             else rings.push({ kind: "outline", indicator: compose(after.outlineColor), adjacent: surrounding.color });
+            // `outline: auto` in any colour: Chrome draws a white ring around the author colour.
+            if (!inside && after.outlineStyle === "auto") rings.push({ kind: "outline (browser's white outer ring)", indicator: [255, 255, 255], adjacent: surrounding.color });
           }
           if (diff.includes("boxShadow")) {
             const parts = focusShadows(after.boxShadow, before.boxShadow);
@@ -440,6 +474,13 @@ export const rule: CustomRule = {
           }
 
           const visibleRings = rings.filter((r): r is { kind: string; indicator: RGB; adjacent: RGB } => r.indicator !== null);
+          if (visibleRings.length > 0 && diff.includes("backgroundColor")) {
+            // A strong background change (a field turning white, a button turning yellow) is a part
+            // of the indicator too: it passes when it stands out from the surroundings or the old fill.
+            const b = compose(after.backgroundColor);
+            const a = compose(before.backgroundColor) ?? surrounding.color;
+            if (b && Math.max(contrastRatioExact(b, surrounding.color), contrastRatioExact(b, a)) >= 3) continue;
+          }
           if (visibleRings.length > 0) {
             if (outlineVisible(after) && isDefaultFocusRing(after)) continue; // the browser's two-colour ring
             if (surrounding.hasImage) continue; // cannot judge contrast against an image

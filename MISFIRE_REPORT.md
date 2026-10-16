@@ -421,3 +421,19 @@ Verdicts below come from checking findings on the live pages.
 | `<select onchange="location.href=…">` navigates as soon as it changes (3.2.2) | new | Heuristic |
 | Logo alt of about 350 characters | IMG-03 | Heuristic (needs review) |
 | A Guardian accessible name containing raw HTML (`aria-label="<span …>"`) | ARIA-03 | Yes |
+
+## Round 2, group 2 fixes (gaps in earlier fixes), done 2026-10-16
+
+| Fix | Result on the live sites |
+|---|---|
+| `outline: auto` in any colour also counts Chrome's white outer ring | Shopify CLR-05 15 → 3 (the 3 left are real solid outlines) |
+| A strong background change next to a ring counts as part of the indicator | Mozilla 2 → 0, NHS 1 → 0 |
+| KBD-05: compares `background-size`/`position`, includes siblings in the same parent, and treats "comes into view on focus" (skip links) as the indicator | Harvard 4 → 0, A11Y Project 1 → 0, WebAIM 1 → 0, Slack skip-link review 1 → 0 |
+| Child frames: `region` and `css-orientation-lock` are page-level; an empty frame reports nothing | OTH-03 reviews 8 → 0 on the scanned frames; Guardian STR-06 11 → 5 |
+| LNK-03: link text equal to the last part of its URL ("Link" at `/payments/link`) | Stripe 1 → 0 |
+| KBD-06: a covered element is checked again after 350 ms | No change on W3Schools |
+
+**Not solved yet:**
+- **Stripe KBD-05 ×2:** the ring is on a button further up the card than the parent's children.
+- **W3Schools KBD-06 ×2 (review):** still flagged even when re-checked 900 ms later, so the cause is not timing. It needs a closer look.
+- **Stripe:** one new orientation-lock review in the top frame, which should be looked at.

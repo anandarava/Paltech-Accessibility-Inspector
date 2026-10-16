@@ -66,6 +66,24 @@
     .ring-parent:focus-within { outline: 2px solid #0b4f9c; outline-offset: 2px; }
     /* On a child: */
     #child-ring:focus .label { text-decoration: underline; }
+    /* Round 2. Not CLR-05 (Shopify): outline:auto in a dark author colour on a dark band; Chrome adds a white outer ring. */
+    .darkband { background: #02090a; padding: 8px; }
+    #auto-color { color: #ffffff; }
+    #auto-color:focus { outline: auto 1px #751be9; }
+    /* Not CLR-05 (Mozilla): a faint shadow plus the field turning white on a dark footer. */
+    #bg-plus-ring { background: #414141; color: #ffffff; border: 0; }
+    #bg-plus-ring:focus { background: #ffffff; color: #000000; outline: none; box-shadow: 0 0 0 2px rgba(0, 144, 237, 0.5); }
+    /* Not KBD-05 (Harvard): an underline grown with background-size on a child. */
+    #grow-underline { text-decoration: none; }
+    #grow-underline .u { background: linear-gradient(currentColor, currentColor) no-repeat 0 100% / 0 2px; }
+    #grow-underline:focus { outline: none; }
+    #grow-underline:focus .u { background-size: 100% 2px; }
+    /* Not KBD-05 (Stripe): the ring is drawn on a sibling button in the same card. */
+    #card-link { outline: none; }
+    .card:has(#card-link:focus) .cta { outline: 2px solid #0b4f9c; }
+    /* Not KBD-05 (WebAIM): a skip link that slides into view on focus. */
+    #slide-skip { position: absolute; top: -40px; left: 0; outline: none; }
+    #slide-skip:focus { top: 0; }
     /* CLR-05: two parts, both too faint. */
     #two-faint:focus { outline: 2px solid transparent; box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px #dddddd; }
   </style>
@@ -92,6 +110,11 @@
       <li class="ring-parent"><a id="parent-ring" href="#n">Ring on the parent</a></li>
       <li><a id="child-ring" href="#o"><span class="label">Underline on a child</span></a></li>
       <li><x-ring id="shadow-ring" tabindex="0">Ring inside a web component</x-ring></li>
+      <li class="darkband"><a id="auto-color" href="#p">Coloured auto outline on a dark band</a></li>
+      <li class="darkband"><input id="bg-plus-ring" aria-label="Email"></li>
+      <li><a id="grow-underline" href="#q"><span class="u">Underline grows in</span></a></li>
+      <li class="card"><a id="card-link" href="#r">Card</a> <span class="cta">Read the story</span></li>
+      <li><a id="slide-skip" href="#main">Skip to content</a></li>
       <li><a id="two-faint" href="#k">White ring inside a pale grey ring</a></li>
       <li><form class="search" role="search" action="#"><input id="fw-input" type="search" aria-label="Search"><button id="fw-button" type="button">Go</button></form></li>
     </ul>

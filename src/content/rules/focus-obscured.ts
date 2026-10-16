@@ -32,6 +32,9 @@
  *    pointer-events disabled is invisible to this check (false negative).
  *  - A cover that cannot be seen (opacity 0, visibility hidden, or at most
  *    2px in either direction, like an idle loading bar) does not count.
+ *  - An element found covered is checked again after 350 ms, so a page that
+ *    scrolls the focused element into view itself (a scrolling strip, smooth
+ *    scrolling) is judged once its scrolling has finished.
  *  - Moving focus can trigger page behaviour (opening menus); the same is true
  *    of the focus-indicator check, which focuses every element as well.
  *  - Scrolling happens for real (briefly); pages with scroll-driven effects
@@ -55,6 +58,8 @@ const PRIMARY = ruleDef("KBD-06");
 const MAX_FOCUSABLES = 400;
 const CHUNK = 25;
 const INSET = 2;
+/** Wait before re-checking a covered element, so the page's own scroll-on-focus can finish. */
+const SETTLE_MS = 350;
 
 interface ScrollState {
   element: Element;
@@ -190,42 +195,52 @@ export const rule: CustomRule = {
           // Let the browser scroll the element into view as it does for Tab.
           el.focus();
           if (doc.activeElement !== el) el.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" });
-          const r = el.getBoundingClientRect();
-          if (r.width <= 0 || r.height <= 0) continue;
-          const vw = view.innerWidth;
-          const vh = view.innerHeight;
-          // Fully outside the viewport even after scrollIntoView: cannot probe.
-          if (r.right <= 0 || r.bottom <= 0 || r.left >= vw || r.top >= vh) continue;
-
-          const cx = (r.left + r.right) / 2;
-          const cy = (r.top + r.bottom) / 2;
-          const inset = Math.min(INSET, r.width / 2, r.height / 2);
-          // 3x3 grid: centre, four corners (inset) and the four edge midpoints.
-          const points: Array<[string, number, number]> = [
-            ["centre", cx, cy],
-            ["top-left", r.left + inset, r.top + inset],
-            ["top-centre", cx, r.top + inset],
-            ["top-right", r.right - inset, r.top + inset],
-            ["middle-left", r.left + inset, cy],
-            ["middle-right", r.right - inset, cy],
-            ["bottom-left", r.left + inset, r.bottom - inset],
-            ["bottom-centre", cx, r.bottom - inset],
-            ["bottom-right", r.right - inset, r.bottom - inset],
-          ];
-
-          let centreCover: Element | null = null;
-          const coveredPoints: string[] = [];
-          let probed = 0;
-          for (const [name, x, y] of points) {
-            if (x < 0 || y < 0 || x >= vw || y >= vh) continue;
-            probed++;
-            const hit = doc.elementFromPoint(x, y);
-            if (!hit || hit === el || el.contains(hit) || isExtensionElement(hit, ctx)) continue;
-            const cover = coveringStickyElement(hit, el, view);
-            if (!cover) continue;
-            coveredPoints.push(name);
-            if (name === "centre") centreCover = cover;
+          // Hit-test a 3x3 grid on the element: the centre, four corners (inset) and the four edge midpoints.
+          const probe = (): { centreCover: Element | null; coveredPoints: string[]; probed: number } | null => {
+            const r = el.getBoundingClientRect();
+            if (r.width <= 0 || r.height <= 0) return null;
+            const vw = view.innerWidth;
+            const vh = view.innerHeight;
+            // Fully outside the viewport even after scrolling: cannot probe.
+            if (r.right <= 0 || r.bottom <= 0 || r.left >= vw || r.top >= vh) return null;
+            const cx = (r.left + r.right) / 2;
+            const cy = (r.top + r.bottom) / 2;
+            const inset = Math.min(INSET, r.width / 2, r.height / 2);
+            const points: Array<[string, number, number]> = [
+              ["centre", cx, cy],
+              ["top-left", r.left + inset, r.top + inset],
+              ["top-centre", cx, r.top + inset],
+              ["top-right", r.right - inset, r.top + inset],
+              ["middle-left", r.left + inset, cy],
+              ["middle-right", r.right - inset, cy],
+              ["bottom-left", r.left + inset, r.bottom - inset],
+              ["bottom-centre", cx, r.bottom - inset],
+              ["bottom-right", r.right - inset, r.bottom - inset],
+            ];
+            let centreCover: Element | null = null;
+            const coveredPoints: string[] = [];
+            let probed = 0;
+            for (const [name, x, y] of points) {
+              if (x < 0 || y < 0 || x >= vw || y >= vh) continue;
+              probed++;
+              const hit = doc.elementFromPoint(x, y);
+              if (!hit || hit === el || el.contains(hit) || isExtensionElement(hit, ctx)) continue;
+              const cover = coveringStickyElement(hit, el, view);
+              if (!cover) continue;
+              coveredPoints.push(name);
+              if (name === "centre") centreCover = cover;
+            }
+            return { centreCover, coveredPoints, probed };
+          };
+          let hitTest = probe();
+          if (hitTest?.centreCover) {
+            // Pages often scroll a focused element into view themselves (a scrolling strip, smooth
+            // scrolling): check again once that has settled before reporting.
+            await new Promise((resolve) => setTimeout(resolve, SETTLE_MS));
+            hitTest = probe();
           }
+          if (!hitTest) continue;
+          const { centreCover, coveredPoints, probed } = hitTest;
 
           if (centreCover) {
             reported.add(el);

@@ -247,7 +247,12 @@ export async function runCustomRule(
  * landmarks belong to the page around it. Ad and tracking frames otherwise
  * produce "no title / no h1 / no main" on almost every site.
  */
-const PAGE_LEVEL_AXE_RULES = new Set(["document-title", "page-has-heading-one", "landmark-one-main", "bypass"]);
+/**
+ * Page-level axe rules, meaningful for the top document only. `region` (content outside
+ * landmarks) and `css-orientation-lock` judge the page as a whole: a frame sits inside the
+ * parent's landmarks and follows the parent's orientation.
+ */
+const PAGE_LEVEL_AXE_RULES = new Set(["document-title", "page-has-heading-one", "landmark-one-main", "bypass", "region", "css-orientation-lock"]);
 /** Language rules apply to a child frame only when it shows text (an empty frame has nothing to pronounce). */
 const LANGUAGE_AXE_RULES = new Set(["html-has-lang", "html-lang-valid", "html-xml-lang-mismatch"]);
 
@@ -263,6 +268,8 @@ function frameHasText(doc: Document): boolean {
 export function filterFrameLevelIssues(issues: Issue[], isTop: boolean, doc: Document): Issue[] {
   if (isTop) return issues;
   let hasText: boolean | null = null;
+  // An empty child frame (about:blank or a tracking / loader frame with nothing shown) has nothing to report.
+  if (!frameHasText(doc) && !doc.querySelector("img, video, canvas, svg, input, select, textarea, button, a[href], [tabindex]")) return [];
   return issues.filter((issue) => {
     const axeId = String(issue.data?.axeRuleId ?? "");
     if (PAGE_LEVEL_AXE_RULES.has(axeId)) return false;

@@ -63,9 +63,15 @@ describe("page-level rules inside child frames", () => {
   const axeIssue = (axeRuleId: string) => makeIssue({ source: "axe", data: { axeRuleId } });
 
   it("drops title, h1, main and bypass findings in a child frame", () => {
-    const issues = ["document-title", "page-has-heading-one", "landmark-one-main", "bypass", "image-alt"].map(axeIssue);
+    setBody('<img src="x.png">');
+    const issues = ["document-title", "page-has-heading-one", "landmark-one-main", "bypass", "region", "css-orientation-lock", "image-alt"].map(axeIssue);
     const kept = filterFrameLevelIssues(issues, false, document);
     expect(kept.map((i) => i.data?.axeRuleId)).toEqual(["image-alt"]);
+  });
+
+  it("reports nothing from an empty child frame", () => {
+    setBody("");
+    expect(filterFrameLevelIssues(["image-alt", "color-contrast"].map(axeIssue), false, document)).toEqual([]);
   });
 
   it("keeps them in the top frame", () => {
@@ -75,7 +81,7 @@ describe("page-level rules inside child frames", () => {
 
   it("drops a missing lang only in a frame without text", () => {
     const issues = [axeIssue("html-has-lang")];
-    setBody("");
+    setBody('<img src="x.png">');
     expect(filterFrameLevelIssues(issues, false, document)).toHaveLength(0);
     setBody("<p>Hello</p>");
     // jsdom has no innerText; the frame is treated as having text.
@@ -202,5 +208,13 @@ describe("CLR-04: boundaries", () => {
 
   it("still flags a faint field border", async () => {
     expect(await borderFindings('<div style="background:#fff"><input id="i" style="border:1px solid #babfc5;background:#fff"></div>')).toEqual(["i"]);
+  });
+});
+
+describe("LNK-03: a link named after its target page", () => {
+  it("does not flag a product called Link at /payments/link", async () => {
+    setBody('<ul><li><a id="a" href="/in/payments/link">Link</a></li><li><a id="b" href="/docs/start">Link</a></li></ul>');
+    const findings = await linkText.run(makeRuleContext(document));
+    expect(findings.filter((f) => findingRuleId(f, linkText.id) === "LNK-03").map((f) => f.element.id)).toEqual(["b"]);
   });
 });

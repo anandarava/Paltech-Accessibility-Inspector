@@ -101,6 +101,22 @@ export function isCodeTerm(link: Element): boolean {
   return (link.textContent ?? "").trim() === (only.textContent ?? "").trim();
 }
 
+/**
+ * A link whose text is the name of the page it points to: Stripe's product
+ * "Link" at `/payments/link`. Matches the last path segment of the URL.
+ */
+export function namesItsTarget(link: Element, text: string): boolean {
+  const href = link.getAttribute("href") ?? "";
+  let segment = "";
+  try {
+    segment = new URL(href, link.ownerDocument.baseURI).pathname.split("/").filter(Boolean).pop() ?? "";
+  } catch {
+    return false;
+  }
+  const norm = (v: string): string => v.toLowerCase().replace(/[-_\s]+/g, " ").replace(/\.[a-z0-9]+$/, "").trim();
+  return !!segment && norm(decodeURIComponent(segment)) === norm(text);
+}
+
 /** All text a user (sighted or screen reader) could receive from this link that might warn about a new window. */
 function warningText(link: Element, doc: Document): string {
   const parts: string[] = [];
@@ -169,7 +185,7 @@ export const rule: CustomRule = {
 
         // --- LNK-03 ----------------------------------------------------------
         const name = accessibleName(link);
-        if (isVagueLinkText(name) && !link.hasAttribute("aria-describedby") && !isCodeTerm(link)) {
+        if (isVagueLinkText(name) && !link.hasAttribute("aria-describedby") && !isCodeTerm(link) && !namesItsTarget(link, name)) {
           const href = link.getAttribute("href") ?? "";
           findings.push({
             element: link,

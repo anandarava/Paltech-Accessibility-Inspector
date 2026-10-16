@@ -490,6 +490,8 @@ test.describe("PalTech A11y Inspector extension", () => {
       expect(rulesFor("inside-outline")).toEqual([]);
       // Rings drawn on a pseudo-element, the parent, a child or inside a web component are indicators.
       for (const id of ["pseudo-ring", "parent-ring", "child-ring", "shadow-ring"]) expect(rulesFor(id), id).toEqual([]);
+      // Round 2: coloured auto outline, background change plus ring, grown underline, sibling ring, slide-in skip link.
+      for (const id of ["auto-color", "bg-plus-ring", "grow-underline", "card-link", "slide-skip"]) expect(rulesFor(id), id).toEqual([]);
       // The previous element's :focus-within style is not part of the next element's unfocused state.
       expect(rulesFor("fw-button")).toEqual([]);
     } finally {
