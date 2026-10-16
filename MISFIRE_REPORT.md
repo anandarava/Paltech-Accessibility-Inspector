@@ -437,3 +437,31 @@ Verdicts below come from checking findings on the live pages.
 - **Stripe KBD-05 ×2:** the ring is on a button further up the card than the parent's children.
 - **W3Schools KBD-06 ×2 (review):** still flagged even when re-checked 900 ms later, so the cause is not timing. It needs a closer look.
 - **Stripe:** one new orientation-lock review in the top frame, which should be looked at.
+
+## Round 2, group 3 fix (image behind an opaque box), done 2026-10-16
+
+**The fix:** an image or video now counts as behind the text only when it is inside the text's nearest box with an opaque background (its own button, chip or card). Media outside that box is covered by it.
+
+**CLR-03 (needs review), re-scanned live:**
+
+| Site | Before | After |
+|---|---|---|
+| Stripe | 150 | 80 |
+| Microsoft | 35 | 17 |
+| Apple | 75 | 63 |
+| Shopify | 22 | 18 |
+| Mozilla | 6 | 0 |
+| react.dev | 8 | 4 |
+| Harvard | 6 | 4 |
+| W3Schools | 1 | 0 |
+| NASA | 41 | 40 |
+
+Guardian (29) and Mars (60) are unchanged; those are real text over pictures.
+
+**Now measured instead of sent to review (checked, correct):**
+- Stripe: +8 CLR-01, orange "Continue" labels on a peach button, 2.41:1.
+- react.dev: +2 CLR-01, "example.com" 2.17:1, matching the live measurement of 2.2.
+
+**Not affected:** the W3Schools carousel arrows are still reported (CLR-02, definite).
+
+**Left in this group:** Shopify's chips whose top layer is a solid gradient (R2-3) and Canada.ca/WebAIM translucent overlays are not covered by this fix.

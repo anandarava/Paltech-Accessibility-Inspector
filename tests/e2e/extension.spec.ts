@@ -585,6 +585,10 @@ test.describe("PalTech A11y Inspector extension", () => {
       // Underline and clip-text gradients are not the background (Harvard, Shopify).
       expect(rulesOn("underline-grad").filter((r) => r.startsWith("CLR"))).toEqual([]);
       expect(rulesOn("clip-grad").filter((r) => r.startsWith("CLR"))).toEqual([]);
+      // A white card or a button with its own fill hides the photo under it; bare text is still over it.
+      expect(rulesOn("on-card").filter((r) => r.startsWith("CLR"))).toEqual([]);
+      expect(rulesOn("on-button").filter((r) => r.startsWith("CLR"))).toEqual([]);
+      expect(rulesOn("on-photo").filter((r) => r.startsWith("CLR"))).toEqual(["CLR-03"]);
       expect(rulesOn("grad-mixed").filter((r) => r.startsWith("CLR"))).toEqual(["CLR-03"]);
       // Citation links in <sup> and back-links in <span> sit in text: the inline exception applies.
       for (const id of ["cite-1", "cite-2", "back-1", "back-2"]) expect(rulesOn(id).filter((r) => r.startsWith("TGT"))).toEqual([]);

@@ -44,7 +44,9 @@
  *    and so is text pushed out of its own `overflow: hidden` box (image
  *    replacement) or placed above / left of the page (see isTextOutOfSight).
  *  - Images and video count as "behind the text" only with the part an
- *    `overflow: hidden` ancestor leaves visible (see mediaRectBehind).
+ *    `overflow: hidden` ancestor leaves visible (see mediaRectBehind), and
+ *    only when they are inside the text's nearest opaque box: media outside
+ *    the text's own button, chip or card is covered by it.
  *  - Text inside `aria-hidden="true"` subtrees IS checked: 1.4.3/1.4.11 are
  *    about what sighted users see, and such text (captions, cloned carousel
  *    slides, icon-font glyphs) is still painted. Only rendering (display,
@@ -495,14 +497,42 @@ function collectMedia(ctx: RuleContext): MediaBox[] {
 }
 
 /** True when a media element that is neither ancestor nor descendant overlaps most of the text box. */
+/**
+ * The nearest box at or above `el` that paints an opaque background colour
+ * (the text's own button, chip or card). Null when only the page itself is
+ * opaque. Anything not inside this box is painted under it, so it is not
+ * behind the text.
+ */
+function nearestOpaqueBox(el: Element): Element | null {
+  const doc = el.ownerDocument;
+  const view = doc.defaultView ?? window;
+  for (let node: Element | null = el; node && node !== doc.body && node !== doc.documentElement; node = parentOf(node)) {
+    const cs = view.getComputedStyle(node);
+    const bg = parseColor(cs.backgroundColor);
+    if (bg && bg[3] >= 0.999 && readOpacity(cs) >= 0.999) return node;
+  }
+  return null;
+}
+
+/** `outer` contains `inner`, also across shadow roots. */
+function containsDeep(outer: Element, inner: Element): boolean {
+  for (let node: Element | null = inner; node; node = parentOf(node)) if (node === outer) return true;
+  return false;
+}
+
 function overlapsMedia(group: TextGroup, rect: Rect, media: MediaBox[]): Element | null {
   const area = (rect.right - rect.left) * (rect.bottom - rect.top);
   if (area <= 0) return null;
+  let opaque: Element | null | undefined;
   for (const m of media) {
     if (m.element === group.element || m.element.contains(group.element) || group.element.contains(m.element)) continue;
     if (intersectionArea(rect, m.rect) < area * 0.25) continue;
     const shown = mediaRectBehind(m, group.element);
-    if (shown && intersectionArea(rect, shown) >= area * 0.25) return m.element;
+    if (!shown || intersectionArea(rect, shown) < area * 0.25) continue;
+    // An opaque box holding the text (its own button, a white card) hides media outside it.
+    if (opaque === undefined) opaque = nearestOpaqueBox(group.element);
+    if (opaque && !containsDeep(opaque, m.element)) continue;
+    return m.element;
   }
   return null;
 }
