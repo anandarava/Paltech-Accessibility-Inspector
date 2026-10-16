@@ -30,6 +30,11 @@
  *    inert anyway.
  *  - `elementFromPoint` respects `pointer-events: none`; a sticky bar with
  *    pointer-events disabled is invisible to this check (false negative).
+ *  - A cover over 85% or more of the viewport (a cookie dialog's scrim, a
+ *    modal backdrop) is a page overlay, not a sticky header: it is reported
+ *    once for the page (Semi) instead of once per element behind it, and the
+ *    per-element results of that scan are dropped: they describe the open
+ *    dialog (its banner), not the page.
  *  - A cover that cannot be seen (opacity 0, visibility hidden, or at most
  *    2px in either direction, like an idle loading bar) does not count.
  *  - An element found covered is checked again after 350 ms, so a page that
@@ -60,6 +65,8 @@ const CHUNK = 25;
 const INSET = 2;
 /** Wait before re-checking a covered element, so the page's own scroll-on-focus can finish. */
 const SETTLE_MS = 350;
+/** A cover over at least this share of the viewport is a page overlay, reported once (see run). */
+const OVERLAY_SHARE = 0.85;
 
 interface ScrollState {
   element: Element;
@@ -179,6 +186,14 @@ export const rule: CustomRule = {
     }
     const originalActive = doc.activeElement;
     const reported = new Set<Element>();
+    // Full-screen overlays (a cookie dialog's scrim, a modal) seen while probing: reported once.
+    const overlays = new Set<Element>();
+    const isFullScreen = (cover: Element): boolean => {
+      const b = cover.getBoundingClientRect();
+      const visW = Math.min(b.right, view.innerWidth) - Math.max(b.left, 0);
+      const visH = Math.min(b.bottom, view.innerHeight) - Math.max(b.top, 0);
+      return visW > 0 && visH > 0 && visW * visH >= view.innerWidth * view.innerHeight * OVERLAY_SHARE;
+    };
 
     try {
       for (let i = 0; i < focusables.length; i++) {
@@ -227,6 +242,11 @@ export const rule: CustomRule = {
               if (!hit || hit === el || el.contains(hit) || isExtensionElement(hit, ctx)) continue;
               const cover = coveringStickyElement(hit, el, view);
               if (!cover) continue;
+              if (isFullScreen(cover)) {
+                // Covers the whole page, not just this control: one note for the page, not one per element.
+                overlays.add(cover);
+                continue;
+              }
               coveredPoints.push(name);
               if (name === "centre") centreCover = cover;
             }
@@ -287,6 +307,19 @@ export const rule: CustomRule = {
       } catch {
         // ignore
       }
+    }
+    // While a page-wide overlay is open (a consent dialog with its scrim and banner), what covers
+    // each control is the dialog, not the page's own layout: report the overlay only.
+    if (overlays.size > 0) findings.length = 0;
+    for (const overlay of overlays) {
+      findings.push({
+        element: overlay,
+        type: "Semi",
+        severity: PRIMARY.severity ?? "Serious",
+        description: `A full-screen ${view.getComputedStyle(overlay).position} overlay ${describe(overlay)} (for example a cookie consent dialog or modal backdrop) covered the page during the scan, so focus visibility behind it could not be judged element by element. If keyboard users can reach the page behind the overlay, the controls they focus are hidden; if focus is kept inside the overlay, that is correct. Dismiss the overlay and rescan to check the page itself.`,
+        data: { ruleId: PRIMARY.id, overlay: true, obscuredBy: describe(overlay) },
+        fix: { summary: "Keep focus inside a modal overlay while it is open (and make the page behind it inert), or let keyboard users dismiss it before they reach the page." },
+      });
     }
     ctx.progress?.(100);
     return findings;

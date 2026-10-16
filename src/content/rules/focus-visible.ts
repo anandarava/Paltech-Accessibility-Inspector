@@ -50,6 +50,10 @@
  *    that ring is one more part. A strong background change next to a ring
  *    counts as a part too. An element that comes into view only when focused
  *    (a skip link) has appearing as its indicator.
+ *  - Pages that show focus rings only after a key press are put in keyboard
+ *    mode with one simulated Tab keydown/keyup before measuring (it does not
+ *    move focus). The page stays in keyboard mode after the scan, as it would
+ *    after a real Tab.
  *  - Before each element is measured, the previous element loses focus, so a
  *    `:focus-within` style on a shared ancestor is not taken as part of the
  *    unfocused state.
@@ -202,6 +206,19 @@ function hiddenUntilFocused(el: Element, view: Window, before: { rect: DOMRect; 
 
 function isClipped(cs: CSSStyleDeclaration): boolean {
   return /^rect\(\s*0(px)?[\s,]+0(px)?[\s,]+0(px)?[\s,]+0(px)?\s*\)$/.test(cs.clip) || /^inset\(\s*(50|100)%/.test(cs.clipPath);
+}
+
+/** Dispatch a Tab keydown/keyup so pages that track input modality switch to keyboard mode. */
+function signalKeyboardUse(doc: Document): void {
+  const view = doc.defaultView ?? window;
+  const target = doc.activeElement ?? doc.body ?? doc.documentElement;
+  for (const type of ["keydown", "keyup"]) {
+    try {
+      target.dispatchEvent(new view.KeyboardEvent(type, { key: "Tab", code: "Tab", keyCode: 9, which: 9, bubbles: true, cancelable: true, composed: true } as KeyboardEventInit));
+    } catch {
+      // ignore
+    }
+  }
 }
 
 function changedKeys(a: StyleSnapshot, b: StyleSnapshot): Array<keyof StyleSnapshot> {
@@ -364,6 +381,12 @@ export const rule: CustomRule = {
     const pause = doc.createElement("style");
     pause.setAttribute(EXT_MARKER_ATTR, "focus-transition-pause");
     pause.textContent = "*, *::before, *::after { transition: none !important; }";
+
+    // Many sites show focus rings only once the user has pressed a key (Spotify's
+    // `no-focus-outline` class, what-input, the focus-visible polyfill, react-aria). A
+    // simulated Tab press puts them in keyboard mode, as a keyboard user's first Tab does.
+    // It does not move focus: a script-made key event has no default action.
+    signalKeyboardUse(doc);
 
     try {
       (doc.head ?? doc.documentElement).appendChild(pause);

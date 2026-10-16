@@ -492,6 +492,8 @@ test.describe("PalTech A11y Inspector extension", () => {
       for (const id of ["pseudo-ring", "parent-ring", "child-ring", "shadow-ring"]) expect(rulesFor(id), id).toEqual([]);
       // Round 2: coloured auto outline, background change plus ring, grown underline, sibling ring, slide-in skip link.
       for (const id of ["auto-color", "bg-plus-ring", "grow-underline", "card-link", "slide-skip"]) expect(rulesFor(id), id).toEqual([]);
+      // Rings switched on by the first key press (Spotify) are found after a simulated Tab.
+      expect(rulesFor("after-key")).toEqual([]);
       // The previous element's :focus-within style is not part of the next element's unfocused state.
       expect(rulesFor("fw-button")).toEqual([]);
     } finally {
@@ -608,6 +610,20 @@ test.describe("PalTech A11y Inspector extension", () => {
       const fromFrames = result.issues.filter((i) => (i.frameId ?? 0) !== 0);
       expect(fromFrames.filter((i) => ["STR-01", "STR-02", "STR-03", "STR-05"].includes(i.ruleId)).map((i) => i.ruleId)).toEqual([]);
       expect(result.issues.filter((i) => i.element.html.includes("parked-warning"))).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("full-screen overlay and missing main: one finding each, not one per element", async () => {
+    const { page, tabId } = await openFixture("overlay-no-main");
+    try {
+      const result = await scan(tabId);
+      const obscured = result.issues.filter((i) => i.ruleId === "KBD-06");
+      expect(obscured.map((i) => `${i.type}/${i.data?.overlay === true}`)).toEqual(["Semi/true"]);
+      const region = result.issues.filter((i) => i.data?.axeRuleId === "region");
+      expect(region).toHaveLength(1);
+      expect(Number(region[0]?.data?.regionCount)).toBeGreaterThan(3);
     } finally {
       await page.close();
     }

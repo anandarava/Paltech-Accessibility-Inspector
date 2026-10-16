@@ -465,3 +465,101 @@ Guardian (29) and Mars (60) are unchanged; those are real text over pictures.
 **Not affected:** the W3Schools carousel arrows are still reported (CLR-02, definite).
 
 **Left in this group:** Shopify's chips whose top layer is a solid gradient (R2-3) and Canada.ca/WebAIM translucent overlays are not covered by this fix.
+
+---
+
+# Round 3: validation on 13 new sites (2026-10-16)
+
+**Build:** misfire-fixes, after groups 1–3 (commit 39c2a5b).
+
+**Sites (13):**
+- Australia.gov (myGov)
+- Al Jazeera
+- NPR
+- Vue.js
+- Tailwind
+- Figma
+- Notion
+- Atlassian
+- MIT
+- WHO
+- Spotify
+- Duolingo
+- GitLab
+
+**Not usable:** Etsy and UK Parliament (bot check); Best Buy (certificate error).
+
+**Checked on the live pages:** 1,198 findings.
+
+| Verdict | Findings | Share |
+|---|---|---|
+| Correct | 618 | 52% |
+| Known, not fixed yet (group 4) | 432 | 36% |
+| Noise (true, but should not be reported this way) | 77 | 6% |
+| New misfire | 71 | 6% |
+| **Regression of a fix** | **0** | 0% |
+
+**Known (group 4):**
+- NPR cookie scrim: about 290.
+- Tailwind with no `main`: 82.
+- Cross-origin frames reported as "frame-tested": 17.
+- Experimental axe rules: 13.
+- Translucent overlays: about 19.
+- Muted videos: 5.
+- axe `focus-order-semantics`: 5.
+
+**Comparison with earlier rounds:**
+- Round 1: about 35% wrong.
+- Round 2: about 33% wrong.
+- Round 3: 6% new misfires, plus 36% from patterns already known but not fixed.
+
+None of the fixed patterns misfired on these sites.
+
+## New misfires (71)
+
+| Cause | Where | Count | Suggested fix |
+|---|---|---|---|
+| The page shows focus rings only after a real key press (`no-focus-outline` class, what-input, focus-visible polyfill) | Spotify 18, NPR 2 (KBD-05) | 20 | Send a simulated Tab `keydown`/`keyup` to the page before the focus check |
+| Lazy image not loaded yet (0 height), so the text was measured against the page colour | NPR 16 (CLR-01) | 16 | Text over an unloaded `img` (not complete, or 0 height) goes to review |
+| Small links inside a whole-card click target | Spotify 10 (TGT-01) | 10 | A target inside a larger target: review at most, worded "inside a larger target" |
+| Background painted by `::before`/`::after` (button fills) not considered | Duolingo 7 (CLR-01/03) | 7 | Use an opaque absolutely positioned pseudo-element covering the text as the backdrop |
+| Cross-origin child frames report "page not focused" | WHO 2, Atlassian 1, Figma 1 | 4 | Focus inside the frame first, or emulate focus for frame targets; fix the wording |
+| Scroll-reveal opacity (cards fade in when scrolled to) | NPR 3 | 3 | Opacity below 1 with a transition on an element outside the viewport goes to review |
+| Ring or background on a positioned sibling (a tab indicator pill) | Atlassian 1 CLR-05, 1 CLR-01 | 2 | Use `elementsFromPoint` to find the box actually painted under the text or ring |
+| Indicator added one frame after focus (React class swap, JS tilt) | Atlassian 1, Tailwind 1 | 2 | When nothing changed, wait one frame and measure again |
+| Screen-reader-only clip on an ancestor, not on the element itself | NPR 2 | 2 | `isVisuallyHiddenText` should walk up the ancestors |
+| Hard-stop 1px underline gradient filling the whole box | MIT 2 (CLR-03) | 2 | Treat "transparent except the last ≤2px" gradients as decoration |
+| Empty `onclick=""`, and a slider with a range input beside it | Duolingo 1, Spotify 1 (KBD-01) | 2 | Ignore empty handlers; skip when a native control sits next to it |
+| Rotating word re-measured by JavaScript | Notion 1 (ZM-03) | 1 | Re-check after a moment, or review when the width comes from an inline style |
+
+## Noise (77)
+- **Tailwind 17:** faint decorative class-name text inside `aria-hidden` illustrations. Suggestion: low-alpha `aria-hidden` text goes to review.
+- **Duolingo 34:** language items in a carousel scrolled out of view. They are correct once scrolled in; grouping already collapses them.
+- **NPR 19:** FRM-08 on the "i" caption toggles.
+- **5 sites:** OTH-03 where axe could not read cross-origin CSS.
+
+## Verified correct (highlights)
+- **Duolingo KBD-05 120:** real `outline: none` with no replacement.
+- **WHO CLR-05 14:** the best part is still under 3:1.
+- **KBD-06:** Al Jazeera 13 and Spotify 3 (OneTrust bottom banner), Figma 1.
+- **Contrast:**
+  - Duolingo CLR-01 85 and CLR-02 11;
+  - Vue 13;
+  - Tailwind 12;
+  - Notion 3;
+  - GitLab CLR-03 17;
+  - Notion CLR-03 9.
+- **ARIA:** Spotify ARIA-01 107 and ARIA-05 56; GitLab, Tailwind and Australia.gov ARIA; NPR/Tailwind ARIA-02 31.
+- **Other:**
+  - MIT TGT-01 10;
+  - ZM-03 on NPR, Spotify, Tailwind and WHO (18);
+  - Al Jazeera FRM-08 9;
+  - WHO LNK-03 7.
+
+## Round 3 follow-up: A1, A2 and B1 fixed (2026-10-16)
+
+| # | Fix | Result on the live sites |
+|---|---|---|
+| A1 | KBD-06: a cover over ≥85% of the viewport (cookie scrim, modal backdrop) is reported once as a Needs-review overlay note, and that scan's per-element results (which describe the open dialog) are dropped | NPR 305 → 1, Guardian 33 → 1. Al Jazeera's 13 real banner findings are kept (no full-screen scrim). |
+| A2 | `region`: when the page has no main landmark, all "outside landmarks" findings are collapsed into one, with the count and examples | W3Schools 128 → 1, Tailwind 82 → 1, W3C survey 20 → 1, Guardian 8 → 2 |
+| B1 | KBD-05: one simulated Tab keydown/keyup before measuring, so pages that show rings only in keyboard mode show them | Spotify 19 → 0, NPR 2 → 0, Guardian consent frame 6 → 0. These 6 were marked "correct" in round 2, but live they show a 4px blue ring after a key press. Duolingo's 120 real ones are unchanged. |

@@ -84,6 +84,9 @@
     /* Not KBD-05 (WebAIM): a skip link that slides into view on focus. */
     #slide-skip { position: absolute; top: -40px; left: 0; outline: none; }
     #slide-skip:focus { top: 0; }
+    /* Not KBD-05 (Spotify): rings are switched off until the user presses a key. */
+    html.no-focus-outline #after-key:focus { outline: none; }
+    #after-key:focus { outline: 2px solid #0b4f9c; }
     /* CLR-05: two parts, both too faint. */
     #two-faint:focus { outline: 2px solid transparent; box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px #dddddd; }
   </style>
@@ -115,11 +118,15 @@
       <li><a id="grow-underline" href="#q"><span class="u">Underline grows in</span></a></li>
       <li class="card"><a id="card-link" href="#r">Card</a> <span class="cta">Read the story</span></li>
       <li><a id="slide-skip" href="#main">Skip to content</a></li>
+      <li><a id="after-key" href="#s">Ring shown after a key press</a></li>
       <li><a id="two-faint" href="#k">White ring inside a pale grey ring</a></li>
       <li><form class="search" role="search" action="#"><input id="fw-input" type="search" aria-label="Search"><button id="fw-button" type="button">Go</button></form></li>
     </ul>
   </main>
   <script>
+    // Spotify's pattern: no focus rings until a key is pressed.
+    document.documentElement.classList.add("no-focus-outline");
+    document.addEventListener("keydown", () => document.documentElement.classList.remove("no-focus-outline"));
     // A web component that draws its focus ring inside its shadow root.
     customElements.define("x-ring", class extends HTMLElement {
       constructor() {

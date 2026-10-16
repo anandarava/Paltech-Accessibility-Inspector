@@ -265,6 +265,28 @@ function frameHasText(doc: Document): boolean {
 }
 
 /** Drop page-level findings that do not apply inside a child frame. */
+/** Region findings kept as examples when they are collapsed into one. */
+const REGION_SAMPLES = 10;
+
+/**
+ * A page without a main landmark puts every block "outside landmarks": axe
+ * `region` then lists dozens of elements for one cause. They are collapsed
+ * into one finding naming the cause and listing examples. With a main
+ * landmark each finding is a separate stray block and they are kept.
+ */
+export function collapseRegionFlood(issues: Issue[], doc: Document): Issue[] {
+  const region = issues.filter((i) => i.data?.axeRuleId === "region");
+  if (region.length <= 3 || doc.querySelector("main, [role='main']")) return issues;
+  const first = region[0] as Issue;
+  const merged: Issue = {
+    ...first,
+    description: `${region.length} blocks of content are outside any landmark because the page has no main landmark (<main> or role="main"). Screen reader users who move by landmark cannot reach this content. Examples: ${region.slice(0, 5).map((i) => i.element.selector).join("; ")}.`,
+    data: { ...first.data, regionCount: region.length, examples: region.slice(0, REGION_SAMPLES).map((i) => i.element.selector) },
+    fix: { ...first.fix, summary: "Wrap the page's main content in <main>, and put the header, navigation and footer in <header>, <nav> and <footer>. Every visible block should then be inside a landmark." },
+  };
+  return issues.filter((i) => i.data?.axeRuleId !== "region" || i === first).map((i) => (i === first ? merged : i));
+}
+
 export function filterFrameLevelIssues(issues: Issue[], isTop: boolean, doc: Document): Issue[] {
   if (isTop) return issues;
   let hasText: boolean | null = null;
@@ -390,6 +412,7 @@ export async function scanFrame(options: ScanOptions, rulesFile: RulesFile, rule
     const keepReview = options.includeNeedsReview !== false;
     issues = dedupeIssues(issues).filter((issue) => (keepReview || issue.type !== "Semi") && criterionInVersion(issue.wcag.criterion, version));
     issues = filterFrameLevelIssues(issues, isTop, document);
+    issues = collapseRegionFlood(issues, document);
     safeProgress(100, "Scan complete");
     return {
       issues,
