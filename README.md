@@ -53,7 +53,11 @@ axe DevTools-style workflow:
   free-text search, a **Status** filter (Open / Ignored / Baselined, with
   "Open only" and "Excluded only" shortcuts) to review ignored or baselined
   issues across all rules, results **grouped by rule** ("Text contrast (12)") with a
-  "3 of 12 ◀ ▶" instance stepper and auto-highlight on the page
+  "3 of 12 ◀ ▶" instance stepper and auto-highlight on the page. Inside a rule,
+  elements that share a cause (the same colour pair, the same covering banner, the
+  same component) are listed under one expandable row such as
+  "Text #999999 on #fcfcfc · 2.77:1 × 4"; every element is still counted. The HTML
+  report lists them the same way
 - **Saved scans**: name and save results, reopen them read-only, export,
   rename, delete, and compare two scans (or one with the current scan) as
   new / fixed / unchanged

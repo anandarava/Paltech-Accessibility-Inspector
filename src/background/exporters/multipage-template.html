@@ -155,6 +155,12 @@ details.inst>summary::-webkit-details-marker{display:none}
 .chev{width:.5rem;height:.5rem;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(-45deg);transition:transform .15s;margin:0 .2rem}
 details[open]>summary .chev,[aria-expanded="true"] .chev{transform:rotate(45deg)}
 .n{font-size:.8rem;color:var(--muted);white-space:nowrap}
+details.cause{border:1px dashed var(--line);border-radius:10px;background:var(--bg,transparent)}
+details.cause>summary{list-style:none;cursor:pointer;display:flex;gap:.6rem;align-items:center;padding:.5rem .8rem;font-size:.9rem}
+details.cause>summary::-webkit-details-marker{display:none}
+details.cause>summary .what{flex:1;min-width:0}
+.cause-n{font-size:.78rem;font-weight:700;border:1px solid var(--line);border-radius:6px;padding:.05rem .45rem;white-space:nowrap}
+details.cause>ol.insts{padding:0 .6rem .6rem}
 .what{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ratio{font-size:.78rem;font-weight:700;color:var(--poor);background:color-mix(in srgb,var(--poor) 10%,var(--card));border:1px solid color-mix(in srgb,var(--poor) 30%,var(--line));border-radius:6px;padding:.05rem .45rem;white-space:nowrap}
 .selc{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -353,7 +359,15 @@ function cards(p,f,review){
  <div class="rule-body" id="${esc(id)}-body" ${open?'':'hidden'}><p class="rule-code">${esc(r.code)} · ${esc(r.wcag)} · ${esc(r.category)}</p><p class="small muted">${esc(r.summary)}</p>
  <div class="whyfix"><div><h4>Why it matters</h4><p class="small">${esc(r.why)}</p><p>${r.affects.map(u=>`<span class="user">${esc(u)}</span>`).join(' ')}</p></div><div><h4>How to fix</h4><p class="small">${esc(r.howToFix)}</p>${r.learnMore?`<p class="small"><a href="${esc(r.learnMore)}">Learn more about this requirement</a></p>`:''}</div></div>
  ${r.sharedComponents&&r.sharedComponents.length?`<div class="shared"><b>Likely fewer fixes than elements.</b> These elements come from the same component or style, so one change there should fix all of them:<ul>${r.sharedComponents.map(s=>`<li><b>${s.count} elements</b> share <code>${esc(s.selector)}</code></li>`).join('')}</ul></div>`:''}
- <ol class="insts">${els.map(({e,i},k)=>`<li><details class="inst" ${k===0?'open':''}><summary><i class="chev" aria-hidden="true"></i><span class="n">${i+1} of ${r.elements.length}</span><span class="what">${esc(e.element)}</span>${ratioOf(e)}<code class="selc">${esc(e.selector)}</code></summary>${instBody(e)}</details></li>`).join('')}</ol></div></section>`;}).join('');}
+ <ol class="insts">${instList(els,r)}</ol></div></section>`;}).join('');}
+// One element row. Elements sharing a cause (same colours, covering element, component: see
+// shared/cause.ts) are listed under one collapsible "cause" row; the first element stays open.
+const instRow=({e,i},r,open)=>`<li><details class="inst" ${open?'open':''}><summary><i class="chev" aria-hidden="true"></i><span class="n">${i+1} of ${r.elements.length}</span><span class="what">${esc(e.element)}</span>${ratioOf(e)}<code class="selc">${esc(e.selector)}</code></summary>${instBody(e)}</details></li>`;
+function instList(els,r){const g=new Map();els.forEach(x=>{const k=x.e.cause||('#'+x.i);if(!g.has(k))g.set(k,{label:x.e.causeLabel,items:[]});g.get(k).items.push(x);});
+ const groups=[...g.values()];
+ if(groups.length===els.length)return els.map((x,k)=>instRow(x,r,k===0)).join('');
+ if(groups.length===1)return `<li class="small muted">All ${els.length} share one cause: ${esc(groups[0].label)}</li>`+els.map((x,k)=>instRow(x,r,k===0)).join('');
+ return groups.map((grp,k)=>grp.items.length===1?instRow(grp.items[0],r,k===0):`<li><details class="cause" ${k===0?'open':''}><summary><i class="chev" aria-hidden="true"></i><span class="what">${esc(grp.label)}</span><span class="cause-n">× ${grp.items.length}<span class="sr-only"> elements</span></span></summary><ol class="insts">${grp.items.map((x,j)=>instRow(x,r,k===0&&j===0)).join('')}</ol></details></li>`).join('');}
 // Open or close one rule card in place (no re-render), remembering the choice.
 function setRuleOpen(sec,open){if(!sec)return;const b=sec.querySelector(':scope>.rule-h>.rule-toggle'),body=sec.querySelector(':scope>.rule-body');
  if(open)st.openRules.add(sec.id);else st.openRules.delete(sec.id);sec.classList.toggle('is-open',open);if(b)b.setAttribute('aria-expanded',String(open));if(body)body.hidden=!open;}
@@ -426,9 +440,9 @@ document.addEventListener('click',ev=>{const t=ev.target.closest('[data-rule],[d
  else if(t.dataset.act==='reset'){resetFilters();refresh();}
  // Expand all: first opens every rule, a second click also opens every element. Collapse all closes both.
  else if(t.dataset.act==='expand'||t.dataset.act==='collapse'){const o=t.dataset.act==='expand',secs=[...document.querySelectorAll('[data-issues] section.rule')];
-  if(!o){secs.forEach(s=>setRuleOpen(s,false));document.querySelectorAll('[data-issues] details.inst').forEach(d=>d.open=false);}
+  if(!o){secs.forEach(s=>setRuleOpen(s,false));document.querySelectorAll('[data-issues] details.inst,[data-issues] details.cause').forEach(d=>d.open=false);}
   else if(secs.some(s=>!st.openRules.has(s.id)))secs.forEach(s=>setRuleOpen(s,true));
-  else document.querySelectorAll('[data-issues] details.inst').forEach(d=>d.open=true);}});
+  else document.querySelectorAll('[data-issues] details.inst,[data-issues] details.cause').forEach(d=>d.open=true);}});
 document.addEventListener('input',ev=>{const t=ev.target;if(t.matches('[data-q]')){st.q=t.value.trim();refresh();}
  else if(t.matches('[data-pq]')){st.pq=t.value;const pos=t.selectionStart;render(true);const n=document.getElementById('pagesearch');n.focus();n.setSelectionRange(pos,pos);}});
 // ---------- theme toggle ----------

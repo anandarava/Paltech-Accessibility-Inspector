@@ -578,15 +578,26 @@ function lengthIn(value: string, full: number): number | null {
  * right padding). Anything that cannot be worked out counts as overlapping.
  */
 async function imageCoversText(layerEl: Element, index: number, image: string, lines: Rect[]): Promise<boolean> {
-  const url = /^url\(\s*["']?(.*?)["']?\s*\)$/.exec(image)?.[1];
-  if (!url) return true;
-  if (layerEl.getClientRects().length !== 1) return true; // an inline box split over lines
+  // A gradient has no natural size: "auto" fills the background area.
+  const gradient = /gradient\(/i.test(image);
+  const url = gradient ? "" : /^url\(\s*["']?(.*?)["']?\s*\)$/.exec(image)?.[1];
+  if (!gradient && !url) return true;
   const view = layerEl.ownerDocument.defaultView ?? window;
   const cs = view.getComputedStyle(layerEl);
   const pick = (list: string): string => {
     const items = splitTopLevel(list);
     return items.length ? (items[index % items.length] ?? "") : "";
   };
+  if (gradient) {
+    // A gradient sized to nothing, or to a strip much thinner than a line (a hover underline,
+    // also on text wrapped over several lines), is decoration, not the background.
+    const [gw = "auto", gh = "auto"] = pick(cs.backgroundSize).split(/\s+/);
+    const lineHeight = Math.min(...lines.map((l) => l.bottom - l.top));
+    if (/^0(px|%)?$/.test(gw) || /^0(px|%)?$/.test(gh)) return false;
+    const strip = /^[\d.]+px$/.test(gh) ? parseFloat(gh) : null;
+    if (strip !== null && strip < lineHeight * 0.4) return false;
+  }
+  if (layerEl.getClientRects().length !== 1) return true; // an inline box split over lines
   const repeat = pick(cs.backgroundRepeat).split(/\s+/);
   const repeatX = repeat[0] ?? "repeat";
   const repeatY = repeat[1] ?? (repeatX === "repeat-x" ? "no-repeat" : repeatX === "repeat-y" ? "repeat" : repeatX);
@@ -599,14 +610,20 @@ async function imageCoversText(layerEl: Element, index: number, image: string, l
     width: box.width - bl - (parseFloat(cs.borderRightWidth) || 0),
     height: box.height - bt - (parseFloat(cs.borderBottomWidth) || 0),
   };
+  // Painted only inside the glyphs (gradient text): not a background behind the text.
+  if (pick((cs as unknown as { backgroundClip?: string }).backgroundClip ?? "") === "text" || pick(cs.webkitBackgroundClip ?? "") === "text") return false;
   const sizeValue = pick(cs.backgroundSize);
   if (/cover|contain/.test(sizeValue)) return true;
   const [sw = "auto", sh = "auto"] = sizeValue.split(/\s+/);
   let width = sw === "auto" ? null : lengthIn(sw, area.width);
   let height = sh === "auto" ? null : lengthIn(sh, area.height);
   if ((sw !== "auto" && width === null) || (sh !== "auto" && height === null)) return true;
+  if (gradient) {
+    width ??= area.width;
+    height ??= area.height;
+  }
   if (width === null || height === null) {
-    const natural = await naturalSize(url, layerEl.ownerDocument);
+    const natural = await naturalSize(url ?? "", layerEl.ownerDocument);
     if (natural) {
       if (width === null && height === null) {
         width = natural.width;
@@ -628,7 +645,9 @@ async function imageCoversText(layerEl: Element, index: number, image: string, l
     top: repeatY === "no-repeat" ? area.top + y : area.top,
     bottom: repeatY === "no-repeat" ? area.top + y + (height as number) : area.top + area.height,
   };
-  return lines.some((line) => intersectionArea(line, icon) > 0);
+  // A strip much thinner than the text (a hover underline grown with background-size) is
+  // decoration under the text, not the background behind it.
+  return lines.some((line) => intersectionArea(line, icon) > 0 && Math.min(icon.bottom, line.bottom) - Math.max(icon.top, line.top) >= (line.bottom - line.top) * 0.4);
 }
 
 /** Line boxes of the group's text (viewport coordinates). */
@@ -670,6 +689,8 @@ async function judgeBackgroundImages(group: TextGroup, bg: BackgroundResolution,
     for (let i = 0; i < images.length; i++) {
       const image = images[i] ?? "";
       if (/gradient\(/i.test(image)) {
+        // Underline strips, zero-size and text-clipped gradients are not behind the text.
+        if (!(await imageCoversText(layerEl, i, image, lines))) continue;
         if (bg.cumulativeOpacity < 1) return null; // faded groups are not modelled for gradients
         const stops = gradientStops(image);
         if (stops.length === 0) return null;

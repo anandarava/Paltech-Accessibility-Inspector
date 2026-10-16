@@ -87,7 +87,7 @@ Below the summary, the tabs choose what the list shows:
 | Passed rules | Rules that passed on this page |
 | Not applicable rules | Rules that found nothing to test (for example no video on the page) |
 
-To narrow the list, type in the search box (rule, selector or WCAG number), use **Group** to list by rule or by category, and use the **Severity**, **Category** and **Status** menus. Status defaults to **Open**. Choose **Ignored** or **Baselined** to review excluded issues, or use the shortcuts **Open only**, **Excluded only** and **All**. At least one status always stays ticked.
+To narrow the list, type in the search box (rule, selector or WCAG number), use **Group** to list by rule or by category, and use the **Severity**, **Category** and **Status** menus. When grouped by rule, elements that have the same cause (for example the same text and background colours, or the same cookie banner covering them) are collected under one row ending in "× N"; open it to see each element. This only shortens the list: every element still counts in the totals and the score, and can be ignored or baselined on its own. The HTML report groups elements the same way. Status defaults to **Open**. Choose **Ignored** or **Baselined** to review excluded issues, or use the shortcuts **Open only**, **Excluded only** and **All**. At least one status always stays ticked.
 
 In rule view, each card shows a coloured dot for severity, the rule name with the number of failing elements, then the rule id, the WCAG criterion and a severity badge. Click a card to expand it.
 

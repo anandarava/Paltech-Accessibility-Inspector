@@ -47,6 +47,11 @@
     /* Python: gradients. Passes on every colour / fails on every colour / passes on part only. */
     #grad-pass { color: #ffffff; background: linear-gradient(#1a3a5a 10%, #10243a 90%); padding: 8px; }
     #grad-fail { color: #9a9a9a; background: linear-gradient(#a0a0a0 10%, #b0b0b0 90%); padding: 8px; }
+    /* Harvard: a hover underline grown with background-size (0 wide until hover). Not the background. */
+    #underline-grad { color: #1e1e1e; background: linear-gradient(currentColor, currentColor) no-repeat 0 100% / 0px 2px; }
+    /* Shopify: gradient clipped to the text; the real backdrop is the white page. */
+    #clip-grad { color: #1e1e1e; }
+    .clip-wrap { background: linear-gradient(#5fd5b6, #865cff); -webkit-background-clip: text; background-clip: text; }
     #grad-mixed { color: #e6e8ea; background: linear-gradient(#3776ab 30%, #1d3f5c 95%); padding: 8px; }
 
     /* Targets nobody can press, each next to small buttons that would otherwise make it fail. */
@@ -124,6 +129,8 @@
       <p>Read <a id="icon-under" href="https://example.com/">a source with an icon under it</a> for more.</p>
       <p id="grad-pass">White text on a dark gradient</p>
       <p id="grad-fail">Grey text on a grey gradient</p>
+      <p><span id="underline-grad">Dark text with an underline gradient</span></p>
+      <div class="clip-wrap"><p id="clip-grad">Dark text under a clip-text gradient</p></div>
       <p id="grad-mixed">Pale text on a blue gradient</p>
     </section>
 

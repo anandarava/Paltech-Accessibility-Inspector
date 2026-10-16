@@ -106,7 +106,15 @@ I re-scanned the same 14 sites after step 2.
 - **GitHub:** a 2px outline drawn inside a #1f6feb button in the same #1f6feb, so it is invisible.
 - **Microsoft:** a dark #0e1726 outline on a #0e1726 band around a light button.
 
-**Grouping of repeated findings:** not built yet. The options are waiting for a decision.
+**Grouping of repeated findings (option A), done 2026-10-15, not committed.**
+- **What it does:** inside each rule, elements with the same cause are listed under one expandable "label × N" row, in both the side panel and the HTML report.
+- **What does not change:** counts, score, ignore and baseline.
+- **Result on the live sites:**
+  - Python CLR-01: 56 → 8 causes.
+  - Stack Overflow KBD-06: 20 → 1 cause (the OneTrust banner).
+  - Stack Overflow ARIA-03: 40 → 4 causes.
+  - Stack Overflow ZM-03: 13 → 1 cause (the clamped excerpts).
+  - Mars CLR-03: 60 → 4 causes.
 
 **Remaining focus-contrast findings (CLR-05), each checked live:**
 - **gov.uk skip link:** a yellow outline on white (1.34:1). The link is hidden until focused and then appears as a yellow block with black text; the yellow itself does not reach 3:1 against the page.
@@ -325,3 +333,91 @@ Found on the two deliberately broken demos.
 - Pages are live and may change. A few counts could differ if the scan is run again.
 - Only the desktop size (1280×800) and the first view were tested: no logged-in pages, and no tabs or menus opened.
 - Not yet checked: whether the CLR-03 clipping bug (item 4) also explains the Apple, NASA and Microsoft counts.
+
+---
+
+# Round 2: validation on 14 new sites (2026-10-15)
+
+**Build:** misfire-fixes branch (steps 1–3, plus cause grouping, which is not committed yet).
+**Settings:** WCAG 2.2 AA, best practices on, 1280×800.
+
+**Sites (14):**
+- USA.gov
+- Canada.ca
+- The Guardian
+- WebAIM
+- A11Y Project
+- react.dev
+- Stripe
+- Shopify
+- Harvard
+- NHS
+- Slack
+- Mozilla
+- W3Schools
+- W3C BAD survey demo
+
+**Not usable:**
+- IKEA and Booking.com: certificate error.
+- eBay, Medium and NYTimes: bot-block pages.
+
+**Overall:** none of the misfires fixed in round 1 came back. The problems found are new patterns, plus one regression caused by our own gradient fix (R2-1).
+
+Verdicts below come from checking findings on the live pages.
+
+## Misfires, ordered by impact
+
+| # | Rule | Where | Wrong | Cause | Suggested fix |
+|---|---|---|---|---|---|
+| R2-1 | CLR-01/02 | Harvard 28 | 28 | **FIXED 2026-10-16 (Harvard 28 → 0, Shopify 3 → 0, Mozilla 4 → 0).** **Regression from step 2:** a hover-underline gradient (`background-size: 0px 2px`) is measured as if it filled the text background, giving fg = bg and a ratio of 1. | Work out each gradient layer's painted area (size, position, repeat) like url icons; skip layers with zero area, thin layers, or layers not under the text lines |
+| R2-2 | CLR-03 | Stripe 71, Shopify 11, Mozilla 6, react.dev 4, Harvard 2, W3Schools 2 | ~96 | An image counts as "behind the text" even when an opaque box sits between them: the text's own button or chip, or a white card that does not contain the image | Only count media inside the text's nearest opaque-background ancestor, or use `elementsFromPoint` at the line centres and stop at the first opaque layer |
+| R2-3 | CLR-03 | Shopify 6 chips | 6 | A multi-layer background whose top layer is a solid gradient (`linear-gradient(#181d20,#181d20)`) still counts the image under it | Treat an opaque, uniform top layer as the background and ignore the layers under it |
+| R2-4 | CLR-03 / CLR-02 | Mozilla 4, Shopify 3+1 | 8 | Underline gradients (as R2-1), and an ancestor's `background-clip: text` gradient treated as the background | Same as R2-1; leave `background-clip: text` layers out of the background |
+| R2-5 | KBD-06 | Guardian 33 | 33 | A full-screen consent dialog (fixed, 1280×800, page scroll locked, focus trapped inside) gives one finding per element behind it | A cover filling about 90% or more of the viewport, or a modal dialog/iframe: one Needs-review note "a modal overlay covers the page" |
+| R2-6 | KBD-01 | Guardian 95 review, A11Y Project 7 | ~100 | Card patterns: an image overlay with `cursor: pointer`, or an onclick div, where the same card already has a link (same place or same href) | Skip when the card holds a focusable link to the same place; never report descendants of an element already reported |
+| R2-7 | CLR-05 | Shopify 12 | 12 | `outline: auto` in an author colour: Chrome also draws a white outer ring, but only the default colour (#101010) is exempted | For any `outline: auto`, also count a white part against the surrounding colour |
+| R2-8 | CLR-05 | Mozilla 2, NHS 1 | 3 | A strong background change (field turns white, button turns yellow) is ignored once any ring part exists | Add the background change as one more part; pass if it reaches 3:1 |
+| R2-9 | KBD-05 | Harvard 4, Stripe 2, A11Y Project 1, WebAIM 1 | 8 | Missed indicators: an underline that grows via `background-size` (not compared); a ring on a sibling element; skip links that slide or un-clip into view on focus | Compare `background-size/position`; include the parent's other children; treat "moves into view or becomes visible on focus" as an indicator |
+| R2-10 | KBD-04 | Slack 21, Guardian 6, Shopify 6 | 33 | axe `focus-order-semantics` (experimental) is mapped to 2.4.3 Focus order; it is really "tabindex without a role" | Map it to a best-practice or 4.1.2 review rule |
+| R2-11 | OTH-03 | 6 sites, 8 | 8 | Orientation-lock review inside empty about:blank or tracking frames: the hidden-frame skip does not cover about:blank or empty frames | Apply the hidden-frame check to about:blank/srcdoc frames; treat `css-orientation-lock` as page-level (top frame only) |
+| R2-12 | STR-06 / STR-13 | Guardian 6 + 2 + 1 | 9 | `region` inside a consent iframe that sits in a dialog; deprecated axe rule `landmark-complementary-is-top-level` on an aside that is not a landmark; axe `frame-tested` for a frame we did scan | Drop `region` in child frames; drop deprecated axe rules; build STR-13 only from our own unscanned frames |
+| R2-13 | MED-01 / MED-02 | Guardian, Harvard, Shopify, Slack | 14 | Caption/autoplay reviews on muted background videos with no controls, or an invisible player with no source | Skip muted videos with no controls (read the `muted` property, not the attribute), and invisible videos or videos with no source |
+| R2-14 | CLR-05 review | Slack skip link | 1 | Background-change comparison on a skip link that was off-screen before focus | Revealed-on-focus counts as the indicator (as in R2-9) |
+| R2-15 | KBD-06 review | W3Schools 2 | 2 | Measured before the site's own scroll-on-focus finished (the link is fully visible about 0.8 s later) | Wait until scroll positions stop changing (about 2 frames or 300 ms) before checking, or re-check once before reporting |
+| R2-16 | Small | various | ~10 | - Stripe "Link" is a product name (LNK-03). - A Guardian `href="#"` action link is flagged for opening a new window (LNK-05). - Stripe FRM-08 ×2: the name comes from the card's own visible title. - Mozilla OTH-02: an empty `<blink>` spacer. - Canada.ca ARIA-05: an empty, collapsed listbox. - NHS/Stripe FRM-11: a placeholder plus a button beside it; a value-showing combobox button. - KBD-05 on an `<iframe>`. - Slack ARIA-03: a duplicate of ARIA-01 on the same element. - A11Y Project STR-12: from an experimental rule. | Individual small fixes: skip href "#"/"javascript:" for LNK-05; text equal to the URL's last part for LNK-03; experimental axe rules as needs review; and so on |
+
+## Correct but noisy (volume)
+- **Repeated causes:** cause grouping now collapses W3Schools CLR-01 (24 single `<`/`>` brackets), Stripe's 23 animated counter digits, NHS's 5 cookie-banner `region` nodes and Slack STR-08 (one id ×18 copies, identical text).
+- **W3Schools STR-06 ×128 and W3C survey ×20:** these pages have no `main`, so every block is reported. Suggestion: one finding "N blocks outside landmarks" when STR-05 also fires.
+- **Canada.ca CLR-03 ×6 and WebAIM ×5:** they pass in reality (90% overlay over a picture; a mostly white image). A possible later improvement is blending a translucent overlay over black and white.
+
+## Correct findings worth promoting
+- **CLR-06 link colour vs text:** react.dev ×4 (2.01:1, no underline) and Stripe ×1 (1:1) are definite failures; promote to definite when below 3:1 with no underline or weight difference.
+- **W3Schools carousel arrows (CLR-03):** they really fail (2.56–2.77).
+- **react.dev "example.com":** reported as 2.59 but really 2.2. Translucent layers between a gradient and the text are not composited.
+
+## Verified correct
+- **CLR-05:** Guardian 60, W3Schools 23, Slack 6, A11Y Project 6, Stripe 5, Shopify 3 buttons.
+- **CLR-01:** W3Schools 52, react.dev 4, Stripe 4.
+- **CLR-04:** 3 (Canada.ca, W3Schools, WebAIM).
+- **CLR-03:** Guardian 32, plus real image/video cases on Stripe, Shopify, Harvard and react.dev.
+- **TGT-01:** Guardian 25, W3Schools 18, W3C survey 2.
+- **KBD-05:** Guardian consent `h1`/`p` ×6.
+- **LNK-05:** 69.
+- **FRM-08:** W3Schools 3, react.dev, Shopify, Stripe 1.
+- **ZM-03:** Guardian 1, W3Schools 1.
+- **ARIA-01/02:** Guardian, Slack, W3Schools.
+- **STR-04/05/02:** all.
+- **IMG-08 reviews:** react.dev 14 and others.
+- **FRM-03.**
+
+## Missed on the W3C BAD survey page
+| Missed barrier | Rule | Automatable? |
+|---|---|---|
+| Nav links with `onfocus="blur()"` throw focus away (F55); also missed in round 1 | KBD-05 | Yes: after `focus()`, check whether `activeElement` is still the element |
+| `<p class="headline">` used as headings; the content has no h2–h6 | STR-12 | Heuristic (needs review) |
+| Data table with no `<th>`; bold `<td>` used as the header row | STR-07 | Heuristic (needs review) |
+| Layout tables using `<th>` (F46); axe `td-has-header` fires but is not mapped to any project rule | STR-07 | Yes (map the axe rule) |
+| `<select onchange="location.href=…">` navigates as soon as it changes (3.2.2) | new | Heuristic |
+| Logo alt of about 350 characters | IMG-03 | Heuristic (needs review) |
+| A Guardian accessible name containing raw HTML (`aria-label="<span …>"`) | ARIA-03 | Yes |

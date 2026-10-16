@@ -214,3 +214,16 @@ describe("multi-page report", () => {
     expect(multiPageReportData([home]).preparedBy).toBe("");
   });
 });
+
+describe("report cause groups", () => {
+  it("gives elements with the same cause the same cause key and a readable label", () => {
+    const same = (n: number) => makeIssue({ ruleId: "CLR-01", fingerprint: `c${n}`, data: { foreground: "#999999", background: "#ffffff", ratio: 2.84 } });
+    const other = makeIssue({ ruleId: "CLR-01", fingerprint: "c9", data: { foreground: "#777777", background: "#ffffff", ratio: 4.47 } });
+    const data = multiPageReportData([makeScanResult({ issues: [same(1), same(2), other] })]);
+    const els = data.pages[0].rules.find((r) => r.code === "CLR-01")?.elements ?? [];
+    expect(els).toHaveLength(3);
+    expect(els[0].cause).toBe(els[1].cause);
+    expect(els[2].cause).not.toBe(els[0].cause);
+    expect(els[0].causeLabel).toBe("Text #999999 on #ffffff · 2.84:1");
+  });
+});

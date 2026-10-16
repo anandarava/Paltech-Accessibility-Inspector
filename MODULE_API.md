@@ -181,6 +181,16 @@ in the scan options, the scanner and the service worker drop them.
 Every rule must skip `ctx.isExtensionNode(el)` and invisible elements, and never leave the page
 modified (restore focus, scroll, injected styles).
 
+## `shared/cause.ts` (pure, unit-tested)
+
+`issueCause(issue): { key, label }` and `groupByCause(items, causeOf)`. The cause of a finding is
+read from its data where the rule records it (colour pair for CLR-*, indicator colours for
+CLR-05/09, `obscuredBy` for KBD-06, the id for STR-08, the text for LNK-03), otherwise it is the
+element kind (`<tag.class>` without generated classes) plus the message with quoted values, ids
+and numbers removed. Used by `IssueList` (rule mode: shared causes become an expandable
+"label × N" row) and by the HTML report (`TemplateElement.cause` / `causeLabel`, rendered as a
+`details.cause` group). Grouping never changes counts, score, ignore or baseline.
+
 ## `shared/color.ts` (pure, unit-tested)
 
 ```ts

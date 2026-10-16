@@ -17,6 +17,7 @@ import type { Category, Issue, ScanResult, Severity } from "@shared/types";
 import { SEVERITY_ORDER } from "@shared/constants";
 import { effectivePassedRules } from "@shared/scoring";
 import { wcagDocsUrl } from "@shared/wcag-map";
+import { issueCause } from "@shared/cause";
 import { contrastRatio, parseColor, suggestPassingColor, toHex, type RGB } from "@shared/color";
 import { toolInfo } from "./json-report";
 import { guidanceFor, SEVERITY_MEANING, type AffectedUsers, type Effort, type RuleGuidance } from "./report-guidance";
@@ -1178,6 +1179,9 @@ interface TemplateElement {
   selector: string;
   html: string;
   technical: Array<[string, string]>;
+  /** Shared-cause key and label (shared/cause.ts): elements with the same key are listed together. */
+  cause: string;
+  causeLabel: string;
 }
 
 interface TemplateRule {
@@ -1267,6 +1271,7 @@ function templateElement(issue: Issue, group: RuleGroup, sharedAdvice: string | 
   technical.push(["Found by", `${sourceLabel(issue.source)}${axeRule ? ` (${axeRule})` : ""}`]);
   technical.push(["Fingerprint", `${issue.fingerprint} (stable id used for ignore and baseline)`]);
 
+  const cause = issueCause(issue);
   return {
     element: describeElementText(issue),
     finding,
@@ -1279,6 +1284,8 @@ function templateElement(issue: Issue, group: RuleGroup, sharedAdvice: string | 
     selector: issue.element?.selector ?? "",
     html,
     technical,
+    cause: cause.key,
+    causeLabel: cause.label,
   };
 }
 
