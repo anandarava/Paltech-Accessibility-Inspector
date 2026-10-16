@@ -43,6 +43,8 @@
  *  - Screen-reader-only text (1x1 clipped) is skipped because it is not seen,
  *    and so is text pushed out of its own `overflow: hidden` box (image
  *    replacement) or placed above / left of the page (see isTextOutOfSight).
+ *  - Text positioned over a container whose image has not loaded yet (a lazy
+ *    image below the fold) is CLR-03, not measured against the page colour.
  *  - Images and video count as "behind the text" only with the part an
  *    `overflow: hidden` ancestor leaves visible (see mediaRectBehind), and
  *    only when they are inside the text's nearest opaque box: media outside
@@ -520,6 +522,36 @@ function containsDeep(outer: Element, inner: Element): boolean {
   return false;
 }
 
+/**
+ * An image the text is laid over that has not loaded yet (a lazy image below
+ * the fold): it has no size at scan time, so the text would be measured
+ * against the page colour although a photo will be behind it. Recognised when
+ * the text, or an ancestor up to three levels, is positioned (absolute/fixed)
+ * and one of the three boxes around it holds an image that is not loaded. The text is then reported for review as text over an image.
+ */
+function unloadedImageUnder(el: Element): Element | null {
+  const view = el.ownerDocument.defaultView ?? window;
+  let node: Element | null = el;
+  for (let level = 0; node && level < 4; level++, node = node.parentElement) {
+    const pos = view.getComputedStyle(node).position;
+    if (pos !== "absolute" && pos !== "fixed") continue;
+    // The image may sit a few levels above the positioned box (caption > wrap > card). Text on
+    // its own opaque box (a white card) is not over an image outside that box.
+    const opaque = nearestOpaqueBox(el);
+    let container: Element | null = node.parentElement;
+    for (let up = 0; container && up < 3; up++, container = container.parentElement) {
+      for (const img of Array.from(container.querySelectorAll("img"))) {
+        if (node.contains(img)) continue;
+        const image = img as HTMLImageElement;
+        if (image.complete && image.naturalWidth > 0 && image.getBoundingClientRect().height > 0) continue;
+        if (!opaque || containsDeep(opaque, img)) return img;
+      }
+    }
+    return null;
+  }
+  return null;
+}
+
 function overlapsMedia(group: TextGroup, rect: Rect, media: MediaBox[]): Element | null {
   const area = (rect.right - rect.left) * (rect.bottom - rect.top);
   if (area <= 0) return null;
@@ -782,7 +814,7 @@ async function checkText(ctx: RuleContext, findings: RuleFinding[], cache: Backg
       const clipText = cs.webkitBackgroundClip === "text" || (cs as unknown as { backgroundClip?: string }).backgroundClip === "text";
       const rect = textRect(group);
       if (rect && isTextOutOfSight(rect, el, view)) continue;
-      const mediaBehind = rect ? overlapsMedia(group, rect, media) : null;
+      const mediaBehind = (rect ? overlapsMedia(group, rect, media) : null) ?? unloadedImageUnder(el);
       // Background images that turn out to be judgeable: icons beside the text, or gradients
       // whose colour stops can each be measured. null = an image really is behind the text.
       const gradient = bg.hasImage && !clipText && !mediaBehind ? await judgeBackgroundImages(group, bg, cache) : null;

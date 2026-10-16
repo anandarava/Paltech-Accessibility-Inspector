@@ -296,15 +296,44 @@ function isSkipLink(el: Element): boolean {
  *  - `label-content-name-mismatch` (experimental) on a control with no visible
  *    text: the "label" it compares is hidden text (a 0x0, aria-hidden badge),
  *    so there is no visible label to mismatch.
+ *  - deprecated axe rules, and `frame-tested` (frames are scanned separately).
+ *  - `video-caption` / `no-autoplay-audio` on a video nobody hears: muted
+ *    with no controls and no player buttons around it (a background loop), or
+ *    invisible.
  *  - `region` on a skip link: axe exempts a skip link only when it is the first
  *    link on the page, and cookie banners often come first. A link to a
  *    landmark is a bypass mechanism, not content outside landmarks.
  */
-function isKnownAxeMisfire(axeRuleId: string, element: Element | null): boolean {
+/**
+ * A video that cannot play sound to anyone: muted with no controls to unmute
+ * (a background loop), or invisible. Read the `muted` property: frameworks set
+ * it without the attribute. A video without a source is kept: players such as
+ * JW Player load their source only when played.
+ */
+function isSilentVideo(el: Element): boolean {
+  if (!(el instanceof HTMLVideoElement)) return false;
+  const cs = (el.ownerDocument.defaultView ?? window).getComputedStyle(el);
+  if (cs.opacity === "0" || cs.visibility === "hidden") return true;
+  if (!el.muted || el.controls) return false;
+  // A player with its own buttons (JW Player, YouTube-style bars) can be unmuted: keep it.
+  let box: Element | null = el.parentElement;
+  for (let i = 0; box && i < 3; i++, box = box.parentElement) {
+    if (box.querySelector("button, [role='button'], [role='slider']")) return false;
+  }
+  return true;
+}
+
+function isKnownAxeMisfire(axeRuleId: string, element: Element | null, tags: string[] = []): boolean {
+  // Deprecated axe rules describe outdated requirements (landmark-complementary-is-top-level).
+  if (tags.includes("deprecated")) return true;
+  // frame-tested only says axe did not look inside a frame; this extension scans frames itself
+  // and lists the ones it could not reach as unscanned frames.
+  if (axeRuleId === "frame-tested") return true;
   if (!element) return false;
   try {
     if (axeRuleId === "label-content-name-mismatch") return !hasShownText(element);
     if (axeRuleId === "region") return isSkipLink(element);
+    if (axeRuleId === "video-caption" || axeRuleId === "no-autoplay-audio") return isSilentVideo(element);
   } catch {
     // keep the finding
   }
@@ -398,7 +427,9 @@ function mapAxeRule(result: axe.Result, rulesFile: RulesFile, incomplete: boolea
 
   if (def) {
     const wcag = wcagForMappedAxeResult(ruleId, def, tags, firstCriterion);
-    const type: CheckType = def.type === "Semi" || incomplete ? "Semi" : "Auto";
+    // Experimental axe rules (p-as-heading, table-fake-caption, label-content-name-mismatch) are
+    // heuristics still being tuned upstream: their failures go to Needs review.
+    const type: CheckType = def.type === "Semi" || incomplete || tags.includes("experimental") ? "Semi" : "Auto";
     // When the level comes from the axe tags rather than the definition, the
     // definition's category/severity describe the WCAG failure, not this hit:
     // fall back to what axe says about this particular rule.
@@ -432,7 +463,7 @@ function mapAxeRule(result: axe.Result, rulesFile: RulesFile, incomplete: boolea
     title: collapse(result.help) || result.id,
     category,
     wcag,
-    type: incomplete ? "Semi" : "Auto",
+    type: incomplete || tags.includes("experimental") ? "Semi" : "Auto",
     severity: severityFromImpact(result.impact),
     docsUrl: (wcag.criterion && wcagDocsUrl(wcag.criterion)) || result.helpUrl,
     def: undefined,
@@ -449,7 +480,7 @@ function normalizeAxeGroup(results: axe.Result[], rulesFile: RulesFile, incomple
       } catch {
         element = null;
       }
-      if (isKnownAxeMisfire(result.id, element)) continue;
+      if (isKnownAxeMisfire(result.id, element, result.tags ?? [])) continue;
       const verdict: ReviewVerdict = incomplete ? reviewVerdict(result, node, element, confirmedRoles) : "keep";
       if (verdict === "drop") continue;
       const settled = verdict === "definite";

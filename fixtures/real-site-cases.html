@@ -54,6 +54,11 @@
     .stage .white-card { position: absolute; left: 10px; top: 10px; width: 160px; padding: 8px; background: #ffffff; color: #333333; }
     .stage .own-fill { position: absolute; left: 190px; top: 10px; background: #0e0e0e; color: #ffffff; border: 0; padding: 6px; }
     .stage .bare { position: absolute; left: 190px; top: 70px; margin: 0; color: #ffffff; }
+    /* NPR: a caption over a lazy image that has not loaded (no src yet, 0 height). */
+    .lazy-card { position: relative; width: 200px; }
+    .lazy-card img { width: 100%; }
+    .lazy-card .cap-wrap { position: absolute; right: 4px; bottom: 4px; }
+    #lazy-caption { color: #ffffff; margin: 0; }
     /* Harvard: a hover underline grown with background-size (0 wide until hover). Not the background. */
     #underline-grad { color: #1e1e1e; background: linear-gradient(currentColor, currentColor) no-repeat 0 100% / 0px 2px; }
     /* Shopify: gradient clipped to the text; the real backdrop is the white page. */
@@ -155,6 +160,7 @@
       <p><span id="underline-grad">Dark text with an underline gradient</span></p>
       <div class="clip-wrap"><p id="clip-grad">Dark text under a clip-text gradient</p></div>
       <div class="stage"><canvas width="360" height="120"></canvas><div class="white-card" id="on-card">Card text over a photo</div><button type="button" class="own-fill" id="on-button">Search</button><p class="bare" id="on-photo">Bare text</p></div>
+      <div class="lazy-card"><img alt="" loading="lazy" data-src="later.jpg"><div><div class="cap-wrap"><p id="lazy-caption">i</p></div></div></div>
       <p id="grad-mixed">Pale text on a blue gradient</p>
     </section>
 

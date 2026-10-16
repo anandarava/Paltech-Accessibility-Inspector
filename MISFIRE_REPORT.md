@@ -588,3 +588,21 @@ None of the fixed patterns misfired on these sites.
 | Python | 5 | 5 | Real `<a>` without href kept |
 
 **Caught while testing:** a first version that accepted any nearby form control removed real Mars findings ("Add Another Trip", "Add A Traveler"). Narrowed to range sliders and hit-testing before committing.
+
+## B2 and A4–A7 fixed (2026-10-16)
+
+| # | Fix | Result on the live sites |
+|---|---|---|
+| B2 | Text positioned over a card whose image has not loaded yet (lazy, 0 height) goes to review as text over an image, unless the text has its own opaque box | NPR caption "i": 16 false CLR-01 → 0 (now 17 CLR-03 review); NPR CLR-01 22 → 5 |
+| A4 | axe `focus-order-semantics` (experimental: "tabindex without a role") is no longer mapped to 2.4.3 Focus order, so it no longer runs | KBD-04: Slack 21 → 0, Guardian 6 → 0, Shopify 6 → 0, Figma 1 → 0 |
+| A5 | axe `frame-tested` is dropped (frames are scanned by the extension; unreachable ones are listed as unscanned frames) | STR-13: Figma 10 → 0, Atlassian 6 → 0, Guardian 1 → 0 |
+| A6 | Experimental axe rules go to Needs review; deprecated axe rules are dropped | Experimental definite findings: A11Y Project 1, Atlassian 1, Shopify 1, W3C survey 3 → 0 |
+| A7 | `video-caption` / `no-autoplay-audio` dropped for a video nobody hears: muted with no native controls and no player buttons around it, or invisible | Atlassian 4 → 0, Slack 7 → 2. NPR's JW Player video is kept. |
+
+**Caught and corrected while testing:**
+1. A first version treated videos with no source as silent. That removed NPR's real JW Player videos, which load their source only on play, so the rule was removed.
+2. The lazy-image check first missed NPR, because the image is in a sibling box. A stricter version then flagged a white card in the test page. The final rule uses the text's own opaque box.
+
+**Note:** axe's `audio-caption` is marked deprecated by axe, so NPR's audio-player review (MED-01) is no longer listed.
+
+**Not solved:** Guardian MED 2 → 4 and Shopify still 3. These are videos whose page has player buttons near them; they stay in review.

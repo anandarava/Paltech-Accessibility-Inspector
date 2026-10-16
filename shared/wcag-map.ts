@@ -150,7 +150,6 @@ export const AXE_TO_RULE: Record<string, string> = {
   "autocomplete-valid": "FRM-07",
   "label-content-name-mismatch": "FRM-08",
   "tabindex": "KBD-03",
-  "focus-order-semantics": "KBD-04",
   "bypass": "KBD-07",
   "skip-link": "KBD-07",
   "scrollable-region-focusable": "KBD-01",
