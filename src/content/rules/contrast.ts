@@ -43,6 +43,10 @@
  *  - Screen-reader-only text (1x1 clipped) is skipped because it is not seen,
  *    and so is text pushed out of its own `overflow: hidden` box (image
  *    replacement) or placed above / left of the page (see isTextOutOfSight).
+ *  - A fill drawn by an absolutely positioned ::before/::after behind the
+ *    text is its background; a screen-reader-only clip on an ancestor hides
+ *    the text; a gradient transparent except its last 3px is an underline;
+ *    off-screen text in a card fading in (opacity transition) is review.
  *  - Text positioned over a container whose image has not loaded yet (a lazy
  *    image below the fold) is CLR-03, not measured against the page colour.
  *  - Images and video count as "behind the text" only with the part an
@@ -309,6 +313,16 @@ export function isRendered(el: Element): boolean {
 
 /** Screen-reader-only text (clip/clip-path/1px boxes) is not seen and must not be measured. */
 function isVisuallyHiddenText(el: Element, cs: CSSStyleDeclaration): boolean {
+  if (hiddenBySelf(el, cs)) return true;
+  // The screen-reader-only pattern is often on a wrapper (`<div class="sr-only"><span>…`).
+  const view = el.ownerDocument.defaultView ?? window;
+  for (let a = el.parentElement; a && a !== el.ownerDocument.body; a = a.parentElement) {
+    if (hiddenBySelf(a, view.getComputedStyle(a))) return true;
+  }
+  return false;
+}
+
+function hiddenBySelf(el: Element, cs: CSSStyleDeclaration): boolean {
   const clip = cs.clip;
   if (clip && /rect\(\s*0(px)?[,\s]+0(px)?[,\s]+0(px)?[,\s]+0(px)?\s*\)/.test(clip) && cs.position === "absolute") return true;
   const clipPath = cs.clipPath;
@@ -316,6 +330,47 @@ function isVisuallyHiddenText(el: Element, cs: CSSStyleDeclaration): boolean {
   if (cs.overflow === "hidden" || cs.overflowX === "hidden" || cs.overflowY === "hidden") {
     const rect = el.getBoundingClientRect();
     if (rect.width <= 1 && rect.height <= 1) return true;
+  }
+  return false;
+}
+
+/**
+ * Opaque fill painted by an absolutely positioned ::before/::after that covers
+ * the text (a button whose colour is drawn by a pseudo-element behind its
+ * label, Duolingo's buttons). Checked on the text element and two ancestors.
+ * Null when there is none.
+ */
+function pseudoBackdrop(el: Element, text: Rect | null): RGB | null {
+  if (!text) return null;
+  const view = el.ownerDocument.defaultView ?? window;
+  let node: Element | null = el;
+  for (let level = 0; node && level < 3; level++, node = node.parentElement) {
+    const box = node.getBoundingClientRect();
+    for (const pseudo of ["::before", "::after"]) {
+      const cs = view.getComputedStyle(node, pseudo);
+      if (cs.content === "none" || cs.content === "normal" || cs.display === "none") continue;
+      if (cs.position !== "absolute") continue;
+      const c = parseColor(cs.backgroundColor);
+      if (!c || c[3] < 0.999 || readOpacity(cs) < 0.999 || cs.backgroundImage !== "none") continue;
+      // The pseudo-element's box from its offsets and size; it must cover the text.
+      const left = box.left + (parseFloat(cs.left) || 0);
+      const top = box.top + (parseFloat(cs.top) || 0);
+      const w = parseFloat(cs.width);
+      const h = parseFloat(cs.height);
+      if (left <= text.left + 1 && top <= text.top + 1 && left + w >= text.right - 1 && top + h >= text.bottom - 1) return [c[0], c[1], c[2]];
+    }
+    // Stop at the first box that paints its own opaque background.
+    const own = parseColor(view.getComputedStyle(node).backgroundColor);
+    if (own && own[3] >= 0.999) return null;
+  }
+  return null;
+}
+
+/** An ancestor that is faded and animating its opacity (a card that fades in when scrolled to). */
+function isFadingIn(el: Element, view: Window): boolean {
+  for (let a: Element | null = el; a && a !== el.ownerDocument.body; a = a.parentElement) {
+    const cs = view.getComputedStyle(a);
+    if (readOpacity(cs) < 0.999 && (/opacity|all/.test(cs.transitionProperty) && parseFloat(cs.transitionDuration) > 0 || cs.animationName !== "none")) return true;
   }
   return false;
 }
@@ -650,6 +705,9 @@ async function imageCoversText(layerEl: Element, index: number, image: string, l
     const items = splitTopLevel(list);
     return items.length ? (items[index % items.length] ?? "") : "";
   };
+  if (gradient && /(transparent|rgba\(\s*\d+,\s*\d+,\s*\d+,\s*0\s*\))\s+calc\(\s*100%\s*-\s*[0-3](\.\d+)?px\s*\)/i.test(image)) {
+    return false; // transparent except a line of at most 3px at the end: an underline
+  }
   if (gradient) {
     // A gradient sized to nothing, or to a strip much thinner than a line (a hover underline,
     // also on text wrapped over several lines), is decoration, not the background.
@@ -814,11 +872,13 @@ async function checkText(ctx: RuleContext, findings: RuleFinding[], cache: Backg
       const clipText = cs.webkitBackgroundClip === "text" || (cs as unknown as { backgroundClip?: string }).backgroundClip === "text";
       const rect = textRect(group);
       if (rect && isTextOutOfSight(rect, el, view)) continue;
-      const mediaBehind = (rect ? overlapsMedia(group, rect, media) : null) ?? unloadedImageUnder(el);
+      // A fill drawn by ::before/::after behind the text is the background (it covers any image).
+      const pseudoBg = pseudoBackdrop(el, rect);
+      const mediaBehind = pseudoBg ? null : ((rect ? overlapsMedia(group, rect, media) : null) ?? unloadedImageUnder(el));
       // Background images that turn out to be judgeable: icons beside the text, or gradients
       // whose colour stops can each be measured. null = an image really is behind the text.
-      const gradient = bg.hasImage && !clipText && !mediaBehind ? await judgeBackgroundImages(group, bg, cache) : null;
-      if ((bg.hasImage && gradient === null) || clipText || mediaBehind) {
+      const gradient = bg.hasImage && !clipText && !mediaBehind && !pseudoBg ? await judgeBackgroundImages(group, bg, cache) : null;
+      if ((bg.hasImage && gradient === null && !pseudoBg) || clipText || mediaBehind) {
         const reason = mediaBehind
           ? `sits over a <${mediaBehind.tagName.toLowerCase()}> element`
           : clipText
@@ -848,10 +908,10 @@ async function checkText(ctx: RuleContext, findings: RuleFinding[], cache: Backg
         continue;
       }
 
-      let fgOpaque = paintOver(bg, fg);
-      let backdrop = bg.color;
+      let fgOpaque = pseudoBg ? blend(fg, pseudoBg) : paintOver(bg, fg);
+      let backdrop = pseudoBg ?? bg.color;
       let gradientNote = "";
-      let suggestAgainst = bg.color;
+      let suggestAgainst = backdrop;
       if (gradient && gradient.length > 0) {
         // A gradient behind the text: measure against each of its colours.
         const measured = gradient.map((b) => {
@@ -891,12 +951,16 @@ async function checkText(ctx: RuleContext, findings: RuleFinding[], cache: Backg
       const def = large ? LARGE : PRIMARY;
       const fgHex = toHex(fgOpaque);
       const bgHex = toHex(backdrop);
-      const inferredCanvas = inferredCanvasNote(bg);
+      const inferredCanvas = pseudoBg ? "" : inferredCanvasNote(bg);
+      // A faded card that is animating its opacity is measured mid-fade (scroll-reveal):
+      // off screen, it has not reached its final colour yet.
+      const midFade = bg.cumulativeOpacity < 0.999 && !!rect && (rect.bottom < 0 || rect.top > view.innerHeight) && isFadingIn(el, view);
+      const fadeNote = midFade ? " The text is in a section that fades in when scrolled to and was measured part-way; scroll to it and check again." : "";
       findings.push({
         element: el,
-        type: inferredCanvas ? "Semi" : def.type,
+        type: inferredCanvas || midFade ? "Semi" : def.type,
         severity: def.severity ?? "Serious",
-        description: `Text "${snippet}" has a contrast ratio of ${ratio}:1 (${fgHex} on ${bgHex}); ${required}:1 is required for ${large ? "large" : "normal"} text (${Math.round(fontSize * 100) / 100}px, weight ${fontWeight}).${gradientNote}${inferredCanvas}`,
+        description: `Text "${snippet}" has a contrast ratio of ${ratio}:1 (${fgHex} on ${bgHex}); ${required}:1 is required for ${large ? "large" : "normal"} text (${Math.round(fontSize * 100) / 100}px, weight ${fontWeight}).${gradientNote}${inferredCanvas}${fadeNote}`,
         data: {
           ruleId: def.id,
           foreground: fgHex,

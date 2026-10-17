@@ -219,6 +219,7 @@ export const rule: CustomRule = {
           continue;
         }
         if (!name || !hasLabelSource(control)) continue; // no label at all: FRM-01
+        if (control.localName === "button" && collapse(control.textContent)) continue; // a value-showing button (role=combobox) shows its text
         if (name === collapse(control.getAttribute("placeholder")) || name === collapse(control.getAttribute("aria-placeholder"))) continue; // FRM-02
         if (name === collapse(control.getAttribute("title"))) continue; // title-only: axe label-title-only (FRM-02)
         if (hasShownLabel(control, ctx)) continue;

@@ -494,6 +494,8 @@ test.describe("PalTech A11y Inspector extension", () => {
       for (const id of ["auto-color", "bg-plus-ring", "grow-underline", "card-link", "slide-skip"]) expect(rulesFor(id), id).toEqual([]);
       // Rings switched on by the first key press (Spotify) are found after a simulated Tab.
       expect(rulesFor("after-key")).toEqual([]);
+      // A ring added a frame after focus is found.
+      expect(rulesFor("late-ring")).toEqual([]);
       // The previous element's :focus-within style is not part of the next element's unfocused state.
       expect(rulesFor("fw-button")).toEqual([]);
     } finally {
@@ -593,6 +595,14 @@ test.describe("PalTech A11y Inspector extension", () => {
       expect(rulesOn("on-photo").filter((r) => r.startsWith("CLR"))).toEqual(["CLR-03"]);
       // A caption over a lazy image that has not loaded is text over an image, not white on white.
       expect(rulesOn("lazy-caption").filter((r) => r.startsWith("CLR"))).toEqual(["CLR-03"]);
+      // ::before fills are the background: white passes, green under white text fails.
+      expect(rulesOn("pseudo-pass").filter((r) => r.startsWith("CLR"))).toEqual([]);
+      expect(rulesOn("pseudo-fail").filter((r) => r.startsWith("CLR"))).toEqual(["CLR-01"]);
+      expect(rulesOn("sr-inner")).toEqual([]);
+      expect(rulesOn("hardstop").filter((r) => r.startsWith("CLR"))).toEqual([]);
+      // A small link inside a whole-card click layer is listed for review, not as a failure.
+      expect(result.issues.filter((i) => idOf(i) === "card-title" && i.ruleId === "TGT-01").map((i) => i.type)).toEqual(["Semi"]);
+      expect(rulesOn("hash-blank")).not.toContain("LNK-05");
       expect(rulesOn("grad-mixed").filter((r) => r.startsWith("CLR"))).toEqual(["CLR-03"]);
       // Citation links in <sup> and back-links in <span> sit in text: the inline exception applies.
       for (const id of ["cite-1", "cite-2", "back-1", "back-2"]) expect(rulesOn(id).filter((r) => r.startsWith("TGT"))).toEqual([]);

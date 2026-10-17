@@ -201,7 +201,9 @@ export const rule: CustomRule = {
 
         // --- LNK-05 ----------------------------------------------------------
         const target = (link.getAttribute("target") ?? "").trim().toLowerCase();
-        if (target === "_blank") {
+        const hrefValue = (link.getAttribute("href") ?? "").trim().toLowerCase();
+        // href="#" or javascript: runs script in the page; target=_blank opens nothing.
+        if (target === "_blank" && hrefValue !== "#" && !hrefValue.startsWith("javascript:")) {
           const text = warningText(link, doc);
           if (!NEW_WINDOW_RE.test(text)) {
             findings.push({

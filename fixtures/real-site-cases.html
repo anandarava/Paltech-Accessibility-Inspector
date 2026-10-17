@@ -59,6 +59,19 @@
     .lazy-card img { width: 100%; }
     .lazy-card .cap-wrap { position: absolute; right: 4px; bottom: 4px; }
     #lazy-caption { color: #ffffff; margin: 0; }
+    /* Duolingo: button fills drawn by ::before behind the label. */
+    .pbtn { position: relative; display: inline-block; padding: 6px 10px; color: #000437; z-index: 0; margin: 4px; }
+    .pbtn::before { content: ""; position: absolute; inset: 0; z-index: -1; }
+    #pseudo-pass::before { background: #ffffff; }
+    #pseudo-fail { color: #ffffff; }
+    #pseudo-fail::before { background: #58cc02; }
+    .navy { background: #100f3e; padding: 6px; }
+    /* NPR: screen-reader-only wrapper; the text inside is not seen. */
+    .sr-wrap { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+    #sr-inner { color: #eeeeee; }
+    /* MIT: a hard-stop 1px underline gradient on a dark band. */
+    .maroon { background: #620011; padding: 6px; }
+    #hardstop { color: #ffffff; background: linear-gradient(transparent calc(100% - 1px), #ff1423 0); }
     /* Harvard: a hover underline grown with background-size (0 wide until hover). Not the background. */
     #underline-grad { color: #1e1e1e; background: linear-gradient(currentColor, currentColor) no-repeat 0 100% / 0px 2px; }
     /* Shopify: gradient clipped to the text; the real backdrop is the white page. */
@@ -123,6 +136,10 @@
       <div class="kcard"><div class="media" id="k-overlay-media"></div><a class="overlay-link" href="#story" aria-label="Story"></a><p>Story title</p></div>
       <!-- A11Y Project: onclick goes where the card's own link goes. -->
       <div class="kcard"><div class="media" id="k-same-href" onclick="location.href='#spotlight'"></div><a href="#spotlight">Meet Frank</a></div>
+      <!-- Spotify: a small title link inside a whole-card click layer. -->
+      <div class="kcard" style="height:60px"><div role="button" tabindex="0" style="position:absolute;inset:0" id="card-layer"></div><a href="#album" id="card-title" style="position:relative;font-size:12px;line-height:14px;display:inline-block">Album</a></div>
+      <!-- Guardian consent: an href="#" action with target=_blank opens no window. -->
+      <a href="#" target="_blank" id="hash-blank">partners</a>
       <!-- Duolingo: an empty handler does nothing. -->
       <div id="k-empty" onclick="">Empty handler</div>
       <!-- Still reported: a clickable div with no keyboard equivalent. -->
@@ -161,6 +178,9 @@
       <div class="clip-wrap"><p id="clip-grad">Dark text under a clip-text gradient</p></div>
       <div class="stage"><canvas width="360" height="120"></canvas><div class="white-card" id="on-card">Card text over a photo</div><button type="button" class="own-fill" id="on-button">Search</button><p class="bare" id="on-photo">Bare text</p></div>
       <div class="lazy-card"><img alt="" loading="lazy" data-src="later.jpg"><div><div class="cap-wrap"><p id="lazy-caption">i</p></div></div></div>
+      <div class="navy"><span class="pbtn" id="pseudo-pass">Try 1 week free</span> <span class="pbtn" id="pseudo-fail">Get started</span></div>
+      <div class="sr-wrap"><span id="sr-inner">Volume 90%</span></div>
+      <p class="maroon"><a id="hardstop" href="#mit">Hard-stop underline link</a></p>
       <p id="grad-mixed">Pale text on a blue gradient</p>
     </section>
 

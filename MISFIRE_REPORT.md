@@ -606,3 +606,25 @@ None of the fixed patterns misfired on these sites.
 **Note:** axe's `audio-caption` is marked deprecated by axe, so NPR's audio-player review (MED-01) is no longer listed.
 
 **Not solved:** Guardian MED 2 → 4 and Shopify still 3. These are videos whose page has player buttons near them; they stay in review.
+
+## Pending misfires batch (2026-10-17)
+
+| # | Fix | Result on the live sites |
+|---|---|---|
+| B3 | A small target inside a larger target (whole-card click layer) is Needs review with "sits inside a larger target" wording | Spotify TGT-01: 10 definite → 0 (8 now review) |
+| B4 | A fill drawn by an absolutely positioned `::before`/`::after` that covers the text is its background (and hides any image) | Duolingo: "Try 1 week free" passes (was 1.08:1); "Get started" now correct, 2.08:1 (was "1:1 white on white"); badge CLR-03 removed |
+| B5 | Cross-origin frames: focus something inside the frame first; wording says "embedded frame", not "side panel" | WHO 3 → 2 (with correct wording) |
+| B6 | Off-screen text in a card fading in (opacity transition) is review with a note | NPR scroll-reveal cards |
+| B7 | Screen-reader-only clip on an ancestor; gradient transparent except its last ≤3px is an underline | NPR "Volume 90%"; MIT hard-stop underline links 2 → 0 |
+| B8 | When nothing changes on focus, wait one frame and look again | Atlassian KBD-05 3 → 1 |
+| C | LNK-05 skips `href="#"`/`javascript:`; KBD-05 skips `<iframe>`; FRM-11 skips value-showing buttons; empty `<blink>`/`<marquee>` dropped; empty, collapsed listbox (`aria-required-children`) dropped | Guardian LNK-05 3 → 2, Mozilla OTH-02 1 → 0, Canada.ca ARIA-05 1 → 0 |
+| Test | The focus check left an empty `style=""` on elements it measured; it now removes it | The "scanning does not leave the page modified" e2e test passes for the first time (31/31) |
+
+**Real findings kept:** Duolingo KBD-05 120, WHO CLR-05 14, MIT TGT-01 10.
+
+**Not done:**
+- A8: translucent overlays and solid gradient layers over images.
+- B7c: tab pill drawn on a pointer-events:none sibling (Atlassian).
+- B9: rotating headline word (Notion).
+- Stripe card ring, W3Schools KBD-06 ×2, Slack duplicate ARIA-03 review.
+- Missed-issue checks (section D).

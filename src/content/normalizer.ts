@@ -334,6 +334,10 @@ function isKnownAxeMisfire(axeRuleId: string, element: Element | null, tags: str
     if (axeRuleId === "label-content-name-mismatch") return !hasShownText(element);
     if (axeRuleId === "region") return isSkipLink(element);
     if (axeRuleId === "video-caption" || axeRuleId === "no-autoplay-audio") return isSilentVideo(element);
+    // <blink>/<marquee> with nothing in them (a spacer) blink nothing.
+    if (axeRuleId === "blink" || axeRuleId === "marquee") return !/\S/.test(element.textContent ?? "") && !element.querySelector("img, svg");
+    // An empty popup list that is not open yet (a combobox's suggestions): its children come later.
+    if (axeRuleId === "aria-required-children") return element.children.length === 0 && element.getBoundingClientRect().height === 0;
   } catch {
     // keep the finding
   }

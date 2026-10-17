@@ -270,11 +270,18 @@ export const rule: CustomRule = {
 
         const w = Math.round(target.width * 10) / 10;
         const h = Math.round(target.height * 10) / 10;
+        // The neighbour is a larger target whose box contains this one (a whole-card click
+        // layer under the card's title link): a near miss lands on the card, which usually
+        // does the same. Listed for review rather than as a failure.
+        const n = nearest as Target;
+        const insideLarger = n.left <= target.left + 1 && n.top <= target.top + 1 && n.right >= target.right - 1 && n.bottom >= target.bottom - 1;
         findings.push({
           element: target.element,
-          type: PRIMARY.type,
+          type: insideLarger ? "Semi" : PRIMARY.type,
           severity: PRIMARY.severity ?? "Moderate",
-          description: `This ${target.element.tagName.toLowerCase()} target is ${w}x${h}px (minimum ${minSize}x${minSize}px) and a ${minSize}px circle centred on it intersects the nearest other target (centre ${Math.round(nearestDist)}px away), so the spacing exception does not apply.`,
+          description: insideLarger
+            ? `This ${target.element.tagName.toLowerCase()} target is ${w}x${h}px (minimum ${minSize}x${minSize}px) and sits inside a larger target (<${n.element.tagName.toLowerCase()}>, ${Math.round(n.right - n.left)}x${Math.round(n.bottom - n.top)}px). If a near miss on the larger target does the same thing, this is fine; otherwise make this target at least ${minSize}x${minSize}px.`
+            : `This ${target.element.tagName.toLowerCase()} target is ${w}x${h}px (minimum ${minSize}x${minSize}px) and a ${minSize}px circle centred on it intersects the nearest other target (centre ${Math.round(nearestDist)}px away), so the spacing exception does not apply.`,
           data: {
             ruleId: PRIMARY.id,
             width: w,

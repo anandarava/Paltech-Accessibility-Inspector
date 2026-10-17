@@ -50,6 +50,9 @@
  *    that ring is one more part. A strong background change next to a ring
  *    counts as a part too. An element that comes into view only when focused
  *    (a skip link) has appearing as its indicator.
+ *  - When nothing changes, the check waits one frame and looks again: some
+ *    sites add the indicator just after focus. `<iframe>` elements are not
+ *    checked (focus moves into the frame, which is scanned on its own).
  *  - Pages that show focus rings only after a key press are put in keyboard
  *    mode with one simulated Tab keydown/keyup before measuring (it does not
  *    move focus). The page stays in keyboard mode after the scan, as it would
@@ -338,7 +341,8 @@ export const rule: CustomRule = {
     try {
       focusables = getFocusableElements(ctx.root).filter((el) => {
         try {
-          return !isExtensionElement(el, ctx) && ctx.isVisible(el) && !el.matches(":disabled");
+          // An <iframe> passes focus into its own document, which is scanned on its own.
+          return !isExtensionElement(el, ctx) && ctx.isVisible(el) && !el.matches(":disabled") && el.localName !== "iframe";
         } catch {
           return false;
         }
@@ -350,11 +354,22 @@ export const rule: CustomRule = {
     // Without focus Chrome draws no focus styles, so every element would look unchanged.
     // The service worker emulates a focused page during scans; if that was not possible
     // (no debugger permission, the debugging bar was cancelled), say so once instead.
+    // A child frame gets focus only when something inside it is focused: try that first.
+    const isFrame = view !== view.top;
+    if (focusables.length > 0 && !doc.hasFocus() && isFrame) {
+      try {
+        focusables[0]?.focus({ preventScroll: true });
+      } catch {
+        // ignore
+      }
+    }
     if (focusables.length > 0 && !doc.hasFocus()) {
       findings.push({
         element: doc.body ?? doc.documentElement,
         type: "Semi",
-        description: "Focus indicators could not be checked: the page did not have keyboard focus during the scan (for example because the side panel had it), and browsers draw no focus styles on a page without focus. Tab through the page manually and confirm every control shows a visible focus indicator.",
+        description: isFrame
+          ? "Focus indicators inside this embedded frame could not be checked: the frame did not receive keyboard focus during the scan (embedded third-party frames often cannot be focused from the page). Tab into the frame manually and confirm its controls show a visible focus indicator."
+          : "Focus indicators could not be checked: the page did not have keyboard focus during the scan (for example because the side panel had it), and browsers draw no focus styles on a page without focus. Tab through the page manually and confirm every control shows a visible focus indicator.",
         data: { ruleId: PRIMARY.id, pageFocused: false, skipped: true },
         fix: { summary: "Run the Keyboard Test or tab through the page manually to verify focus visibility." },
       });
@@ -403,6 +418,7 @@ export const rule: CustomRule = {
           const styleDecl = (el as HTMLElement).style;
           const prevTransition = styleDecl.getPropertyValue("transition");
           const prevPriority = styleDecl.getPropertyPriority("transition");
+          const hadStyleAttr = el.hasAttribute("style");
           let before: StyleSnapshot;
           let after: StyleSnapshot;
           let placement: { rect: DOMRect; clipped: boolean; opacity: number };
@@ -424,6 +440,8 @@ export const rule: CustomRule = {
           } finally {
             if (prevTransition) styleDecl.setProperty("transition", prevTransition, prevPriority);
             else styleDecl.removeProperty("transition");
+            // Leave no empty style="" behind on an element that had no style attribute.
+            if (!hadStyleAttr && el.getAttribute("style") === "") el.removeAttribute("style");
           }
           const focusVisible = (() => {
             try {
@@ -440,6 +458,15 @@ export const rule: CustomRule = {
 
           if (hiddenUntilFocused(el, view, placement)) continue; // appears only when focused: that is the indicator
           if (diff.length === 0 && indicatorElsewhere(el, view)) continue; // drawn on a pseudo-element, ancestor, child or sibling
+          if (diff.length === 0) {
+            // Some sites add the indicator a frame after focus (React swapping a class, a script
+            // setting a style): wait one frame, then look again on the element and around it.
+            await new Promise<void>((resolve) => view.requestAnimationFrame(() => setTimeout(resolve, 0)));
+            if (doc.activeElement !== el) el.focus({ preventScroll: true, focusVisible: true } as FocusOptions);
+            const later = snapshot(view.getComputedStyle(el));
+            if (changedKeys(before, later).some((k) => showsOutline || outlineVisible(later) || !k.startsWith("outline"))) continue;
+            if (indicatorElsewhere(el, view)) continue;
+          }
           if (diff.length === 0) {
             findings.push({
               element: el,
