@@ -628,3 +628,33 @@ None of the fixed patterns misfired on these sites.
 - B9: rotating headline word (Notion).
 - Stripe card ring, W3Schools KBD-06 ×2, Slack duplicate ARIA-03 review.
 - Missed-issue checks (section D).
+
+## Remaining misfires and missed-issue checks (2026-10-17)
+
+### Misfires
+| # | Fix | Result |
+|---|---|---|
+| A8 | A solid single-colour gradient on top hides the image under it; text that passes over the overlay layers whatever the image shows (composited over black and white, including a positioned tinted band) is not reported | Canada.ca CLR-03 6 → 4 |
+| B7c | An absolutely positioned sibling box under the text (a selected tab's pill) is its background | Atlassian CLR-01 2 → 1 |
+| B9 | ZM-03 on a box whose width is set by script (inline width or custom property) goes to review | test page |
+| C | Focus check also looks at the grandparent's content (rings on a card button); Slack's empty `aria-hidden=""` review dropped | Slack ARIA-03 review 5 → 0 |
+
+### New checks (missed issues)
+| Check | Rule | Type | Result |
+|---|---|---|---|
+| Element drops focus on arrival (`onfocus="blur()"`, F55) | KBD-05 | Definite | W3C BAD home 14, survey 4; 0 on real sites |
+| Text styled as a heading when the page has no h2–h6 | STR-12 | Review | test page; 0 on real sites (W3C BAD has wrapper headings, so not fired there) |
+| Data table without header cells; axe `td-has-header` mapped | STR-07 | Review | W3C BAD 1 + survey 2; 0 on real sites |
+| Drop-down that navigates on change with no button | FRM-12 (new, 3.2.2) | Review | W3C BAD 1 + survey 1; 0 on real sites |
+| Decorative shape words in alt ("bullet", "arrow" …); alt over 300 characters | IMG-03 | Definite / review | W3C BAD bullets 2 and the 343-character logo; a 150-character limit flagged 7 Guardian photo captions, so it was raised to 300 |
+| aria-label containing HTML markup | ARIA-03 | Definite | test page |
+
+**Also fixed:** all 32 browser tests now pass, including the long-failing "page not modified" test.
+
+**Still open:**
+- **Stripe KBD-05 ×2:** the ring is on an element further away than the grandparent.
+- **Notion ZM-03 ×1:** its width does not come from an inline style.
+- **W3Schools KBD-06 ×2:** cause unknown.
+- **WebAIM CLR-03 ×5:** a mostly white image; needs pixel reading.
+- **Some Shopify chips.**
+- **STR-12 on pages that already have some headings:** not attempted.

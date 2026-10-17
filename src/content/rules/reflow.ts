@@ -283,7 +283,10 @@ async function checkTextSpacing(ctx: RuleContext, findings: RuleFinding[]): Prom
     try {
       // Ellipsis and line-clamp draw the visible text inside the box, so text that is cut
       // short on purpose is recognised by its scroll size instead.
-      const deliberate = isDeliberateTruncation(c.element, view);
+      // Truncated on purpose, or sized by script (an inline width or custom property, a rotating
+      // headline word re-measured on each change): needs review rather than a failure.
+      const scripted = /width|--/.test(c.element.getAttribute("style") ?? "");
+      const deliberate = isDeliberateTruncation(c.element, view) || scripted;
       const cut = deliberate ? scrollOverflows : overflows;
       const overflowedBefore = cut(c.before, c.x, c.y);
       const overflowsAfter = cut(after, c.x, c.y);

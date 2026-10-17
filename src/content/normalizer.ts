@@ -386,6 +386,8 @@ function reviewVerdict(result: axe.Result, node: axe.NodeResult, element: Elemen
       return roles.length > 0 && roles.every((r) => confirmedRoles.has(r)) ? "drop" : "keep";
     }
     if (result.id === "aria-valid-attr-value" && element) {
+      // aria-hidden="" is the same as leaving it out; nothing to review.
+      if (element.getAttribute("aria-hidden") === "" && [...node.any, ...node.all, ...node.none].some((c) => /aria-hidden/.test(String(c.message)))) return "drop";
       const ref = reviewIds(node);
       if (!ref) return "keep";
       const doc = element.ownerDocument;

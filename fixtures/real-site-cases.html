@@ -59,6 +59,19 @@
     .lazy-card img { width: 100%; }
     .lazy-card .cap-wrap { position: absolute; right: 4px; bottom: 4px; }
     #lazy-caption { color: #ffffff; margin: 0; }
+    /* Shopify: a chip whose top layer is one solid colour over a pattern image. */
+    #solid-chip { color: #ffffff; padding: 4px; background: linear-gradient(#181d20, #181d20) padding-box, url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4'%3E%3Crect width='4' height='4' fill='%23fff'/%3E%3C/svg%3E"); }
+    /* Canada.ca: a 90% navy band over a photo; white text passes whatever the photo is. */
+    .photo-band { position: relative; width: 300px; height: 60px; }
+    .photo-band canvas { position: absolute; inset: 0; }
+    .photo-band .band { position: absolute; inset: 0; background: rgba(38, 55, 74, 0.9); }
+    #over-band { position: relative; color: #ffffff; margin: 0; padding: 8px; }
+    /* Atlassian: the selected tab's dark pill is a separate positioned element. */
+    .tabs { position: relative; display: inline-block; background: #f0f1f2; padding: 4px; }
+    .tabs .pill { position: absolute; left: 4px; top: 4px; width: 120px; height: 28px; background: #101214; pointer-events: none; }
+    #on-pill { position: relative; display: inline-block; width: 120px; line-height: 28px; color: #ffffff; text-align: center; }
+    /* Notion: a word box whose width is set by script; clipping goes to review. */
+    #scripted-word { overflow: hidden; height: 24px; font: 16px/normal monospace; }
     /* Duolingo: button fills drawn by ::before behind the label. */
     .pbtn { position: relative; display: inline-block; padding: 6px 10px; color: #000437; z-index: 0; margin: 4px; }
     .pbtn::before { content: ""; position: absolute; inset: 0; z-index: -1; }
@@ -178,6 +191,10 @@
       <div class="clip-wrap"><p id="clip-grad">Dark text under a clip-text gradient</p></div>
       <div class="stage"><canvas width="360" height="120"></canvas><div class="white-card" id="on-card">Card text over a photo</div><button type="button" class="own-fill" id="on-button">Search</button><p class="bare" id="on-photo">Bare text</p></div>
       <div class="lazy-card"><img alt="" loading="lazy" data-src="later.jpg"><div><div class="cap-wrap"><p id="lazy-caption">i</p></div></div></div>
+      <p><span id="solid-chip">Payments</span></p>
+      <div class="photo-band"><canvas width="300" height="60"></canvas><div class="band"></div><p id="over-band">Text on a 90% band over a photo</p></div>
+      <div class="tabs"><span class="pill"></span><span id="on-pill">Teamwork</span></div>
+      <div id="scripted-word" style="width: 110px">Order today</div>
       <div class="navy"><span class="pbtn" id="pseudo-pass">Try 1 week free</span> <span class="pbtn" id="pseudo-fail">Get started</span></div>
       <div class="sr-wrap"><span id="sr-inner">Volume 90%</span></div>
       <p class="maroon"><a id="hardstop" href="#mit">Hard-stop underline link</a></p>

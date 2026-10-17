@@ -142,6 +142,7 @@ These run only when **axe-core only** is ✗. They are counted under
 | CLR-09 | 2.4.13 AAA | Moderate | Focus shown only by a background change below 3:1 against the unfocused state (AAA scans only) | axe has no rule for 2.4.13 |
 | FRM-02 | 3.3.2 A | Serious | Placeholder is the only label | axe's `label-title-only` covers title-only labels; FRM-02 covers the placeholder case |
 | FRM-03 | 1.3.1 A | Moderate | Radio or checkbox group without a group label | axe once had `radiogroup` / `checkboxgroup` rules but removed them |
+| FRM-12 | 3.2.2 A | Serious | A `<select>` whose inline `onchange` navigates or submits, with no button in its form (Needs review) | axe has no rule for 3.2.2 |
 | FRM-11 | 3.3.2 A | Moderate | Field named only by aria-label, a visually hidden label or hidden text, with no label shown on screen (Needs review). Not flagged when a visible button sits beside the field or nearby visible text says the same | axe accepts any accessible name, visible or not |
 | ARIA-02 | 4.1.2 A | Moderate (Serious if focusable) | aria-label / aria-labelledby on a div, span, p and similar without a role, which ARIA forbids | axe's `aria-prohibited-attr` reports this only as "incomplete" |
 | ARIA-03 | 4.1.2 A | Serious | An ARIA id list where some ids do not exist (aria-labelledby: definite; aria-describedby, -controls, -owns, -flowto, -details: Needs review) | axe fails an attribute only when none of its ids exist |

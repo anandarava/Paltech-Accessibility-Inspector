@@ -595,6 +595,12 @@ test.describe("PalTech A11y Inspector extension", () => {
       expect(rulesOn("on-photo").filter((r) => r.startsWith("CLR"))).toEqual(["CLR-03"]);
       // A caption over a lazy image that has not loaded is text over an image, not white on white.
       expect(rulesOn("lazy-caption").filter((r) => r.startsWith("CLR"))).toEqual(["CLR-03"]);
+      // A solid top layer hides the image; a 90% band keeps text readable; a sibling pill is the background.
+      expect(rulesOn("solid-chip").filter((r) => r.startsWith("CLR"))).toEqual([]);
+      expect(rulesOn("over-band").filter((r) => r.startsWith("CLR"))).toEqual([]);
+      expect(rulesOn("on-pill").filter((r) => r.startsWith("CLR"))).toEqual([]);
+      // Width set by script: clipping goes to review.
+      expect(result.issues.filter((i) => idOf(i) === "scripted-word" && i.ruleId === "ZM-03").map((i) => i.type)).toEqual(["Semi"]);
       // ::before fills are the background: white passes, green under white text fails.
       expect(rulesOn("pseudo-pass").filter((r) => r.startsWith("CLR"))).toEqual([]);
       expect(rulesOn("pseudo-fail").filter((r) => r.startsWith("CLR"))).toEqual(["CLR-01"]);
@@ -625,6 +631,30 @@ test.describe("PalTech A11y Inspector extension", () => {
       const fromFrames = result.issues.filter((i) => (i.frameId ?? 0) !== 0);
       expect(fromFrames.filter((i) => ["STR-01", "STR-02", "STR-03", "STR-05"].includes(i.ruleId)).map((i) => i.ruleId)).toEqual([]);
       expect(result.issues.filter((i) => i.element.html.includes("parked-warning"))).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("missed checks: thrown-away focus, fake headings, headerless tables, navigating selects, alt and name problems", async () => {
+    const { page, tabId } = await openFixture("missed-checks");
+    try {
+      const result = await scan(tabId);
+      const idOf = (i: Issue) => /id="([^"]+)"/.exec(i.element.html)?.[1] ?? i.element.selector;
+      const rulesOn = (id: string) => result.issues.filter((i) => idOf(i) === id).map((i) => i.ruleId);
+      expect(rulesOn("blur-link")).toContain("KBD-05");
+      expect(rulesOn("ok-link")).not.toContain("KBD-05");
+      expect(rulesOn("fake-h1")).toContain("STR-12");
+      expect(result.issues.some((i) => i.ruleId === "STR-12" && /Last week/.test(i.description))).toBe(true);
+      expect(rulesOn("fine-sentence")).not.toContain("STR-12");
+      expect(rulesOn("body-1")).not.toContain("STR-12");
+      expect(rulesOn("data-table")).toContain("STR-07");
+      expect(rulesOn("layout-table")).not.toContain("STR-07");
+      expect(rulesOn("quick")).toContain("FRM-12");
+      expect(rulesOn("quick-go")).not.toContain("FRM-12");
+      expect(rulesOn("bullet-img")).toContain("IMG-03");
+      expect(result.issues.filter((i) => idOf(i) === "long-alt" && i.ruleId === "IMG-03").map((i) => i.type)).toEqual(["Semi"]);
+      expect(rulesOn("markup-label")).toContain("ARIA-03");
     } finally {
       await page.close();
     }

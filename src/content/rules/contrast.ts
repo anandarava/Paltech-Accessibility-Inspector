@@ -43,6 +43,10 @@
  *  - Screen-reader-only text (1x1 clipped) is skipped because it is not seen,
  *    and so is text pushed out of its own `overflow: hidden` box (image
  *    replacement) or placed above / left of the page (see isTextOutOfSight).
+ *  - A solid single-colour gradient on top hides the layers under it; text
+ *    that passes over the overlay layers whatever the image (composited over
+ *    black and white) is not reported; an absolutely positioned sibling box
+ *    under the text (a tab's pill) is its background.
  *  - A fill drawn by an absolutely positioned ::before/::after behind the
  *    text is its background; a screen-reader-only clip on an ancestor hides
  *    the text; a gradient transparent except its last 3px is an underline;
@@ -362,6 +366,66 @@ function pseudoBackdrop(el: Element, text: Rect | null): RGB | null {
     // Stop at the first box that paints its own opaque background.
     const own = parseColor(view.getComputedStyle(node).backgroundColor);
     if (own && own[3] >= 0.999) return null;
+  }
+  return null;
+}
+
+/**
+ * True when the background layers between the text and the image (`stopAt`,
+ * exclusive) are translucent enough that the text passes whatever the image
+ * shows: the layers are composited over black and over white, and the text
+ * must reach `required` against both (Canada.ca's 90% navy band over a photo).
+ */
+function readableOverAnyImage(el: Element, stopAt: Element | null, fg: RGBA, required: number, text: Rect | null): boolean {
+  const view = el.ownerDocument.defaultView ?? window;
+  const layers: RGBA[] = [];
+  let last: Element = el;
+  for (let node: Element | null = el; node && node !== stopAt && !(stopAt && node.contains(stopAt)); node = parentOf(node)) {
+    const c = parseColor(view.getComputedStyle(node).backgroundColor);
+    if (c && c[3] > 0) layers.push(c);
+    last = node;
+  }
+  // An overlay drawn as a positioned sibling of the text's box (a tinted band between the photo
+  // and the caption) lies under the text as well.
+  const holder = last.parentElement;
+  if (holder && text) {
+    for (const s of Array.from(holder.children)) {
+      if (s === last || s.contains(el) || (stopAt && (s === stopAt || s.contains(stopAt)))) continue;
+      const cs = view.getComputedStyle(s);
+      if (cs.position !== "absolute" && cs.position !== "fixed") continue;
+      const c = parseColor(cs.backgroundColor);
+      const b = s.getBoundingClientRect();
+      if (c && c[3] > 0 && b.left <= text.left + 1 && b.top <= text.top + 1 && b.right >= text.right - 1 && b.bottom >= text.bottom - 1) layers.push(c);
+    }
+  }
+  if (layers.length === 0) return false;
+  for (const base of [[0, 0, 0], [255, 255, 255]] as RGB[]) {
+    let colour: RGB = base;
+    for (let i = layers.length - 1; i >= 0; i--) colour = blend(layers[i] as RGBA, colour);
+    if (contrastRatioExact(blend(fg, colour), colour) < required) return false;
+  }
+  return true;
+}
+
+/**
+ * Opaque fill of an absolutely positioned box beside the text's ancestors that
+ * lies under the whole text (a selected tab's indicator pill drawn as a
+ * separate element, often with pointer-events: none). Checks the other
+ * children of the text's first three ancestors. Null when there is none.
+ */
+function siblingBackdrop(el: Element, text: Rect): RGB | null {
+  const view = el.ownerDocument.defaultView ?? window;
+  let child: Element = el;
+  for (let parent = el.parentElement, level = 0; parent && level < 3; child = parent, parent = parent.parentElement, level++) {
+    for (const s of Array.from(parent.children)) {
+      if (s === child || s.contains(el)) continue;
+      const cs = view.getComputedStyle(s);
+      if (cs.position !== "absolute" || readOpacity(cs) < 0.999 || cs.visibility === "hidden") continue;
+      const c = parseColor(cs.backgroundColor);
+      if (!c || c[3] < 0.999) continue;
+      const b = s.getBoundingClientRect();
+      if (b.left <= text.left + 1 && b.top <= text.top + 1 && b.right >= text.right - 1 && b.bottom >= text.bottom - 1) return [c[0], c[1], c[2]];
+    }
   }
   return null;
 }
@@ -814,6 +878,12 @@ async function judgeBackgroundImages(group: TextGroup, bg: BackgroundResolution,
         if (bg.cumulativeOpacity < 1) return null; // faded groups are not modelled for gradients
         const stops = gradientStops(image);
         if (stops.length === 0) return null;
+        // One solid opaque colour (`linear-gradient(#181d20, #181d20)` as the top layer): it hides
+        // every layer and image under it, so it alone is the background.
+        const first = stops[0] as RGBA;
+        if (stops.every((s) => s[3] >= 0.999 && s[0] === first[0] && s[1] === first[1] && s[2] === first[2])) {
+          return [...backdrops, [first[0], first[1], first[2]]];
+        }
         for (const stop of stops) backdrops.push(stop[3] >= 0.999 ? [stop[0], stop[1], stop[2]] : blend(stop, under));
       } else if (await imageCoversText(layerEl, i, image, lines)) {
         return null;
@@ -878,6 +948,10 @@ async function checkText(ctx: RuleContext, findings: RuleFinding[], cache: Backg
       // Background images that turn out to be judgeable: icons beside the text, or gradients
       // whose colour stops can each be measured. null = an image really is behind the text.
       const gradient = bg.hasImage && !clipText && !mediaBehind && !pseudoBg ? await judgeBackgroundImages(group, bg, cache) : null;
+      if (!clipText && (mediaBehind || (bg.hasImage && gradient === null && !pseudoBg))) {
+        // A translucent overlay between text and image can make the image irrelevant.
+        if (readableOverAnyImage(el, mediaBehind ?? bg.imageLayers?.[0] ?? null, fg, required, rect)) continue;
+      }
       if ((bg.hasImage && gradient === null && !pseudoBg) || clipText || mediaBehind) {
         const reason = mediaBehind
           ? `sits over a <${mediaBehind.tagName.toLowerCase()}> element`
@@ -908,8 +982,9 @@ async function checkText(ctx: RuleContext, findings: RuleFinding[], cache: Backg
         continue;
       }
 
-      let fgOpaque = pseudoBg ? blend(fg, pseudoBg) : paintOver(bg, fg);
-      let backdrop = pseudoBg ?? bg.color;
+      const siblingBg = pseudoBg || !rect ? null : siblingBackdrop(el, rect);
+      let fgOpaque = pseudoBg ? blend(fg, pseudoBg) : siblingBg ? blend(fg, siblingBg) : paintOver(bg, fg);
+      let backdrop = pseudoBg ?? siblingBg ?? bg.color;
       let gradientNote = "";
       let suggestAgainst = backdrop;
       if (gradient && gradient.length > 0) {
@@ -951,7 +1026,7 @@ async function checkText(ctx: RuleContext, findings: RuleFinding[], cache: Backg
       const def = large ? LARGE : PRIMARY;
       const fgHex = toHex(fgOpaque);
       const bgHex = toHex(backdrop);
-      const inferredCanvas = pseudoBg ? "" : inferredCanvasNote(bg);
+      const inferredCanvas = pseudoBg || siblingBg ? "" : inferredCanvasNote(bg);
       // A faded card that is animating its opacity is measured mid-fade (scroll-reveal):
       // off screen, it has not reached its final colour yet.
       const midFade = bg.cumulativeOpacity < 0.999 && !!rect && (rect.bottom < 0 || rect.top > view.innerHeight) && isFadingIn(el, view);

@@ -50,6 +50,8 @@
  *    that ring is one more part. A strong background change next to a ring
  *    counts as a part too. An element that comes into view only when focused
  *    (a skip link) has appearing as its indicator.
+ *  - An element that drops focus as soon as it gets it (focus returns to the
+ *    page: `onfocus="blur()"`, WCAG failure F55) is reported as KBD-05.
  *  - When nothing changes, the check waits one frame and looks again: some
  *    sites add the indicator just after focus. `<iframe>` elements are not
  *    checked (focus moves into the frame, which is scanned on its own).
@@ -147,7 +149,7 @@ function relatedSnapshot(part: RelatedPart, view: Window): string {
 
 const RELATED_ANCESTORS = 3;
 const RELATED_DESCENDANTS = 20;
-const RELATED_SIBLING_PARTS = 30;
+const RELATED_SIBLING_PARTS = 40;
 
 /** Parts that commonly draw a focus indicator for `el`: its pseudo-elements, ancestors, descendants and shadow content. */
 function relatedParts(el: Element): RelatedPart[] {
@@ -165,8 +167,10 @@ function relatedParts(el: Element): RelatedPart[] {
   for (const child of Array.from(el.querySelectorAll("*")).slice(0, RELATED_DESCENDANTS)) parts.push({ element: child, pseudo: null });
   // A ring on a sibling (a card's "Read the story" button lights up when the card link has focus).
   const parent = el.parentElement;
-  if (parent && parent !== el.ownerDocument.body) {
-    const siblings = Array.from(parent.querySelectorAll("*")).filter((n) => n !== el && !el.contains(n)).slice(0, RELATED_SIBLING_PARTS);
+  const grand = parent?.parentElement;
+  const scope = grand && grand !== el.ownerDocument.body ? grand : parent;
+  if (scope && scope !== el.ownerDocument.body) {
+    const siblings = Array.from(scope.querySelectorAll("*")).filter((n) => n !== el && !el.contains(n)).slice(0, RELATED_SIBLING_PARTS);
     for (const s of siblings) parts.push({ element: s, pseudo: null }, { element: s, pseudo: "::before" }, { element: s, pseudo: "::after" });
   }
   // A web component draws its ring inside its shadow root (`:host(:focus) .ring`, or a focused inner control).
@@ -435,7 +439,23 @@ export const rule: CustomRule = {
             // interaction was a mouse click (pressing Scan); without it, sites that style
             // only :focus-visible look unchanged. Browsers without the option ignore it.
             el.focus({ preventScroll: true, focusVisible: true } as FocusOptions);
-            if (doc.activeElement !== el) continue; // not actually focusable, or focus was redirected
+            if (doc.activeElement !== el) {
+              // Focus did not stay. Moved to another element: a redirect (fine). Dropped to the page
+              // itself: the element throws focus away (`onfocus="blur()"`, WCAG failure F55), so
+              // keyboard users can never act on it or see where they are.
+              const now = doc.activeElement;
+              if ((now === null || now === doc.body || now === doc.documentElement) && el.matches("a[href], button, input, select, textarea, [tabindex]")) {
+                findings.push({
+                  element: el,
+                  type: PRIMARY.type,
+                  severity: PRIMARY.severity ?? "Serious",
+                  description: `This ${el.tagName.toLowerCase()} loses focus as soon as it receives it${/blur\s*\(/.test(el.getAttribute("onfocus") ?? "") ? " (onfocus calls blur())" : ""}, so keyboard users cannot see where they are or activate it.`,
+                  data: { ruleId: PRIMARY.id, focusRemoved: true, onfocus: el.getAttribute("onfocus") },
+                  fix: { summary: "Remove the script that blurs the element on focus; to hide the focus ring for mouse users, style :focus-visible instead.", docsUrl: "https://www.w3.org/WAI/WCAG22/Techniques/failures/F55" },
+                });
+              }
+              continue;
+            }
             after = snapshot(view.getComputedStyle(el));
           } finally {
             if (prevTransition) styleDecl.setProperty("transition", prevTransition, prevPriority);

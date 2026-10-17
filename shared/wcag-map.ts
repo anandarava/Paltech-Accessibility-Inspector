@@ -172,6 +172,7 @@ export const AXE_TO_RULE: Record<string, string> = {
   "landmark-unique": "STR-06",
   "region": "STR-06",
   "td-headers-attr": "STR-07",
+  "td-has-header": "STR-07",
   "th-has-data-cells": "STR-07",
   "table-duplicate-name": "STR-07",
   "scope-attr-valid": "STR-07",

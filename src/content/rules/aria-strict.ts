@@ -78,6 +78,20 @@ function namingFindings(el: Element, focusable: Set<Element>, doc: Document): Ru
   };
 }
 
+/** aria-label holding HTML markup (a template bug): screen readers read the tags out. */
+function markupInLabel(el: Element): RuleFinding | null {
+  const label = el.getAttribute("aria-label") ?? "";
+  if (!/<\/?[a-z][a-z0-9-]*(\s[^>]*)?>/i.test(label)) return null;
+  return {
+    element: el,
+    type: REFERENCE.type,
+    severity: "Serious",
+    description: `The aria-label of this ${snippet(el)} contains HTML markup ("${label.length > 80 ? `${label.slice(0, 79)}…` : label}"), so screen readers announce the tags and attributes as part of its name.`,
+    data: { ruleId: REFERENCE.id, attribute: "aria-label", markup: true },
+    fix: { summary: "Put plain text in aria-label (the visible link text), or remove aria-label and let the element's content name it.", docsUrl: "https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html" },
+  };
+}
+
 function referenceFindings(el: Element, doc: Document): RuleFinding[] {
   const out: RuleFinding[] = [];
   for (const attr of REFERENCE_ATTRS) {
@@ -146,6 +160,8 @@ export const rule: CustomRule = {
         const named = namingFindings(el, focusable, doc);
         if (named) findings.push(named);
         findings.push(...referenceFindings(el, doc));
+        const markup = markupInLabel(el);
+        if (markup) findings.push(markup);
       } catch {
         // next element
       }

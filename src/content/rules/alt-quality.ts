@@ -97,7 +97,19 @@ export const GENERIC_WORDS = new Set([
   "default",
   "temp",
   "test",
+  // Decorative pieces described by their shape (W3C BAD demo): they should have alt="".
+  "bullet",
+  "arrow",
+  "dot",
+  "line",
+  "border",
+  "divider",
+  "separator",
+  "corner",
 ]);
+
+/** Alt text longer than this is a description, not a short alternative (review). */
+export const LONG_ALT = 300;
 
 /** Normalise alt text for word matching: lower-case, collapse spaces, strip surrounding punctuation. */
 function normalise(text: string): string {
@@ -240,6 +252,16 @@ export const rule: CustomRule = {
         if (!(el instanceof HTMLAreaElement) && !ctx.isVisible(el)) continue;
         const kind = classifyAlt(text);
         if (kind) findings.push(altFinding(el, text.trim(), kind, source));
+        else if (text.trim().length > LONG_ALT) {
+          findings.push({
+            element: el,
+            type: "Semi",
+            severity: "Minor",
+            description: `The ${source} is ${text.trim().length} characters long. A text alternative should be short and say what the image conveys; a long visual description belongs in the page text or a linked description.`,
+            data: { ruleId: GENERIC.id, alt: `${text.trim().slice(0, 120)}…`, source, kind: "long", length: text.trim().length },
+            fix: { summary: "Shorten the alt text to what the image means in context (usually a sentence or two). Put a longer description in nearby text or link to it, and reference it with aria-describedby if needed.", docsUrl: "https://www.w3.org/WAI/tutorials/images/" },
+          });
+        }
       } catch {
         // next
       }

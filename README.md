@@ -332,6 +332,7 @@ custom).
 | CLR-08 | Text contrast below 7:1 (enhanced) | 1.4.6 Contrast (Enhanced) (AAA) | Auto | Minor | axe: `color-contrast-enhanced` | no |
 | FRM-10 | Form field has multiple labels | Best practice | Auto | Minor | axe: `form-field-multiple-labels` | yes |
 | FRM-11 | Field has no visible label (named only by aria-label or hidden text) | 3.3.2 Labels or Instructions (A) | Semi | Moderate | custom | yes |
+| FRM-12 | Changing a drop-down navigates or submits without a button | 3.2.2 On Input (A) | Semi | Serious | custom | yes |
 | KBD-03 | Positive tabindex value used | 2.4.3 Focus Order (A) | Auto | Serious | axe: `tabindex` | yes |
 | KBD-11 | Duplicate accesskey values | Best practice | Auto | Minor | axe: `accesskeys` | yes |
 | STR-03 | No &lt;h1&gt; on the page | Best practice | Auto | Moderate | axe: `page-has-heading-one` | yes |
