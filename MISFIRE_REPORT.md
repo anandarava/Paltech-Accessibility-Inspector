@@ -658,3 +658,22 @@ None of the fixed patterns misfired on these sites.
 - **WebAIM CLR-03 ×5:** a mostly white image; needs pixel reading.
 - **Some Shopify chips.**
 - **STR-12 on pages that already have some headings:** not attempted.
+
+## Last misfires and three more checks (2026-10-18)
+
+### Misfires
+| Item | Cause found | Fix | Live result |
+|---|---|---|---|
+| Stripe KBD-05 ×2 | Ring on a "Read the story" element deep inside the card | Look at the first 80 descendants (was 20) | 2 → 0 |
+| Notion ZM-03 ×1 | Word width set by script on a parent | Script-set width on the box or 2 parents → review | 1 → 0 |
+| Shopify chips | Solid gradient fill not seen as an opaque box | A solid single-colour top layer makes a box opaque | CLR-03 18 → 12 |
+| WebAIM CLR-03 ×5 | Background image unreadable | Same-origin background images are read pixel by pixel and measured like a gradient | 5 → 0 |
+| WebAIM KBD-05 ×4 + CLR-05 ×17 | "Flying focus": the page draws the ring on an overlay it moves onto the element. These findings also appear with yesterday's build, so the site's behaviour changed. | Recognise a page-level overlay that changes and surrounds the focused element | 21 → 0. The real findings elsewhere are unchanged (Guardian 61, W3Schools 22, WHO 14, Duolingo 120). |
+| W3Schools KBD-06 ×2 | Not reproducible outside the extension; a real Tab and sequential focus both leave the link visible | — | Open (review only) |
+
+### New checks
+| Check | Rule | Live result |
+|---|---|---|
+| Elements Tab reaches inside `aria-hidden="true"` (iframes included) | ARIA-04 | Mars: the 2 Facebook frames now caught |
+| Carousel that moves by itself with no pause control (watched 2.5 s) | OTH-02 (review) | Stripe's scrolling logo strip (real). Mars' carousel did not move within 6 s in tests, so it is not caught. |
+| Background image described only by a generic `title` | IMG-03 (review) | W3C BAD: 3 |

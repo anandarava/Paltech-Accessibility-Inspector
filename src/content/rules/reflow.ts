@@ -285,7 +285,8 @@ async function checkTextSpacing(ctx: RuleContext, findings: RuleFinding[]): Prom
       // short on purpose is recognised by its scroll size instead.
       // Truncated on purpose, or sized by script (an inline width or custom property, a rotating
       // headline word re-measured on each change): needs review rather than a failure.
-      const scripted = /width|--/.test(c.element.getAttribute("style") ?? "");
+      let scripted = false;
+      for (let n: Element | null = c.element, i = 0; n && i < 3 && !scripted; n = n.parentElement, i++) scripted = /width|--/.test(n.getAttribute("style") ?? "");
       const deliberate = isDeliberateTruncation(c.element, view) || scripted;
       const cut = deliberate ? scrollOverflows : overflows;
       const overflowedBefore = cut(c.before, c.x, c.y);

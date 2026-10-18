@@ -43,6 +43,9 @@
  *  - Screen-reader-only text (1x1 clipped) is skipped because it is not seen,
  *    and so is text pushed out of its own `overflow: hidden` box (image
  *    replacement) or placed above / left of the page (see isTextOutOfSight).
+ *  - A background image from the page's own origin is read pixel by pixel
+ *    (scaled down) and the text measured against its colours like a
+ *    gradient; images from other origins cannot be read and stay CLR-03.
  *  - A solid single-colour gradient on top hides the layers under it; text
  *    that passes over the overlay layers whatever the image (composited over
  *    black and white) is not reported; an absolutely positioned sibling box
@@ -630,9 +633,19 @@ function nearestOpaqueBox(el: Element): Element | null {
   for (let node: Element | null = el; node && node !== doc.body && node !== doc.documentElement; node = parentOf(node)) {
     const cs = view.getComputedStyle(node);
     const bg = parseColor(cs.backgroundColor);
-    if (bg && bg[3] >= 0.999 && readOpacity(cs) >= 0.999) return node;
+    if (readOpacity(cs) >= 0.999 && ((bg && bg[3] >= 0.999) || solidTopLayer(cs))) return node;
   }
   return null;
+}
+
+/** The colour of a top background layer that is one solid opaque gradient colour, or null. */
+function solidTopLayer(cs: CSSStyleDeclaration): RGB | null {
+  const top = splitTopLevel(cs.backgroundImage)[0] ?? "";
+  if (!/gradient\(/i.test(top)) return null;
+  const stops = gradientStops(top);
+  const first = stops[0];
+  if (!first || !stops.every((s) => s[3] >= 0.999 && s[0] === first[0] && s[1] === first[1] && s[2] === first[2])) return null;
+  return [first[0], first[1], first[2]];
 }
 
 /** `outer` contains `inner`, also across shadow roots. */
@@ -740,6 +753,59 @@ function naturalSize(url: string, doc: Document): Promise<{ width: number; heigh
       }
     });
     imageSizes.set(url, pending);
+  }
+  return pending;
+}
+
+const imageColourCache = new Map<string, Promise<RGBA[] | null>>();
+/** Image pixels read per side (the image is scaled down to at most this). */
+const SAMPLE_SIDE = 48;
+
+/**
+ * The distinct colours of an image (scaled down, quantised to 4 bits per
+ * channel), or null when it cannot be read: not loaded quickly, or from
+ * another origin without CORS (the canvas is then tainted). Used to measure
+ * text against every colour of a background image, like a gradient.
+ */
+function imageColours(url: string, doc: Document): Promise<RGBA[] | null> {
+  let pending = imageColourCache.get(url);
+  if (!pending) {
+    pending = new Promise((resolve) => {
+      try {
+        const view = doc.defaultView ?? window;
+        const img = new view.Image();
+        const timer = setTimeout(() => resolve(null), 600);
+        img.onerror = () => resolve(null);
+        img.onload = () => {
+          clearTimeout(timer);
+          try {
+            const scale = Math.min(1, SAMPLE_SIDE / Math.max(img.naturalWidth, img.naturalHeight));
+            const w = Math.max(1, Math.round(img.naturalWidth * scale));
+            const h = Math.max(1, Math.round(img.naturalHeight * scale));
+            const canvas = doc.createElement("canvas");
+            canvas.width = w;
+            canvas.height = h;
+            const g = canvas.getContext("2d");
+            if (!g) return resolve(null);
+            g.drawImage(img, 0, 0, w, h);
+            const data = g.getImageData(0, 0, w, h).data; // throws when cross-origin
+            const seen = new Map<string, RGBA>();
+            for (let i = 0; i < data.length; i += 4) {
+              const q = (v: number): number => Math.round((v ?? 0) / 17) * 17;
+              const c: RGBA = [q(data[i] as number), q(data[i + 1] as number), q(data[i + 2] as number), Math.round(((data[i + 3] as number) / 255) * 10) / 10];
+              seen.set(c.join(","), c);
+            }
+            resolve([...seen.values()]);
+          } catch {
+            resolve(null);
+          }
+        };
+        img.src = url;
+      } catch {
+        resolve(null);
+      }
+    });
+    imageColourCache.set(url, pending);
   }
   return pending;
 }
@@ -886,7 +952,14 @@ async function judgeBackgroundImages(group: TextGroup, bg: BackgroundResolution,
         }
         for (const stop of stops) backdrops.push(stop[3] >= 0.999 ? [stop[0], stop[1], stop[2]] : blend(stop, under));
       } else if (await imageCoversText(layerEl, i, image, lines)) {
-        return null;
+        // A same-origin image can be read: measure the text against its colours like a gradient.
+        const url = /^url\(\s*["']?(.*?)["']?\s*\)$/.exec(image)?.[1];
+        const colours = url && bg.cumulativeOpacity >= 1 ? await imageColours(url, layerEl.ownerDocument) : null;
+        if (!colours) return null;
+        for (const c of colours) backdrops.push(c[3] >= 0.999 ? [c[0], c[1], c[2]] : blend(c, under));
+        // A non-repeating image covers only part of the box: the colour around it is behind the text too.
+        const repeat = splitTopLevel(view.getComputedStyle(layerEl).backgroundRepeat)[i % Math.max(1, splitTopLevel(view.getComputedStyle(layerEl).backgroundRepeat).length)] ?? "repeat";
+        if (/no-repeat|space|round/.test(repeat) || /repeat-x|repeat-y/.test(repeat)) backdrops.push(under);
       }
     }
   }

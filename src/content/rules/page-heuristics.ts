@@ -13,6 +13,10 @@
  *  - FRM-12  a <select> whose change handler navigates or submits, with no
  *            button in its form: choosing an option changes the page as soon
  *            as it changes (3.2.2 On Input).
+ *  - OTH-02  a carousel or slider that moves by itself (watched for 2.5 s)
+ *            with no pause, stop or play control (2.2.2 Pause, Stop, Hide).
+ *            Top frame only; the scan takes 2.5 s longer when the page has a
+ *            carousel-like element.
  *
  * Heuristics and their risks
  * --------------------------
@@ -39,6 +43,13 @@ function ruleDef(id: string): RuleDefinition {
 const HEADING = ruleDef("STR-12");
 const TABLE = ruleDef("STR-07");
 const ON_INPUT = ruleDef("FRM-12");
+const MOVING = ruleDef("OTH-02");
+
+const CAROUSEL_SELECTOR =
+  "[aria-roledescription='carousel' i], [class*='carousel' i], [class*='slider' i], [class*='slideshow' i], [class*='swiper' i], [class*='slick' i], [class*='marquee' i], [class*='ticker' i]";
+const WATCH_MS = 2500;
+const MAX_CAROUSELS = 20;
+const PAUSE_RE = /pause|stop|play|anhalten|pausa/i;
 
 const MAX_FAKE_HEADINGS = 10;
 const HEADING_TEXT_MAX = 80;
@@ -135,9 +146,58 @@ function navigatingSelects(ctx: RuleContext): RuleFinding[] {
   return out;
 }
 
+/** What a moving carousel changes: transforms, scroll positions, which slide is current or shown. */
+function carouselState(el: Element, view: Window): string {
+  const parts: string[] = [view.getComputedStyle(el).transform, String(el.scrollLeft), String(el.scrollTop)];
+  for (const child of Array.from(el.querySelectorAll("*")).slice(0, 60)) {
+    const cs = view.getComputedStyle(child);
+    parts.push(cs.transform, cs.opacity, cs.left, String(child.scrollLeft), child.className && typeof child.className === "string" ? child.className : "", child.getAttribute("aria-hidden") ?? "");
+  }
+  return parts.join("|");
+}
+
+/** A pause / stop / play control in the carousel or in a small wrapper around it. */
+function hasPauseControl(el: Element): boolean {
+  const parent = el.parentElement;
+  const scope = parent && parent.getElementsByTagName("*").length <= el.getElementsByTagName("*").length + 30 ? parent : el;
+  for (const c of Array.from(scope.querySelectorAll("button, [role='button'], a, input[type='checkbox']"))) {
+    const label = `${c.textContent ?? ""} ${c.getAttribute("aria-label") ?? ""} ${c.getAttribute("title") ?? ""} ${typeof c.className === "string" ? c.className : ""}`;
+    if (PAUSE_RE.test(label)) return true;
+  }
+  return false;
+}
+
+async function movingCarousels(ctx: RuleContext, view: Window): Promise<RuleFinding[]> {
+  if (view !== view.top) return [];
+  const candidates: Element[] = [];
+  for (const el of Array.from(ctx.root.querySelectorAll(CAROUSEL_SELECTOR))) {
+    if (candidates.length >= MAX_CAROUSELS) break;
+    if (isExtensionElement(el, ctx) || !ctx.isVisible(el) || candidates.some((c) => c.contains(el))) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width < 100 || r.height < 30 || el.children.length === 0) continue;
+    candidates.push(el);
+  }
+  if (candidates.length === 0) return [];
+  const before = candidates.map((c) => carouselState(c, view));
+  await new Promise((resolve) => setTimeout(resolve, WATCH_MS));
+  const out: RuleFinding[] = [];
+  candidates.forEach((c, i) => {
+    if (!c.isConnected || carouselState(c, view) === before[i] || hasPauseControl(c)) return;
+    out.push({
+      element: c,
+      type: "Semi",
+      severity: MOVING.severity ?? "Serious",
+      description: "This carousel or slider changed by itself while the page was watched for 2.5 seconds, and no pause, stop or play control was found next to it. Moving content that starts on its own and lasts more than 5 seconds needs a way to pause it.",
+      data: { ruleId: MOVING.id, watchedMs: WATCH_MS, heuristic: "auto-moving" },
+      fix: { summary: "Add a visible pause/play button (and stop on hover and keyboard focus), or do not advance the slides automatically.", docsUrl: "https://www.w3.org/WAI/WCAG22/Understanding/pause-stop-hide.html" },
+    });
+  });
+  return out;
+}
+
 export const rule: CustomRule = {
   id: HEADING.id,
-  emits: [TABLE.id, ON_INPUT.id],
+  emits: [TABLE.id, ON_INPUT.id, MOVING.id],
   title: "Headings, data tables and change-on-input heuristics",
   category: HEADING.category,
   wcag: HEADING.wcag,
@@ -148,9 +208,9 @@ export const rule: CustomRule = {
     const doc = ctx.root.ownerDocument ?? (ctx.root as Document);
     const view = doc.defaultView ?? window;
     const findings: RuleFinding[] = [];
-    for (const part of [() => fakeHeadings(ctx, doc, view), () => headerlessTables(ctx, view), () => navigatingSelects(ctx)]) {
+    for (const part of [() => fakeHeadings(ctx, doc, view), () => headerlessTables(ctx, view), () => navigatingSelects(ctx), () => movingCarousels(ctx, view)]) {
       try {
-        findings.push(...part());
+        findings.push(...(await part()));
       } catch {
         // one heuristic failing must not stop the others
       }

@@ -40,6 +40,8 @@ function ruleDef(id: string): RuleDefinition {
 const NAMING = ruleDef("ARIA-02");
 const REFERENCE = ruleDef("ARIA-03");
 const DUPLICATE = ruleDef("STR-08");
+const HIDDEN_FOCUS = ruleDef("ARIA-04");
+const TABBABLE = "a[href], area[href], button, input:not([type='hidden']), select, textarea, iframe, summary, [tabindex], [contenteditable='true'], [contenteditable='']";
 const CHUNK = 200;
 
 /** Elements whose implicit role (generic, paragraph, emphasis, strong, code...) cannot be named. */
@@ -118,7 +120,7 @@ function referenceFindings(el: Element, doc: Document): RuleFinding[] {
 
 export const rule: CustomRule = {
   id: NAMING.id,
-  emits: [REFERENCE.id, DUPLICATE.id],
+  emits: [REFERENCE.id, DUPLICATE.id, HIDDEN_FOCUS.id],
   title: "ARIA checks stricter than axe-core",
   category: NAMING.category,
   wcag: NAMING.wcag,
@@ -164,6 +166,30 @@ export const rule: CustomRule = {
         if (markup) findings.push(markup);
       } catch {
         // next element
+      }
+    }
+
+    // ARIA-04: elements that Tab still reaches inside aria-hidden="true" (axe-core skips some, e.g.
+    // iframes). Screen readers then land on something they are told does not exist.
+    const view = doc.defaultView ?? window;
+    for (const hidden of queryAllIncludingRoot(ctx.root, "[aria-hidden='true']")) {
+      if (ctx.isExtensionNode(hidden)) continue;
+      for (const el of [hidden, ...Array.from(hidden.querySelectorAll(TABBABLE))]) {
+        try {
+          if (!el.matches(TABBABLE) || (el as HTMLElement).tabIndex < 0 || el.matches(":disabled") || el.closest("[inert]")) continue;
+          const cs = view.getComputedStyle(el);
+          if (cs.visibility === "hidden" || (el as Element & { checkVisibility?: (o?: object) => boolean }).checkVisibility?.({ visibilityProperty: true }) === false) continue;
+          findings.push({
+            element: el,
+            type: HIDDEN_FOCUS.type,
+            severity: HIDDEN_FOCUS.severity ?? "Serious",
+            description: `This ${snippet(el)} is inside aria-hidden="true" but keyboard users can still Tab to it, so screen reader users land on an element that is hidden from them${el.localName === "iframe" ? " (focus moves into the embedded frame)" : ""}.`,
+            data: { ruleId: HIDDEN_FOCUS.id, hiddenBy: el === hidden ? "self" : snippet(hidden) },
+            fix: { summary: 'Remove aria-hidden, or take the element out of the tab order (tabindex="-1", or the inert attribute on the hidden container).', docsUrl: "https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html" },
+          });
+        } catch {
+          // next element
+        }
       }
     }
 

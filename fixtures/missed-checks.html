@@ -9,6 +9,10 @@
     p { font-size: 16px; }
     .headline { font-size: 24px; font-weight: 700; }
     .data td { border: 1px solid #1a1a1a; padding: 2px 6px; }
+    .carousel { position: relative; width: 300px; height: 40px; overflow: hidden; border: 1px solid #1a1a1a; }
+    .carousel .slide { display: none; padding: 8px; }
+    .carousel .slide.active { display: block; }
+    .bgpic { width: 48px; height: 48px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4'%3E%3Crect width='4' height='4' fill='%23369'/%3E%3C/svg%3E"); }
   </style>
 </head>
 <body>
@@ -39,8 +43,28 @@
     <img id="bullet-img" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="bullet" width="8" height="8">
     <img id="long-alt" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" width="40" height="20" alt="A night-time picture of the city with tall buildings, lights in every window, a river in the front that reflects the lights, a bridge on the left, boats on the water, a dark blue sky with a few stars above it, a park with trees and benches along the riverbank, people walking dogs on the path and a tram crossing the bridge towards the old town hall">
 
+    <!-- aria-hidden content that Tab still reaches (Mars Facebook frames), and one taken out of the tab order. -->
+    <div aria-hidden="true" id="hidden-box"><a href="#h" id="hidden-link">Hidden but tabbable</a><iframe id="hidden-frame" title="Messaging" srcdoc="<p>x</p>" width="40" height="20"></iframe></div>
+    <div aria-hidden="true"><a href="#h2" id="hidden-ok" tabindex="-1">Hidden and out of the tab order</a></div>
+
+    <!-- A carousel that moves by itself with no pause control, and one with a pause button. -->
+    <div class="carousel" id="auto-carousel"><div class="slide active">Slide one</div><div class="slide">Slide two</div></div>
+    <div><div class="carousel" id="paused-carousel"><div class="slide active">Slide A</div><div class="slide">Slide B</div></div><button type="button">Pause slideshow</button></div>
+
+    <!-- A background picture described only by a generic title, and one with a real title. -->
+    <div class="bgpic" id="bg-generic" title="image"></div>
+    <div class="bgpic" id="bg-named" title="Map of the city centre"></div>
+
     <!-- An accessible name with HTML in it (Guardian consent). -->
     <p><a href="#cookies" id="markup-label" aria-label="&lt;span href=&quot;true&quot;&gt;cookie policy&lt;/span&gt;">cookie policy</a></p>
   </main>
+  <script>
+    // Both carousels advance every 500 ms.
+    for (const id of ["auto-carousel", "paused-carousel"]) {
+      const slides = document.querySelectorAll(`#${id} .slide`);
+      let n = 0;
+      setInterval(() => { slides[n].classList.remove("active"); n = (n + 1) % slides.length; slides[n].classList.add("active"); }, 500);
+    }
+  </script>
 </body>
 </html>

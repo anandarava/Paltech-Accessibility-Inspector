@@ -496,6 +496,8 @@ test.describe("PalTech A11y Inspector extension", () => {
       expect(rulesFor("after-key")).toEqual([]);
       // A ring added a frame after focus is found.
       expect(rulesFor("late-ring")).toEqual([]);
+      // A ring drawn by a moving page-level overlay (flying focus) is the indicator.
+      expect(rulesFor("flying")).toEqual([]);
       // The previous element's :focus-within style is not part of the next element's unfocused state.
       expect(rulesFor("fw-button")).toEqual([]);
     } finally {
@@ -597,6 +599,7 @@ test.describe("PalTech A11y Inspector extension", () => {
       expect(rulesOn("lazy-caption").filter((r) => r.startsWith("CLR"))).toEqual(["CLR-03"]);
       // A solid top layer hides the image; a 90% band keeps text readable; a sibling pill is the background.
       expect(rulesOn("solid-chip").filter((r) => r.startsWith("CLR"))).toEqual([]);
+      expect(rulesOn("over-light-image").filter((r) => r.startsWith("CLR"))).toEqual([]);
       expect(rulesOn("over-band").filter((r) => r.startsWith("CLR"))).toEqual([]);
       expect(rulesOn("on-pill").filter((r) => r.startsWith("CLR"))).toEqual([]);
       // Width set by script: clipping goes to review.
@@ -655,6 +658,16 @@ test.describe("PalTech A11y Inspector extension", () => {
       expect(rulesOn("bullet-img")).toContain("IMG-03");
       expect(result.issues.filter((i) => idOf(i) === "long-alt" && i.ruleId === "IMG-03").map((i) => i.type)).toEqual(["Semi"]);
       expect(rulesOn("markup-label")).toContain("ARIA-03");
+      // Tab still reaches these inside aria-hidden; tabindex=-1 is fine.
+      expect(rulesOn("hidden-link")).toContain("ARIA-04");
+      expect(rulesOn("hidden-frame")).toContain("ARIA-04");
+      expect(rulesOn("hidden-ok")).not.toContain("ARIA-04");
+      // Moving by itself without a pause control.
+      expect(rulesOn("auto-carousel")).toContain("OTH-02");
+      expect(rulesOn("paused-carousel")).not.toContain("OTH-02");
+      // Background picture described only by "image".
+      expect(rulesOn("bg-generic")).toContain("IMG-03");
+      expect(rulesOn("bg-named")).not.toContain("IMG-03");
     } finally {
       await page.close();
     }

@@ -27,8 +27,9 @@
  *    finding is reported as Semi (needs review) rather than a definite failure.
  *  - Focus indicators are often drawn on a *different* element. When nothing
  *    changes on the element itself, its ::before/::after, up to three
- *    ancestors (a `:focus-within` ring), its first 20 descendants and the
- *    first 20 elements of its shadow root are compared unfocused vs
+ *    ancestors (a `:focus-within` ring), its first 80 descendants and the
+ *    first 20 elements of its shadow root, and positioned overlays at the top
+ *    of the page (a "flying focus" ring moved onto the element) are compared unfocused vs
  *    focused (with page transitions paused); a visible change there counts
  *    as the indicator. Its contrast is not measured. Indicators drawn by
  *    script on canvas or by other far-away elements are still missed.
@@ -148,7 +149,7 @@ function relatedSnapshot(part: RelatedPart, view: Window): string {
 }
 
 const RELATED_ANCESTORS = 3;
-const RELATED_DESCENDANTS = 20;
+const RELATED_DESCENDANTS = 80;
 const RELATED_SIBLING_PARTS = 40;
 
 /** Parts that commonly draw a focus indicator for `el`: its pseudo-elements, ancestors, descendants and shadow content. */
@@ -195,7 +196,49 @@ function indicatorElsewhere(el: HTMLElement, view: Window): boolean {
   // Shadow content only has its focused element while focused: compare the same parts.
   const unfocused = parts.map((p) => relatedSnapshot(p, view));
   el.focus({ preventScroll: true, focusVisible: true } as FocusOptions);
-  return focused.some((f, i) => f !== unfocused[i] && (f !== "" || unfocused[i] !== ""));
+  if (focused.some((f, i) => f !== unfocused[i] && (f !== "" || unfocused[i] !== ""))) return true;
+  return overlayIndicator(el, view);
+}
+
+/**
+ * True when a separate overlay that a script moves onto the focused element
+ * ("flying focus", WebAIM) changes on focus and then surrounds the element.
+ * The element is briefly blurred and focused again.
+ */
+function overlayIndicator(el: HTMLElement, view: Window): boolean {
+  const overlays = overlayCandidates(el);
+  if (overlays.length === 0) return false;
+  const overlaysFocused = overlays.map((o) => overlaySnapshot(o, view));
+  el.blur();
+  const overlaysUnfocused = overlays.map((o) => overlaySnapshot(o, view));
+  el.focus({ preventScroll: true, focusVisible: true } as FocusOptions);
+  const r = el.getBoundingClientRect();
+  const cx = r.left + r.width / 2;
+  const cy = r.top + r.height / 2;
+  return overlays.some((o, i) => {
+    if (overlaysFocused[i] === overlaysUnfocused[i]) return false;
+    const b = o.getBoundingClientRect();
+    return b.left <= cx && b.right >= cx && b.top <= cy && b.bottom >= cy && b.width <= r.width * 3 + 40 && b.height <= r.height * 3 + 40;
+  });
+}
+
+/** Positioned elements at the top level of the page that could be a moving focus overlay. */
+function overlayCandidates(el: Element): Element[] {
+  const doc = el.ownerDocument;
+  const view = doc.defaultView ?? window;
+  const out: Element[] = [];
+  for (const c of Array.from(doc.body?.children ?? [])) {
+    if (out.length >= 30 || c.contains(el)) continue;
+    const pos = view.getComputedStyle(c).position;
+    if (pos === "absolute" || pos === "fixed") out.push(c);
+  }
+  return out;
+}
+
+function overlaySnapshot(o: Element, view: Window): string {
+  const cs = view.getComputedStyle(o);
+  const b = o.getBoundingClientRect();
+  return [Math.round(b.left), Math.round(b.top), Math.round(b.width), Math.round(b.height), cs.opacity, cs.visibility, cs.outlineStyle, cs.boxShadow, o.getAttribute("class") ?? ""].join("|");
 }
 
 /**
@@ -564,6 +607,7 @@ export const rule: CustomRule = {
                 bestRatio = ratio;
               }
             }
+            if (bestRatio < 3 && overlayIndicator(el, view)) continue; // the real ring is a moving overlay
             if (bestRatio < 3) findings.push(contrastFinding(el, best.kind, best.indicator, best.adjacent, contrastRatio(best.indicator, best.adjacent)));
             continue;
           }
@@ -574,7 +618,7 @@ export const rule: CustomRule = {
             if (b) {
               // A background change must contrast with the *previous* state to be perceivable.
               const changeRatio = contrastRatio(b, a);
-              if (contrastRatioExact(b, a) < 3) {
+              if (contrastRatioExact(b, a) < 3 && !overlayIndicator(el, view)) {
                 // The highlight sits behind the text, so a suggested colour must keep the text readable too.
                 findings.push(stateChangeFinding(contrastFinding(el, "background", b, a, changeRatio, compose(after.color) ?? undefined), a, b, changeRatio, ctx.wcagLevel ?? "AA"));
               }

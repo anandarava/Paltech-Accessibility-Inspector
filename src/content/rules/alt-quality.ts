@@ -108,6 +108,38 @@ export const GENERIC_WORDS = new Set([
   "corner",
 ]);
 
+/**
+ * A box showing a background image as content, with no text, whose only
+ * description is a generic title ("image", "photo"): screen readers get the
+ * generic word at best (W3C BAD demo).
+ */
+function titledBackgroundImages(ctx: RuleContext): RuleFinding[] {
+  const out: RuleFinding[] = [];
+  const doc = ctx.root.ownerDocument ?? (ctx.root as Document);
+  const view = doc.defaultView ?? window;
+  for (const el of Array.from(ctx.root.querySelectorAll("[title]"))) {
+    try {
+      if (el.matches("img, svg, input, a, button, iframe, abbr") || /\S/.test(el.textContent ?? "")) continue;
+      const title = el.getAttribute("title") ?? "";
+      if (classifyAlt(title) !== "generic" || !ctx.isVisible(el)) continue;
+      const cs = view.getComputedStyle(el);
+      const r = el.getBoundingClientRect();
+      if (!/url\(/.test(cs.backgroundImage) || r.width < 16 || r.height < 16) continue;
+      out.push({
+        element: el,
+        type: "Semi",
+        severity: GENERIC.severity ?? "Moderate",
+        description: `This ${el.localName} shows a background image whose only description is the generic title "${title}". If the image conveys information, screen reader users do not get it.`,
+        data: { ruleId: GENERIC.id, alt: title, source: "title", kind: "background-image" },
+        fix: { summary: 'If the image is content, use an <img> with alt text describing it (or role="img" with an aria-label). If it is decoration, remove the title.', docsUrl: "https://www.w3.org/WAI/tutorials/images/" },
+      });
+    } catch {
+      // next element
+    }
+  }
+  return out;
+}
+
 /** Alt text longer than this is a description, not a short alternative (review). */
 export const LONG_ALT = 300;
 
@@ -329,6 +361,11 @@ export const rule: CustomRule = {
       }
     }
 
+    try {
+      findings.push(...titledBackgroundImages(ctx));
+    } catch {
+      // ignore
+    }
     ctx.progress?.(100);
     return findings;
   },

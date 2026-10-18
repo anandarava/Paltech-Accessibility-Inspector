@@ -90,6 +90,10 @@
     /* Not KBD-05 (Atlassian): the ring class is added a moment after focus by script. */
     #late-ring { outline: none; }
     #late-ring.has-ring { outline: 2px solid #0b4f9c; }
+    /* Not KBD-05 / CLR-05 (WebAIM "flying focus"): in keyboard mode the element's own outline is
+       removed and a separate overlay ring is moved onto it; the element also gets a faint fill. */
+    .flying-target { outline: none !important; background: #ffffcc; }
+    #flying-ring { position: absolute; left: -100px; top: -100px; width: 0; height: 0; outline: 3px solid #0b4f9c; pointer-events: none; }
     /* CLR-05: two parts, both too faint. */
     #two-faint:focus { outline: 2px solid transparent; box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px #dddddd; }
   </style>
@@ -123,11 +127,23 @@
       <li><a id="slide-skip" href="#main">Skip to content</a></li>
       <li><a id="after-key" href="#s">Ring shown after a key press</a></li>
       <li><a id="late-ring" href="#t">Ring added just after focus</a></li>
+      <li><a id="flying" href="#u">Ring drawn by a moving overlay</a></li>
       <li><a id="two-faint" href="#k">White ring inside a pale grey ring</a></li>
       <li><form class="search" role="search" action="#"><input id="fw-input" type="search" aria-label="Search"><button id="fw-button" type="button">Go</button></form></li>
     </ul>
   </main>
   <script>
+    // WebAIM's flying focus: a page-level overlay is moved onto the focused element.
+    const ring = document.createElement("div");
+    ring.id = "flying-ring";
+    document.body.appendChild(ring);
+    const flying = document.getElementById("flying");
+    flying.addEventListener("focus", () => {
+      flying.classList.add("flying-target");
+      const r = flying.getBoundingClientRect();
+      Object.assign(ring.style, { left: `${r.left + scrollX - 2}px`, top: `${r.top + scrollY - 2}px`, width: `${r.width + 4}px`, height: `${r.height + 4}px` });
+    });
+    flying.addEventListener("blur", () => { flying.classList.remove("flying-target"); Object.assign(ring.style, { left: "-100px", top: "-100px", width: "0", height: "0" }); });
     // Atlassian's pattern: the ring class arrives one frame after focus.
     const late = document.getElementById("late-ring");
     late.addEventListener("focus", () => requestAnimationFrame(() => late.classList.add("has-ring")));
