@@ -130,7 +130,8 @@ function hasCardEquivalent(el: Element, pointerOnly: boolean, view: Window): boo
 
 function hasDataClickAttribute(el: Element): boolean {
   for (const attr of Array.from(el.attributes)) {
-    if (attr.name.startsWith("data-") && /click|tap|press/i.test(attr.name)) return true;
+    // Whole name parts only: data-click, data-on-tap, data-track-click; not data-placeholder-expression.
+    if (attr.name.startsWith("data-") && /(^|[-_])(on)?(click|tap|press)(ed|able)?($|[-_])/i.test(attr.name.slice(5))) return true;
   }
   return false;
 }
@@ -247,7 +248,9 @@ export const rule: CustomRule = {
         let signals: string[] = [];
         if (hasOnclick) signals.push("onclick attribute");
         if (hasRole) signals.push(`role="${role}"`);
-        if (hasDataClick) signals.push("data-*click attribute");
+        // data-click is also how analytics tags elements (LA Times' ad columns and headings, Wired's
+        // sticky ad wrapper): on its own it counts only with a pointer cursor.
+        if (hasDataClick && (hasOnclick || hasRole || view.getComputedStyle(el).cursor === "pointer")) signals.push("data-*click attribute");
         if (signals.length === 0) {
           // Cheap pre-filter before getComputedStyle: elements with no children of their own text are rarely clickable containers.
           const cs = view.getComputedStyle(el);

@@ -353,6 +353,10 @@ export function collapseRegionFlood(issues: Issue[], doc: Document): Issue[] {
 
 export function filterFrameLevelIssues(issues: Issue[], isTop: boolean, doc: Document): Issue[] {
   if (isTop) return issues;
+  // A frame nobody can see (display:none or 0x0: tracking and ad-sync frames, often about:blank,
+  // which the top frame cannot match by address) has nothing to report.
+  const view = doc.defaultView;
+  if (view && (view.innerWidth <= 1 || view.innerHeight <= 1)) return [];
   let hasText: boolean | null = null;
   // An empty child frame (about:blank or a tracking / loader frame with nothing shown) has nothing to report.
   if (!frameHasText(doc) && !doc.querySelector("img, video, canvas, svg, input, select, textarea, button, a[href], [tabindex]")) return [];

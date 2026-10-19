@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Modal dialog open - A11y Checker</title>
+  <!-- Nature: a cookie banner opened with showModal(). The page behind it is inert and under the
+       backdrop, so its links are not "losing focus" or "hidden": one note for the page instead. -->
+  <style>
+    a { outline: none; }
+    dialog { position: fixed; bottom: 0; margin: 0 auto; }
+    #dialog-ok:focus { outline: 2px solid #0b4f9c; outline-offset: 2px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Page behind a modal dialog</h1>
+    <p><a href="#one">First page link</a></p>
+    <p><a href="#two">Second page link</a></p>
+    <p><a href="#three">Third page link</a></p>
+  </main>
+  <dialog id="consent" aria-label="Your privacy, your choice">
+    <p>We use cookies.</p>
+    <button id="dialog-ok" type="button">Accept</button>
+  </dialog>
+  <script>document.getElementById("consent").showModal();</script>
+</body>
+</html>

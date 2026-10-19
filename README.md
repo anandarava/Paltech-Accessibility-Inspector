@@ -24,6 +24,11 @@ Highlights:
   accessible-name tooltips, colour-blindness simulation
 - Keyboard test: records where focus goes while you press Tab through the page
   and detects keyboard traps and unreachable controls
+- Contrast checker: type colours (hex, rgb, hsl, names), pick them on the page
+  with the eyedropper, or read an element's exact CSS colour; shows the WCAG ratio,
+  AA/AAA and non-text results and the nearest passing colours. "Check by eye" on
+  a contrast finding records a verdict (false positive, or confirmed failure) that
+  is kept for the site, reapplied on rescans and shown in reports
 - SPA support: rescans (or prompts) on `pushState` route changes, dialog
   opening, and large DOM changes
 - Evidence screenshots per issue with redaction; HTML and JSON export. The

@@ -47,7 +47,7 @@
  */
 import rulesJson from "@shared/a11y-rules.json";
 import type { RuleDefinition, RulesFile } from "@shared/types";
-import { getFocusableElements } from "@src/content/dom-utils";
+import { getFocusableElements, modalDialogNote, openModalDialog } from "@src/content/dom-utils";
 import { isExtensionElement } from "./contrast";
 import type { CustomRule, RuleContext, RuleFinding } from "./types";
 
@@ -140,6 +140,14 @@ function coveringStickyElement(hit: Element, target: Element, view: Window): Ele
   return null;
 }
 
+/** Drawn at most 2px in either direction, or clipped away (`clip: rect(0 0 0 0)`, `clip-path: inset(50%)`). */
+function isVisuallyHidden(el: Element, view: Window): boolean {
+  const r = el.getBoundingClientRect();
+  if (r.width <= 2 || r.height <= 2) return true;
+  const cs = view.getComputedStyle(el);
+  return /^rect\(\s*0(px)?[\s,]+0(px)?[\s,]+0(px)?[\s,]+0(px)?\s*\)$/.test(cs.clip) || /^inset\(\s*(50|100)%/.test(cs.clipPath);
+}
+
 function describe(el: Element): string {
   const id = el.id ? `#${el.id}` : "";
   const cls = typeof el.className === "string" && el.className.trim() ? `.${el.className.trim().split(/\s+/).slice(0, 2).join(".")}` : "";
@@ -175,6 +183,15 @@ export const rule: CustomRule = {
         .slice(0, MAX_FOCUSABLES);
     } catch {
       return findings;
+    }
+    // A modal dialog is open: the page behind it is inert and under the dialog's backdrop.
+    const modal = openModalDialog(doc);
+    if (modal) {
+      const behind = focusables.filter((el) => !modal.contains(el));
+      if (behind.length > 0) {
+        findings.push({ element: modal, type: "Semi", severity: PRIMARY.severity ?? "Serious", description: modalDialogNote(modal, behind.length), data: { ruleId: PRIMARY.id, modalDialog: true, skipped: behind.length } });
+        focusables = focusables.filter((el) => modal.contains(el));
+      }
     }
 
     const scrollX = view.scrollX;
@@ -218,6 +235,9 @@ export const rule: CustomRule = {
           // Let the browser scroll the element into view as it does for Tab.
           el.focus();
           if (doc.activeElement !== el) el.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" });
+          // Still visually hidden while focused (a 1px screen-reader-only button): nothing can
+          // cover what is not drawn. Whether it shows focus is the focus-indicator check's job.
+          if (isVisuallyHidden(el, view)) continue;
           // Hit-test a 3x3 grid on the element: the centre, four corners (inset) and the four edge midpoints.
           const probe = (): { centreCover: Element | null; coveredPoints: string[]; probed: number } | null => {
             const r = el.getBoundingClientRect();

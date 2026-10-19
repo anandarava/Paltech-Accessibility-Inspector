@@ -828,3 +828,132 @@ Verified real failures that stayed definite:
 - CLR-01: 33 definite, same colours and ratios as axe's 31.
 - **The 2 extra are the digit "6"** in the post stats (#4ab234 on white, 2.72:1). axe leaves single characters in review ("too short to determine if it is actual text content"), but the "17" and "79.3k" beside them are reported by axe.
 - **The 28 CLR-05 reviews** are background-only focus changes. WCAG AA does not require the focused and unfocused states to contrast (that is 2.4.13, AAA), so they stay as review by design.
+
+## Side by side with axe-core on 55 sites (2026-10-19)
+
+On every site, axe-core 4.13 and PalTech scanned **the same page load**. axe-core is the engine behind axe DevTools Pro's automatic scan; it was run on WCAG 2.0–2.2 A/AA plus best practices, in every frame.
+
+**Scope:**
+- **Sites:** 55 usable sites across government, news, shops, SaaS, education, developer docs, health, finance and nonprofits.
+- **Excluded:** 7 shop and travel sites failed the network's certificate check. Ars Technica showed a human-verification page and Fidelity a usage-agreement page.
+
+**Method:**
+- Findings were paired by element (same rule, then same element by selector, HTML or attribute values).
+- A few leftovers were paired by count within the same rule and site.
+- 194 sampled findings were checked by hand on the live pages:
+  - all 36 cases where axe reported a definite failure and PalTech did not;
+  - 118 PalTech-only definite findings, sampled across every rule;
+  - 20 PalTech definite findings that axe left for review;
+  - 20 findings both tools reported, as a control.
+- Rates by rule were scaled up to all findings.
+
+**Results:**
+
+| | axe-core (axe DevTools engine) | PalTech |
+|---|---|---|
+| Definite findings | 1,273 | 2,566 |
+| Of which real (estimated) | **1,254** | **2,191** (1,737 without the LNK-05 best-practice finding) |
+| Wrong definite findings | ~19 | ~375 |
+| Precision of definite findings | **98.5%** | **85.4%** |
+| Real problems the other tool did not report as definite | 17 found only by axe | ~500 WCAG problems found only by PalTech, plus 454 LNK-05 |
+| Scan time, 55 sites | 159 s | 1,718 s |
+
+**Where axe and PalTech agree:**
+1,237 of axe's 1,273 definite findings are also definite in PalTech:
+- 474 of them are axe's `region` findings, which PalTech groups into one note per page.
+- All 20 sampled shared findings were real.
+
+**axe-only (36):**
+- **19 were axe false positives,** which PalTech was right to drop or send to review:
+  - 8 DW and 6 Columbia contrast findings measured against the wrong background;
+  - 3 ClickUp target sizes where the spacing exception applies;
+  - Samsung `aria-required-parent`;
+  - Cloudflare's hover-only background.
+- **17 were real.** 10 PalTech missed:
+  - contrast;
+  - target size on Independent, umich and others;
+  - unnamed duplicate landmarks on Dell, Monday and cancer.org.
+
+  7 PalTech sent to review.
+
+**What PalTech finds beyond axe (~500 real):**
+- focus indicators below 3:1 (CLR-05, 79% real);
+- contrast where axe gave up (CLR-01 with axe "needs review", 10 of 12 real);
+- ARIA misuse (ARIA-02/03/04, all real);
+- non-text contrast, alt text and form labels.
+
+**Where PalTech's false findings come from:**
+
+| Rule | Definite findings | Real in sample | Estimated false | Cause seen |
+|---|---|---|---|---|
+| KBD-06 focus obscured | 188 | 4 / 13 | ~130 | Focused by script, not by Tab, so the scroll position differs. After a real Tab the link sits above the cookie banner. |
+| CLR-01 (axe silent) | 100 | 5 / 12 | ~58 | Pseudo-element backgrounds (France24), rgba overlays over photos (NPS), text in shadow DOM (Open University), decorative aria-hidden mockups (ClickUp), off-screen sr-only text (Cornell). |
+| LNK-03 generic link text | 58 | 0 / 10 | ~58 | "Learn more" next to a heading or in a sentence: the purpose is clear from context (H80), so 2.4.4 passes. |
+| KBD-05 no focus indicator | 64 | 4 / 10 | ~38 | Inputs whose focus shows as a caret, a moving label or a placeholder change. A real Tab draws a ring that `focus()` does not. |
+| CLR-05 focus indicator | 127 | 11 / 14 | ~27 | Outline measured against the wrong adjacent colour (France24, Princeton, TED). |
+| ZM-03 text spacing | 25 | 3 / 7 | ~14 | Decorative mockups and horizontal carousels. |
+| Others | | | | STR-02 lang in hidden empty frames; LNK-02 YouTube avatar button; STR-08 duplicate ids that resolve to the same label. |
+
+**Sending LNK-03, KBD-06 and KBD-05 to review alone would lift precision to ~93%.** Fixing their causes would keep the real ones definite.
+
+**Limits:**
+- Rates by rule come from 5–14 samples each.
+- Pages change between the scan and the check: 3 items were gone.
+- Strict 1.4.11 calls on focus rings between 2:1 and 3:1 were counted as real.
+
+## Fixes from the side-by-side run, and a check on 52 fresh sites (2026-10-19)
+
+### What was fixed (generic causes, not site rules)
+
+| Rule | Cause | Fix |
+|---|---|---|
+| KBD-05 / CLR-05 | Flying-focus box inside a page wrapper not found (DW) | Look for overlay boxes up to three levels below `<body>` and compare with their state before the focus moved. |
+| KBD-05 | `outline: auto 0px` still draws Chrome's ring (Verywell, Schwab) | An `auto` outline counts as visible whatever its width. |
+| KBD-05 | Text field whose only sign of focus is the text cursor (Lenovo, NerdWallet) | Needs review. |
+| KBD-05 | Ring drawn only after a real key press inside a frame from another site (YouTube) | Needs review. |
+| KBD-05 | Focus shown by fading (USPS) | An opacity change counts as a visible change. |
+| KBD-05 | An element already focused when checked (a dialog's first button) | Blur it first. |
+| KBD-05 / KBD-06 | Modal dialog open: a cookie banner opened with `showModal()` or with `aria-modal` (Nature, HubSpot) | One review note for the page behind it, not 97 findings. |
+| KBD-06 | 1px screen-reader-only button | Not checked. |
+| CLR-05 | Ring judged against the parent's colour (TED, France24, Princeton) | Judge the colours just outside the ring on all four sides. Neighbouring controls are left out. An image or a `::before` paint there gives review. |
+| LNK-03 | "Learn more" whose purpose is clear from its context | Not reported when the sentence, list item, cell, cookie-bar text or the card's heading (H80) explains it. |
+| CLR-01 | `::before` bands with `translateX(-50%)` and stacked gradient layers (France24) | Measured. |
+| CLR-01 | A selected tab's own fill under a grey track (The Verge) | The tab's own fill wins over the sibling box. |
+| CLR-01 | A photo in a sibling box (NPS) | Treated as an image behind the text. |
+| CLR-01 | Slotted text in an open or closed web component (Open University, PayPal) | Measured where it is drawn, or sent to review. |
+| CLR-01 | Text far off the page, or in a 0-height clipped box (Cornell, UCLA, USPS) | Skipped. |
+| CLR-01 | Text covered by another box | Review. |
+| CLR-01 | `aria-hidden` mock-up text that is not shown anywhere else | Review. |
+| CLR-01 | Symbols only ("+", "$") | Review. |
+| CLR-01 | Measured as practically invisible (ratio below 1.25:1) | Review: the real background (a video, an animation that has not run) could not be seen. |
+| ZM-03 | Decorative boxes, cut-off letter tails, carousels | Decorative boxes and letter tails are skipped; a carousel cut off sideways gives review. |
+| STR-08 | Duplicate ids that cause no harm | Not reported when the copies are identical or only the first one is shown. |
+| STR-02 etc. | Findings from 0x0 or hidden frames | Dropped. |
+| KBD-01 | `data-click` analytics tags and `data-placeholder-expression` | No longer read as click handlers. |
+
+Test pages: `fixtures/side-by-side.html` and `fixtures/modal-dialog.html`, with an end-to-end test for each pattern.
+
+### A method error in the first verification
+
+The KBD-06 checkers focused the link before the target by script and then pressed Tab. That scrolls the page differently from a keyboard user who tabs from the top. With a real Tab walk from the top, 7 of the 9 "false" KBD-06 findings were real: the link was fully under the cookie banner. KBD-06 was right about 11 of 13 checked cases. The second verification used the Tab walk.
+
+### Fresh sites: 52 never used before, side by side with axe-core
+
+The sites cover government, news, SaaS, education, docs, health, finance, nonprofits and science. 200 findings were checked on the live pages.
+
+| | axe-core | PalTech (build before these sites) | PalTech (final build) |
+|---|---|---|---|
+| Precision of definite findings | 99.4% | 88.3% | **94.3%** |
+| Real problems found | ~871 | ~1,835 | ~1,774 |
+
+**Notes on the final build's numbers:**
+- **Not fully independent.** The final build was also corrected for patterns first seen on these sites: Nature's modal dialog, `data-click` analytics tags and cookie-bar sentences.
+- **Some losses are page variation.** Part of the drop in real findings is the page changing between loads: Zapier's survey panel appears on only some loads.
+
+**Missed by PalTech:** 36 of axe's real definite failures (4%). 21 of them are in PalTech's Needs review.
+
+**Still producing false definite findings (estimated ~106 over 52 sites):**
+- KBD-05 rings drawn by `::after` on a focus state;
+- CLR-05 against an image section;
+- TGT-01 on tokens inside code samples;
+- CLR-04 on chips whose text identifies them.

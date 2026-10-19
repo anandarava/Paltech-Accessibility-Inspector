@@ -207,11 +207,20 @@ export const rule: CustomRule = {
       if (owners.length < 2) continue;
       const ref = referenced.get(id);
       if (!ref) continue;
+      // Harmless copies: the same element with the same text (Wired's two <title>WIRED</title>),
+      // so the reference gives the same result whichever it finds; or only the first copy, the one
+      // the reference resolves to, is shown (the others are hidden duplicates of a responsive layout).
+      const sameCopies = owners.every((o) => o.localName === owners[0]?.localName && (o.textContent ?? "").trim() === (owners[0]?.textContent ?? "").trim());
+      const onlyFirstShown = ctx.isVisible(owners[0] as Element) && owners.slice(1).every((o) => !ctx.isVisible(o));
+      if (sameCopies || onlyFirstShown) continue;
+      // The element that refers to the id is not shown at this width (a mobile menu button): the
+      // reference is not in use now, so the tester judges it.
+      const referrerShown = ctx.isVisible(ref.by);
       for (const owner of owners) {
         if (ctx.root !== doc && !(ctx.root as Element).contains(owner)) continue;
         findings.push({
           element: owner,
-          type: DUPLICATE.type,
+          type: referrerShown ? DUPLICATE.type : "Semi",
           severity: "Serious",
           description: `The id "${id}" is used by ${owners.length} elements, and ${ref.attr === "for" ? "a <label for>" : ref.attr} on a ${snippet(ref.by)} refers to it. The reference resolves to the first one, which may not be the element meant.`,
           data: { ruleId: DUPLICATE.id, id, count: owners.length, referencedBy: ref.attr },

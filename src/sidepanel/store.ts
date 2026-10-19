@@ -23,7 +23,7 @@ import type {
 import { DEFAULT_SETTINGS } from "@shared/constants";
 import { computeScore, isNotConformant, summarize } from "@shared/scoring";
 
-export type View = "list" | "detail" | "keyboard" | "saved" | "compare";
+export type View = "list" | "detail" | "keyboard" | "saved" | "compare" | "contrast";
 
 /** Result tabs, as in axe DevTools: every finding, WCAG failures, best practices, passed and not-applicable rules. */
 export type ResultTab = "all" | "auto" | "bp" | "review" | "failed" | "passed" | "na";
@@ -107,6 +107,13 @@ export interface PanelState {
   compare: { a: CompareSide; b: CompareSide } | null;
   /** Scroll to and outline the element whenever an issue is opened. */
   autoHighlight: boolean;
+  /** The finding the Contrast checker was opened from ("Check by eye"), or null for the plain checker. */
+  checkerIssueId: string | null;
+  /** The element picker is choosing an element for the Contrast checker (not the scan scope). */
+  colorPicking: boolean;
+  setColorPicking(v: boolean): void;
+  /** Open the Contrast checker, for a finding or on its own. */
+  openChecker(issueId: string | null): void;
 
   /** UI state of the tabs the panel has shown before, restored when the panel returns to them. */
   tabStates: Record<number, TabViewState>;
@@ -260,6 +267,10 @@ export const useStore = create<PanelState>()((set, get) => ({
   liveResult: undefined,
   compare: null,
   autoHighlight: true,
+  checkerIssueId: null,
+  openChecker: (checkerIssueId) => set({ checkerIssueId, view: "contrast" }),
+  colorPicking: false,
+  setColorPicking: (colorPicking) => set({ colorPicking }),
 
   tabStates: {},
   setTabId: (tabId) =>

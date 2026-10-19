@@ -11,7 +11,7 @@ A guide for testers and developers who use the extension day to day.
 5. [Work with an issue](#5-work-with-an-issue)
 6. [Scan options](#6-scan-options)
 7. [Overlay and colour-blindness simulation](#7-overlay-and-colour-blindness-simulation)
-8. [Keyboard test](#8-keyboard-test)
+8. [Keyboard test](#8-keyboard-test) (and the [Contrast checker](#contrast-checker))
 9. [Save, compare, rescan and reset](#9-save-compare-rescan-and-reset)
 10. [Export reports](#10-export-reports)
 11. [Options page](#11-options-page)
@@ -162,6 +162,33 @@ The keyboard test records where focus goes while you press Tab, and reports keyb
 The result shows the focus path and whether a trap was found. **Show tab order** draws the path on the page. A found trap is added to the scan results as a Critical issue.
 
 The test does not press keys for you: it only records what you press.
+
+### Contrast checker
+
+The Contrast checker measures two colours and shows the WCAG contrast ratio. It uses the same formula as the scan, so the numbers always match. Open it with **Contrast checker** in the action row.
+
+**Enter the colours:**
+- **Type** a value: a hex code with or without `#` (`1a1a1a`, `#fff`), `rgb()`, `hsl()` or a colour name. Or use the colour square.
+- **Pick on page** opens the browser's eyedropper. Click anywhere on screen. It reads the colour as it is drawn, so photos, gradients and video are measured as they look.
+- **From element** lets you click an element on the page. It reads the exact CSS colour of its text, which is more accurate for text than the eyedropper: picking text pixels lands on the blurred edges of letters and reads too light.
+
+**Text over a photo or gradient:** pick a few more background points behind it with **+ Pick another background point**. The lowest ratio counts.
+
+**Choose the requirement:** normal text (4.5:1), large text (3:1), or icons, borders and focus rings (3:1). The result shows the ratio, pass or fail at AA and AAA, and the nearest passing text and background colours, which you can try or copy.
+
+The ratio is truncated to two decimals, never rounded up: 4.478:1 shows as 4.47:1 and fails 4.5:1.
+
+#### Check a finding by eye
+
+Contrast findings (CLR-01 to CLR-05) have a **Check by eye** button, in the rule panel and in the issue details. Use it for findings in **Needs review** (text over images, gradients, video, or a background the scan could not see) and for any result you doubt.
+
+1. **Open the checker.** It opens with the element's exact text colour, and with the background where the scan is sure of it. The element is scrolled into view. For a focus-ring finding (CLR-05) it is also focused, and the page is kept "focused" so the ring stays drawn while you pick.
+2. **Pick or correct the colours.** Whatever the extension draws on the page is hidden while you pick.
+3. **Record the result.** Only the verdict your measurement supports is offered:
+   - **Passes: mark as false positive.** The finding is ignored for this site, with the measured colours as the reason.
+   - **Fails: confirm the failure.** A Needs review finding becomes a definite failure and counts in the score.
+
+The result is kept for the site and applied again when you rescan. It shows on the finding with the colours, ratio and date, and **Remove check** undoes it. HTML reports show confirmed failures as "Confirmed by eye" with the colours; JSON reports include the full check.
 
 ## 9. Save, compare, rescan and reset
 

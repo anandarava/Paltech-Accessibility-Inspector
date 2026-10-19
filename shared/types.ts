@@ -65,6 +65,47 @@ export interface Evidence {
   capturedAt?: string;
 }
 
+/** An element's colours as read by the Contrast checker's "pick from element". */
+export interface ElementColors {
+  /** Computed text colour, "#rrggbb", or "rgba(...)" when it (or an ancestor) is translucent. */
+  foreground: string;
+  /** Background worked out from the element's ancestors and the browser's stack, "#rrggbb". */
+  background: string;
+  /** False when an image, gradient or other box may be behind the text: pick the background instead. */
+  backgroundSure: boolean;
+  fontSize: number;
+  fontWeight: number;
+  /** WCAG large text (24px, or 18.66px bold). */
+  large: boolean;
+  text: string;
+}
+
+/**
+ * A contrast finding checked by the tester with the Contrast checker: the
+ * colours they measured on the page (typed or picked) and their verdict.
+ * "pass" ignores the finding as a false positive; "fail" confirms it as a
+ * definite failure (a Needs review finding then counts in the score).
+ */
+export interface ManualCheck {
+  verdict: "pass" | "fail";
+  /** Text (or indicator) colour as measured, "#rrggbb". */
+  foreground: string;
+  /** Background as measured, "#rrggbb". */
+  background: string;
+  /** Ratio truncated to 2 decimals. */
+  ratio: number;
+  /** Ratio the verdict was judged against (4.5, 3 ...). */
+  required: number;
+  /** How each colour was obtained. */
+  foregroundSource?: "typed" | "picked" | "element";
+  backgroundSource?: "typed" | "picked" | "element";
+  /** The finding's type before the check (restored when the check is removed). */
+  originalType: CheckType;
+  note?: string;
+  author: string;
+  checkedAt: string;
+}
+
 export interface Issue {
   id: string;
   /** Rule id from shared/a11y-rules.json (e.g. "CLR-01") or an axe rule id (e.g. "image-alt"). */
@@ -91,6 +132,8 @@ export interface Issue {
   /** Reason entered by the tester when ignoring/baselining. */
   reason?: string;
   evidence?: Evidence;
+  /** Set when the tester checked this contrast finding by eye (Contrast checker). */
+  manualCheck?: ManualCheck;
 }
 
 export interface ScanSummary {

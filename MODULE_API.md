@@ -270,3 +270,26 @@ fixture page, trigger a scan through the service worker (`context.serviceWorkers
 counts from the fixture's `<script type="application/json" id="expected">` manifest.
 Fixtures in `fixtures/*.html` (images, forms, keyboard-trap, contrast, structure, aria, links) each
 include that expected-results manifest.
+
+## Contrast checker and manual checks
+
+- `shared/contrast-check.ts`: `parseColorInput` (hex with or without `#`, any CSS colour),
+  `evaluateContrast(fg, bg)` (translucent colours blended as drawn; ratio truncated for display,
+  pass/fail on the unrounded ratio; AA, AAA and non-text criteria), `suggestFixes`.
+- `src/content/color-pick.ts`: `elementColors(el)`: the exact computed text colour (with
+  ancestor opacity) and the background from the contrast rule, with `backgroundSure`.
+- Messages:
+  - `COLOR_PREPARE` / `COLOR_RESTORE` (UI -> SW -> `CS_COLOR_PREPARE` / `CS_COLOR_RESTORE`):
+    hide the overlay, scroll to (and for focus rings focus) the finding's element, and answer
+    with its `ElementColors`. The SW turns on focus emulation for a focus-ring check and off
+    on restore.
+  - `CS_ELEMENT_COLORS` (UI -> CS): colours of the element chosen with the picker. The panel's
+    `colorPicking` flag routes the `PICKER_RESULT` to the checker instead of the scan scope.
+  - `MANUAL_CHECK_SET` / `MANUAL_CHECK_REMOVE` (UI -> SW): record or undo a `ManualCheck` on
+    an issue.
+- Verdicts:
+  - **pass:** the issue is ignored for the origin, with the measured colours as the reason.
+  - **fail:** the issue becomes `Auto`; a previous "pass" ignore is removed.
+- Storage and rescans: checks are stored per origin under `manualChecks:<origin>`, keyed by
+  fingerprint, and reapplied after every scan (`applyManualChecks`). `IGNORE_REMOVE` also
+  drops a "pass" check.

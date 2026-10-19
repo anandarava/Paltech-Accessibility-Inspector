@@ -5,6 +5,8 @@ import { isBestPracticeIssue, isNeedsReviewIssue, matchesFilters, matchesTab, ru
 
 /** Window event fired in the panel when the on-page picker returns a selector (ScopeControl starts the scan). */
 export const PICKED_EVENT = "a11y-checker:picked";
+/** The element picker chose an element for the Contrast checker (detail: its selector, or null when cancelled). */
+export const COLOR_PICKED_EVENT = "a11y-checker:color-picked";
 import { refreshSettings, restoreLastResult } from "./messaging";
 
 /**
@@ -115,6 +117,12 @@ export function useBackgroundEvents(): void {
           break;
         case "PICKER_RESULT": {
           store.setPicking(false);
+          // Picked for the Contrast checker: hand the element over, leave the scan scope alone.
+          if (store.colorPicking) {
+            store.setColorPicking(false);
+            window.dispatchEvent(new CustomEvent(COLOR_PICKED_EVENT, { detail: msg.selector }));
+            break;
+          }
           if (msg.selector) {
             store.setScope({ kind: "selector", selector: msg.selector });
             window.dispatchEvent(new CustomEvent(PICKED_EVENT, { detail: msg.selector }));

@@ -19,6 +19,7 @@
  */
 import type {
   BaselineEntry,
+  ManualCheck,
   RuleConfig,
   SavedScan,
   SavedScanMeta,
@@ -301,6 +302,50 @@ export function addIgnored(origin: string, entries: BaselineEntry[]): Promise<vo
 
 export function removeIgnored(origin: string, fingerprints: string[]): Promise<void> {
   return removeEntries(STORAGE_KEYS.ignored(normalizeOrigin(origin)), fingerprints);
+}
+
+// ---------------------------------------------------------------------------
+// Manual contrast checks (per origin, keyed by fingerprint)
+// ---------------------------------------------------------------------------
+
+function isManualCheck(v: unknown): v is ManualCheck {
+  return (
+    isPlainObject(v) &&
+    (v.verdict === "pass" || v.verdict === "fail") &&
+    typeof v.foreground === "string" &&
+    typeof v.background === "string" &&
+    typeof v.ratio === "number" &&
+    typeof v.required === "number" &&
+    typeof v.originalType === "string"
+  );
+}
+
+/** Manual checks for an origin, by issue fingerprint. Malformed entries are dropped. */
+export async function getManualChecks(origin: string): Promise<Record<string, ManualCheck>> {
+  const stored = await localGet<unknown>(STORAGE_KEYS.manualChecks(normalizeOrigin(origin)));
+  const out: Record<string, ManualCheck> = {};
+  if (!isPlainObject(stored)) return out;
+  for (const [fp, v] of Object.entries(stored)) if (isManualCheck(v)) out[fp] = v;
+  return out;
+}
+
+export function setManualCheck(origin: string, fingerprint: string, check: ManualCheck): Promise<void> {
+  const key = STORAGE_KEYS.manualChecks(normalizeOrigin(origin));
+  return withKeyLock(key, async () => {
+    const all = await getManualChecks(origin);
+    all[fingerprint] = check;
+    await localSet(key, all);
+  });
+}
+
+export function removeManualChecks(origin: string, fingerprints: string[]): Promise<void> {
+  const key = STORAGE_KEYS.manualChecks(normalizeOrigin(origin));
+  return withKeyLock(key, async () => {
+    const all = await getManualChecks(origin);
+    let changed = false;
+    for (const fp of fingerprints) if (fp in all) { delete all[fp]; changed = true; }
+    if (changed) await localSet(key, all);
+  });
 }
 
 // ---------------------------------------------------------------------------

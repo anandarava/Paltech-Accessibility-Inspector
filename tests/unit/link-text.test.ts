@@ -73,6 +73,17 @@ describe("link-text rule", () => {
     expect(idsFor(findings, "LNK-03")).toEqual([]);
   });
 
+  it("does not flag vague links whose context explains them (2.4.4 in context)", async () => {
+    const findings = await run(`
+      <article><h3>Intelligent Canvas</h3><p>Plan and build together.</p><a id="card" href="/canvas">Learn more</a></article>
+      <p>This project is deprecated. <a id="sentence" href="/mobile">Learn more</a>.</p>
+      <ul><li>Release notes for the spring update <a id="item" href="/notes">more</a></li></ul>
+      <table><tr><td>Court decision notice for 2025 <a id="cell" href="/notice">Read more</a></td></tr></table>
+      <div><div><a id="bare" href="/x">Read more</a></div></div>
+      <p><a id="alone" href="/y">Click here</a></p>`);
+    expect(idsFor(findings, "LNK-03")).toEqual(["alone", "bare"]);
+  });
+
   it("flags target=_blank links that do not warn about the new window (LNK-05)", async () => {
     const findings = await run(`
       <a id="a" href="https://example.com/status" target="_blank" rel="noopener">Status page</a>

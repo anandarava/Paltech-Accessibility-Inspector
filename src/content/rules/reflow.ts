@@ -90,6 +90,9 @@ interface Measure {
   /** Text lines reach outside the visible box horizontally / vertically. */
   textOutX: boolean;
   textOutY: boolean;
+  /** How far (px) the text reaches past the box horizontally / vertically. */
+  outX: number;
+  outY: number;
 }
 
 /** Text nodes looked at per container; enough to find the first and last lines of real content. */
@@ -118,7 +121,7 @@ function textExtent(el: Element): { left: number; top: number; right: number; bo
 }
 
 function measure(el: Element): Measure {
-  const m = { scrollWidth: el.scrollWidth, clientWidth: el.clientWidth, scrollHeight: el.scrollHeight, clientHeight: el.clientHeight, textOutX: false, textOutY: false };
+  const m = { scrollWidth: el.scrollWidth, clientWidth: el.clientWidth, scrollHeight: el.scrollHeight, clientHeight: el.clientHeight, textOutX: false, textOutY: false, outX: 0, outY: 0 };
   // Cheap exit: nothing can be cut off when the content fits.
   if (m.scrollWidth <= m.clientWidth + TOLERANCE && m.scrollHeight <= m.clientHeight + TOLERANCE) return m;
   const text = textExtent(el);
@@ -128,6 +131,9 @@ function measure(el: Element): Measure {
   const top = r.top + el.clientTop;
   m.textOutX = text.left < left - TOLERANCE || text.right > left + el.clientWidth + TOLERANCE;
   m.textOutY = text.top < top - TOLERANCE || text.bottom > top + el.clientHeight + TOLERANCE;
+  // How far the text reaches past the box (px), to tell lost words from cut-off letter tails.
+  m.outX = Math.max(0, left - text.left, text.right - (left + el.clientWidth));
+  m.outY = Math.max(0, top - text.top, text.bottom - (top + el.clientHeight));
   return m;
 }
 
@@ -137,6 +143,20 @@ function overflows(m: Measure, x: boolean, y: boolean): boolean {
 
 function scrollOverflows(m: Measure, x: boolean, y: boolean): boolean {
   return (x && m.scrollWidth > m.clientWidth + TOLERANCE) || (y && m.scrollHeight > m.clientHeight + TOLERANCE);
+}
+
+/** Share of the font size that text may reach past its box and still only lose letter tails. */
+const TAIL_SHARE = 0.5;
+
+/** True when `el` lays out three or more items side by side (directly or one wrapper down). */
+function isItemRow(el: Element, view: Window): boolean {
+  for (const box of [el, ...Array.from(el.children).slice(0, 3)]) {
+    const items = Array.from(box.children).filter((k) => (k as HTMLElement).offsetWidth > 0);
+    if (items.length < 3) continue;
+    const tops = items.slice(0, 6).map((k) => Math.round(k.getBoundingClientRect().top));
+    if (tops.every((t) => Math.abs(t - (tops[0] as number)) <= 2)) return true;
+  }
+  return false;
 }
 
 /** Text cut short on purpose: `-webkit-line-clamp` or `text-overflow: ellipsis`. */
@@ -288,10 +308,18 @@ async function checkTextSpacing(ctx: RuleContext, findings: RuleFinding[]): Prom
       let scripted = false;
       for (let n: Element | null = c.element, i = 0; n && i < 3 && !scripted; n = n.parentElement, i++) scripted = /width|--/.test(n.getAttribute("style") ?? "");
       const deliberate = isDeliberateTruncation(c.element, view) || scripted;
+      // A row of items side by side cut off only sideways is usually a carousel or scroller whose
+      // other items are reached with its own controls: needs review.
+      const row = c.x && !c.y && isItemRow(c.element, view);
       const cut = deliberate ? scrollOverflows : overflows;
       const overflowedBefore = cut(c.before, c.x, c.y);
       const overflowsAfter = cut(after, c.x, c.y);
       if (overflowedBefore || !overflowsAfter) continue;
+      // Decoration hidden from assistive technology (a product mock-up in a hero): not content.
+      if (c.element.closest("[aria-hidden='true'], [role='presentation'], [role='none']")) continue;
+      // Only the tails of the last line's letters (p, g, y) are cut: every word stays readable.
+      const fontSize = parseFloat(view.getComputedStyle(c.element).fontSize) || 16;
+      if (!deliberate && after.outX <= TOLERANCE && after.outY < fontSize * TAIL_SHARE) continue;
       // Ancestor already reported: the inner clip is a consequence.
       if (reported.some((r) => r.contains(c.element))) continue;
       reported.push(c.element);
@@ -301,9 +329,9 @@ async function checkTextSpacing(ctx: RuleContext, findings: RuleFinding[]): Prom
       const snippet = (c.element.textContent ?? "").replace(/\s+/g, " ").trim();
       findings.push({
         element: c.element,
-        type: deliberate ? "Semi" : SPACING.type,
+        type: deliberate || row ? "Semi" : SPACING.type,
         severity: SPACING.severity ?? "Moderate",
-        description: `With WCAG text spacing applied (line-height 1.5, letter-spacing 0.12em, word-spacing 0.16em, paragraph spacing 2em) the text of ${describe(c.element)} is cut off ${axis} (${after.scrollWidth}x${after.scrollHeight}px of content in a ${after.clientWidth}x${after.clientHeight}px box with overflow hidden)${snippet ? `: "${snippet.length > 60 ? `${snippet.slice(0, 59)}…` : snippet}"` : ""}.${deliberate ? " The text is shortened on purpose (line-clamp or ellipsis); check that the full text is available, for example on the page the item links to." : ""}`,
+        description: `With WCAG text spacing applied (line-height 1.5, letter-spacing 0.12em, word-spacing 0.16em, paragraph spacing 2em) the text of ${describe(c.element)} is cut off ${axis} (${after.scrollWidth}x${after.scrollHeight}px of content in a ${after.clientWidth}x${after.clientHeight}px box with overflow hidden)${snippet ? `: "${snippet.length > 60 ? `${snippet.slice(0, 59)}…` : snippet}"` : ""}.${deliberate ? " The text is shortened on purpose (line-clamp or ellipsis); check that the full text is available, for example on the page the item links to." : ""}${row && !deliberate ? " The box holds a row of items side by side (a carousel or scroller); check whether the items cut off can still be reached with its controls." : ""}`,
         data: {
           ruleId: SPACING.id,
           before: c.before,

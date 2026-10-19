@@ -10,6 +10,7 @@ import { useFocusHeading } from "@src/sidepanel/hooks/useFocusHeading";
 import { BackButton } from "./BackButton";
 import { Button } from "./Button";
 import { ColorSwatch } from "./ColorSwatch";
+import { CHECKABLE_RULES } from "./ContrastChecker";
 import { ReasonForm } from "./ReasonForm";
 import { StatusLabel } from "./SeverityLabel";
 
@@ -153,6 +154,8 @@ export function IssueDetail({ issueId, onBack, onInspect, wide = false }: Props)
   const readOnly = useStore((s) => s.viewingSaved !== null);
   const autoHighlight = useStore((s) => s.autoHighlight);
   const setAutoHighlight = useStore((s) => s.setAutoHighlight);
+  const openChecker = useStore((s) => s.openChecker);
+  const setResult = useStore((s) => s.setResult);
   const headingRef = useFocusHeading<HTMLHeadingElement>([]); // first open only: stepping Prev/Next must keep focus on the stepper
   const [form, setForm] = useState<PendingForm>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -279,6 +282,21 @@ export function IssueDetail({ issueId, onBack, onInspect, wide = false }: Props)
     // The service worker also rebroadcasts the updated result; apply it here so the counts change at once.
     updateIssues((i) => (i.fingerprint === issue.fingerprint ? { ...i, status: "new", reason: undefined } : i));
     showToast({ kind: "success", message: "Issue restored. It counts in the totals and score again." });
+    headingRef.current?.focus();
+  };
+
+  /** Undo a "Check by eye" result: the finding is again what the scan reported. */
+  const removeManualCheck = async () => {
+    if (tabId === null) return;
+    setBusy("manual");
+    const res = await sendToBackground<ScanResult>({ type: "MANUAL_CHECK_REMOVE", tabId, issueId: issue.id });
+    setBusy(null);
+    if (!res.ok || !res.data) {
+      showToast({ kind: "error", message: `Could not remove the check: ${res.error ?? "unknown error"}`, autoDismiss: false });
+      return;
+    }
+    setResult(res.data);
+    showToast({ kind: "success", message: "Manual check removed. The finding is back to what the scan reported." });
     headingRef.current?.focus();
   };
 
@@ -429,6 +447,46 @@ export function IssueDetail({ issueId, onBack, onInspect, wide = false }: Props)
             </a>
           )}
         </section>
+
+        {/* Check by eye: the tester measures the colours on the page and records the result. */}
+        {CHECKABLE_RULES.has(issue.ruleId) && (issue.manualCheck || !readOnly) && (
+          <section aria-labelledby="manual-heading" className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5">
+            <h3 id="manual-heading" className="text-[11px] font-semibold uppercase tracking-[0.08em] text-blue-900">
+              Check by eye
+            </h3>
+            {issue.manualCheck ? (
+              <>
+                <p className="mt-1 text-sm text-slate-900">
+                  <strong>{issue.manualCheck.verdict === "pass" ? "Passes" : "Fails (confirmed)"}</strong>: {issue.manualCheck.foreground} on {issue.manualCheck.background} is{" "}
+                  {issue.manualCheck.ratio}:1 ({issue.manualCheck.required}:1 required).
+                </p>
+                {issue.manualCheck.note && <p className="mt-0.5 text-xs text-slate-800">Note: {issue.manualCheck.note}</p>}
+                <p className="mt-0.5 text-[11px] text-slate-700">Checked {new Date(issue.manualCheck.checkedAt).toLocaleString()}.</p>
+                {!readOnly && (
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    <Button size="sm" onClick={() => openChecker(issue.id)} disabled={tabId === null}>
+                      Check again
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => void removeManualCheck()} disabled={busy === "manual"}>
+                      {busy === "manual" ? "Removing…" : "Remove check"}
+                    </Button>
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <p className="mt-1 text-sm text-slate-900">
+                  {issue.type === "Semi"
+                    ? "The scan could not be sure of the colours here. Pick them on the page to settle it."
+                    : "Measure the colours on the page to confirm this result or correct it."}
+                </p>
+                <Button size="sm" variant="primary" className="mt-1.5" onClick={() => openChecker(issue.id)} disabled={tabId === null}>
+                  Check by eye
+                </Button>
+              </>
+            )}
+          </section>
+        )}
 
         {/* Contrast: see the problem, not just the numbers */}
         {isContrast && fg && bg && (

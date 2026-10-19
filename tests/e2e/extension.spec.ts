@@ -564,6 +564,158 @@ test.describe("PalTech A11y Inspector extension", () => {
     }
   });
 
+  test("contrast checker: exact element colours, and a manual check that survives rescans and can be undone", async () => {
+    const { page, tabId } = await openFixture("side-by-side");
+    try {
+      const idOf = (i: Issue) => /id="([^"]+)"/.exec(i.element.html)?.[1] ?? "";
+      const find = (r: ScanResult, id: string) => r.issues.find((i) => idOf(i) === id && /^CLR-0[12]$/.test(i.ruleId)) as Issue;
+      let result = await scan(tabId);
+      const mockup = find(result, "mockup-text");
+      expect(mockup.type).toBe("Semi");
+
+      // The page side: our drawings hidden, the element measured from its CSS.
+      const prep = await sendToBackground<{ colors?: { foreground: string; background: string; backgroundSure: boolean; large: boolean } }>(panel, { type: "COLOR_PREPARE", tabId, issueId: mockup.id });
+      expect(prep.ok, prep.error).toBe(true);
+      expect(prep.data?.colors).toMatchObject({ foreground: "#9a9a9a", background: "#ffffff", large: false });
+      const alpha = await sendToBackground<unknown>(panel, { type: "COLOR_RESTORE", tabId });
+      expect(alpha.ok).toBe(true);
+      const colours = await panel.evaluate(async (t) => (await chrome.tabs.sendMessage(t, { type: "CS_ELEMENT_COLORS", tabId: t, selector: "#alpha-text" }, { frameId: 0 })) as { ok: boolean; data?: { foreground: string } }, tabId);
+      expect(colours.data?.foreground).toBe("rgba(0, 0, 0, 0.5)");
+
+      // Confirmed failure: definite now and after a rescan.
+      const check = { verdict: "fail" as const, foreground: "#9a9a9a", background: "#ffffff", ratio: 2.81, required: 4.5, foregroundSource: "element" as const, backgroundSource: "picked" as const };
+      const set = await sendToBackground<ScanResult>(panel, { type: "MANUAL_CHECK_SET", tabId, issueId: mockup.id, check });
+      expect(set.ok, set.error).toBe(true);
+      expect(find(set.data as ScanResult, "mockup-text")).toMatchObject({ type: "Auto", manualCheck: { verdict: "fail", originalType: "Semi" } });
+      result = await scan(tabId);
+      expect(find(result, "mockup-text")).toMatchObject({ type: "Auto", manualCheck: { verdict: "fail", ratio: 2.81 } });
+
+      // Removing the check gives back what the scan reported, here and after a rescan.
+      const removed = await sendToBackground<ScanResult>(panel, { type: "MANUAL_CHECK_REMOVE", tabId, issueId: find(result, "mockup-text").id });
+      expect(removed.ok, removed.error).toBe(true);
+      expect(find(removed.data as ScanResult, "mockup-text").type).toBe("Semi");
+      result = await scan(tabId);
+      expect(find(result, "mockup-text").manualCheck).toBeUndefined();
+      expect(find(result, "mockup-text").type).toBe("Semi");
+
+      // "Passes": ignored as a false positive with the measured colours, kept on rescan; Restore clears it.
+      const covered = find(result, "covered-text");
+      const pass = await sendToBackground<ScanResult>(panel, { type: "MANUAL_CHECK_SET", tabId, issueId: covered.id, check: { ...check, verdict: "pass", foreground: "#9a9a9a", background: "#222222", ratio: 6.25 } });
+      expect(pass.ok, pass.error).toBe(true);
+      expect(find(pass.data as ScanResult, "covered-text")).toMatchObject({ status: "ignored", manualCheck: { verdict: "pass" } });
+      expect(find(pass.data as ScanResult, "covered-text").reason).toMatch(/^Checked by eye: #9a9a9a on #222222 is 6.25:1/);
+      result = await scan(tabId);
+      expect(find(result, "covered-text")).toMatchObject({ status: "ignored", manualCheck: { verdict: "pass" } });
+      const restore = await sendToBackground(panel, { type: "IGNORE_REMOVE", origin: result.origin, fingerprints: [find(result, "covered-text").fingerprint] });
+      expect(restore.ok).toBe(true);
+      result = await scan(tabId);
+      expect(find(result, "covered-text").status).toBe("new");
+      expect(find(result, "covered-text").manualCheck).toBeUndefined();
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("contrast checker panel: typed colours give the WCAG ratio, verdicts and a passing fix", async () => {
+    const { page, tabId } = await openFixture("side-by-side");
+    const ui = await context.newPage();
+    try {
+      await ui.goto(`chrome-extension://${extensionId}/src/sidepanel/index.html?tabId=${tabId}`, { waitUntil: "load" });
+      await ui.getByRole("button", { name: "Contrast checker" }).first().click();
+      await expect(ui.getByRole("heading", { name: "Contrast checker" })).toBeVisible();
+      await ui.getByLabel("Text colour", { exact: true }).fill("777777");
+      await ui.getByLabel("Background colour", { exact: true }).fill("#fff");
+      const result = ui.locator("[aria-live=polite]").filter({ hasText: ":1" });
+      // #777777 on white is 4.4781:1: shown truncated as 4.47, and it fails normal text.
+      await expect(result).toContainText("4.47:1");
+      await expect(result).toContainText("Fails 4.5:1");
+      await ui.getByRole("radio", { name: /Large text/ }).check();
+      await expect(result).toContainText("Passes 3:1");
+      await ui.getByRole("radio", { name: /Normal text/ }).check();
+      // The suggested text colour passes when tried.
+      await ui.getByRole("button", { name: "Try it" }).first().click();
+      await expect(result).toContainText("Passes 4.5:1");
+      // An invalid entry is explained, not silently ignored.
+      await ui.getByLabel("Background colour", { exact: true }).fill("not-a-colour");
+      await expect(ui.getByText(/Not a colour/)).toBeVisible();
+    } finally {
+      await ui.close();
+      await page.close();
+    }
+  });
+
+  test("check by eye from a finding: prefilled exact colours, and the verdict shows on the finding", async () => {
+    const { page, tabId } = await openFixture("side-by-side");
+    const ui = await context.newPage();
+    try {
+      await ui.setViewportSize({ width: 420, height: 900 });
+      await ui.goto(`chrome-extension://${extensionId}/src/sidepanel/index.html?tabId=${tabId}`, { waitUntil: "load" });
+      await ui.getByRole("button", { name: /Start scan|Rescan page/ }).first().click();
+      await expect(ui.getByRole("tab", { name: /Needs review/ })).toBeVisible({ timeout: 60_000 });
+      await ui.getByRole("tab", { name: /Needs review/ }).click();
+      await ui.getByText(/Normal text contrast below 4.5:1/).first().click();
+      await ui.getByText(/9:14 am/).first().click();
+      await ui.getByRole("button", { name: "Check by eye" }).first().click();
+      await expect(ui.getByRole("heading", { name: "Check contrast by eye" })).toBeVisible();
+      // The exact CSS colour of the element, and the scan's (certain) background.
+      await expect(ui.getByLabel("Text colour", { exact: true })).toHaveValue("#9a9a9a");
+      await expect(ui.getByLabel("Background colour", { exact: true })).toHaveValue("#ffffff");
+      await expect(ui.locator("[aria-live=polite]").filter({ hasText: ":1" })).toContainText("2.81:1");
+      // Only the verdict the measurement supports is offered.
+      await expect(ui.getByRole("button", { name: /Passes: mark as false positive/ })).toHaveCount(0);
+      await ui.getByRole("button", { name: /Fails: confirm the failure/ }).click();
+      await expect(ui.getByText(/Fails \(confirmed\)/)).toBeVisible();
+      await expect(ui.getByRole("button", { name: "Remove check" })).toBeVisible();
+      await ui.getByRole("button", { name: "Remove check" }).click();
+      await expect(ui.getByRole("button", { name: "Check by eye" }).first()).toBeVisible();
+    } finally {
+      await ui.close();
+      await page.close();
+    }
+  });
+
+  test("modal dialog open: one note for the page behind it, not a finding per link", async () => {
+    const { page, tabId } = await openFixture("modal-dialog");
+    try {
+      const result = await scan(tabId);
+      const focus = result.issues.filter((i) => i.ruleId === "KBD-05" || i.ruleId === "KBD-06");
+      expect(focus.filter((i) => i.type !== "Semi").map((i) => i.element.selector)).toEqual([]);
+      expect(focus.filter((i) => i.data?.modalDialog === true).map((i) => i.ruleId).sort()).toEqual(["KBD-05", "KBD-06"]);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("side-by-side misfires: fine patterns are not definite failures", async () => {
+    const { page, tabId } = await openFixture("side-by-side");
+    try {
+      const result = await scan(tabId);
+      const idOf = (i: Issue) => /id="([^"]+)"/.exec(i.element.html)?.[1] ?? i.element.selector;
+      const on = (id: string, prefix: string) => result.issues.filter((i) => idOf(i) === id && i.ruleId.startsWith(prefix)).map((i) => `${i.ruleId} ${i.type}`);
+      // Far off-page labels, a ::before band, a tab's own fill, a dark panel over a photo: no contrast finding.
+      for (const id of ["far-off", "band-text", "pill-tab", "photo-credit"]) expect(on(id, "CLR"), id).toEqual([]);
+      // A lone symbol may be an icon or part of a value ("10M+"): for review.
+      expect(on("sym-only", "CLR")).toEqual(["CLR-01 Semi"]);
+      // Decoration hidden from screen readers, and text with a panel drawn over it: for review only.
+      expect(on("mockup-text", "CLR")).toEqual(["CLR-01 Semi"]);
+      expect(on("covered-text", "CLR")).toEqual(["CLR-01 Semi"]);
+      // A flying-focus box, an `auto` outline of width 0 and a ring that stands out on black are indicators.
+      for (const id of ["fly-link", "auto-zero", "ring-on-dark"]) expect([...on(id, "KBD-05"), ...on(id, "CLR-05")], id).toEqual([]);
+      // A text field whose only sign of focus is the text cursor: for review.
+      expect(on("caret-only", "KBD-05")).toEqual(["KBD-05 Semi"]);
+      // Decoration clipped by text spacing is not lost content.
+      expect(on("deco-clip", "ZM-03")).toEqual([]);
+      // Analytics and template data attributes do not make an element clickable.
+      expect([...on("analytics-tag", "KBD-01"), ...on("template-token", "KBD-01")]).toEqual([]);
+      // Fading on focus is a visible change; text in a collapsed box is never shown; a cookie-bar sentence explains its link.
+      expect(on("fade-focus", "KBD-05")).toEqual([]);
+      expect(on("collapsed-link", "CLR")).toEqual([]);
+      expect(on("cookie-more", "LNK-03")).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
   test("real-site patterns: no false findings, and the look-alikes are still reported", async () => {
     const { page, tabId } = await openFixture("real-site-cases");
     try {
@@ -601,7 +753,8 @@ test.describe("PalTech A11y Inspector extension", () => {
       expect(rulesOn("solid-chip").filter((r) => r.startsWith("CLR"))).toEqual([]);
       // Definite only when sure: an unknown background (sibling gradient, web component) is Needs review.
       const clrTypes = (id: string) => result.issues.filter((i) => idOf(i) === id && /^CLR-0[12]$/.test(i.ruleId)).map((i) => i.type);
-      expect(clrTypes("on-grad-sibling")).toEqual(["Semi"]);
+      // A gradient drawn by a sibling box is an image behind the text: CLR-03 (cannot be measured), for review.
+      expect(result.issues.filter((i) => idOf(i) === "on-grad-sibling" && /^CLR-0[123]$/.test(i.ruleId)).map((i) => `${i.ruleId} ${i.type}`)).toEqual(["CLR-03 Semi"]);
       expect(clrTypes("in-component")).toEqual(["Semi"]);
       expect(clrTypes("plain-fail")).toEqual(["Auto"]);
       expect(rulesOn("over-light-image").filter((r) => r.startsWith("CLR"))).toEqual([]);

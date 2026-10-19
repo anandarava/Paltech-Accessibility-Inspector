@@ -80,8 +80,8 @@ import rulesJson from "@shared/a11y-rules.json";
 import type { RuleDefinition, RulesFile } from "@shared/types";
 import { contrastRatio, contrastRatioExact, hslToRgb, parseColor, rgbToHsl, suggestPassingColor, toHex, type RGB, type RGBA } from "@shared/color";
 import { EXT_MARKER_ATTR } from "@shared/constants";
-import { getFocusableElements } from "@src/content/dom-utils";
-import { backgroundDoubt, isExtensionElement, paintOver, resolveBackground, saveScroll, type BackgroundCache, type BackgroundResolution } from "./contrast";
+import { getFocusableElements, modalDialogNote, openModalDialog } from "@src/content/dom-utils";
+import { backgroundAt, backgroundDoubt, isExtensionElement, paintOver, resolveBackground, saveScroll, type BackgroundCache, type BackgroundResolution } from "./contrast";
 import type { CustomRule, RuleContext, RuleFinding } from "./types";
 
 const RULES: RuleDefinition[] = (rulesJson as unknown as RulesFile).rules;
@@ -134,6 +134,7 @@ interface StyleSnapshot {
   textDecorationColor: string;
   filter: string;
   transform: string;
+  opacity: string;
 }
 
 function snapshot(cs: CSSStyleDeclaration): StyleSnapshot {
@@ -153,6 +154,7 @@ function snapshot(cs: CSSStyleDeclaration): StyleSnapshot {
     textDecorationColor: cs.textDecorationColor,
     filter: cs.filter,
     transform: cs.transform,
+    opacity: cs.opacity,
   };
 }
 
@@ -214,7 +216,7 @@ function relatedParts(el: Element): RelatedPart[] {
  * related parts. The element is briefly blurred to read the unfocused state,
  * then focused again.
  */
-function indicatorElsewhere(el: HTMLElement, view: Window): boolean {
+function indicatorElsewhere(el: HTMLElement, view: Window, baseline?: Map<Element, string>): boolean {
   const parts = relatedParts(el);
   const focused = parts.map((p) => relatedSnapshot(p, view));
   el.blur();
@@ -222,40 +224,68 @@ function indicatorElsewhere(el: HTMLElement, view: Window): boolean {
   const unfocused = parts.map((p) => relatedSnapshot(p, view));
   el.focus({ preventScroll: true, focusVisible: true } as FocusOptions);
   if (focused.some((f, i) => f !== unfocused[i] && (f !== "" || unfocused[i] !== ""))) return true;
-  return overlayIndicator(el, view);
+  return overlayIndicator(el, view, baseline);
 }
 
 /**
  * True when a separate overlay that a script moves onto the focused element
- * ("flying focus", WebAIM) changes on focus and then surrounds the element.
- * The element is briefly blurred and focused again.
+ * ("flying focus", WebAIM; DW's `div.fly`) changes on focus and then surrounds
+ * the element. "Unfocused" is the overlay as it was just before the element
+ * was focused (`baseline`, where it was still on the previous element or
+ * hidden); scripts that hide the overlay on blur after a delay look unchanged
+ * when the element is merely blurred again, so that is only the fallback.
  */
-function overlayIndicator(el: HTMLElement, view: Window): boolean {
+function overlayIndicator(el: HTMLElement, view: Window, baseline?: Map<Element, string>): boolean {
   const overlays = overlayCandidates(el);
   if (overlays.length === 0) return false;
   const overlaysFocused = overlays.map((o) => overlaySnapshot(o, view));
   el.blur();
-  const overlaysUnfocused = overlays.map((o) => overlaySnapshot(o, view));
+  const overlaysBlurred = overlays.map((o) => overlaySnapshot(o, view));
   el.focus({ preventScroll: true, focusVisible: true } as FocusOptions);
   const r = el.getBoundingClientRect();
   const cx = r.left + r.width / 2;
   const cy = r.top + r.height / 2;
   return overlays.some((o, i) => {
-    if (overlaysFocused[i] === overlaysUnfocused[i]) return false;
+    const before = baseline ? (baseline.get(o) ?? "absent") : overlaysBlurred[i];
+    if (overlaysFocused[i] === before && overlaysFocused[i] === overlaysBlurred[i]) return false;
     const b = o.getBoundingClientRect();
     return b.left <= cx && b.right >= cx && b.top <= cy && b.bottom >= cy && b.width <= r.width * 3 + 40 && b.height <= r.height * 3 + 40;
   });
 }
 
-/** Positioned elements at the top level of the page that could be a moving focus overlay. */
+/** The page's possible focus overlays, found again every 25 elements (a script may add one on first focus). */
+const overlayPools = new WeakMap<Document, { pool: Element[]; uses: number }>();
+
+/** Snapshots of the page's possible focus overlays, taken before an element is focused. */
+function overlayBaseline(doc: Document, view: Window): Map<Element, string> {
+  const out = new Map<Element, string>();
+  if (!doc.body) return out;
+  let cached = overlayPools.get(doc);
+  if (!cached || cached.uses >= 25) {
+    cached = { pool: overlayCandidates(doc.body), uses: 0 };
+    overlayPools.set(doc, cached);
+  }
+  cached.uses++;
+  for (const o of cached.pool) out.set(o, overlaySnapshot(o, view));
+  return out;
+}
+
+/**
+ * Positioned elements near the top of the page that could be a moving focus
+ * overlay: children of the body, or an empty box up to three levels down
+ * (DW puts its `div.fly` inside a page wrapper).
+ */
 function overlayCandidates(el: Element): Element[] {
   const doc = el.ownerDocument;
   const view = doc.defaultView ?? window;
   const out: Element[] = [];
-  for (const c of Array.from(doc.body?.children ?? [])) {
-    if (out.length >= 30 || c.contains(el)) continue;
+  if (!doc.body) return out;
+  for (const c of Array.from(doc.body.querySelectorAll(":scope > *, :scope > * > *, :scope > * > * > *"))) {
+    if (out.length >= 30) break;
+    if (el !== doc.body && (c.contains(el) || el.contains(c))) continue;
     const pos = view.getComputedStyle(c).position;
-    if (pos === "absolute" || pos === "fixed") out.push(c);
+    if (pos !== "absolute" && pos !== "fixed") continue;
+    if (c.parentElement === doc.body || (c.childElementCount === 0 && !(c.textContent ?? "").trim())) out.push(c);
   }
   return out;
 }
@@ -283,6 +313,64 @@ function isClipped(cs: CSSStyleDeclaration): boolean {
   return /^rect\(\s*0(px)?[\s,]+0(px)?[\s,]+0(px)?[\s,]+0(px)?\s*\)$/.test(cs.clip) || /^inset\(\s*(50|100)%/.test(cs.clipPath);
 }
 
+/**
+ * The colours just outside an element's ring, at the middle of each side
+ * (beyond the outline's offset and width), from the browser's stack there.
+ * The element is scrolled into view for the check and scrolled back after.
+ */
+function colourAroundRing(el: HTMLElement, view: Window, focused: StyleSnapshot): { doubt: string; colours: RGB[] } {
+  const ring = focused.outlineStyle !== "none" ? Math.max(0, parseFloat(focused.outlineOffset) || 0) + Math.max(parseFloat(focused.outlineWidth) || 0, focused.outlineStyle === "auto" ? 2 : 0) : 0;
+  const gap = ring + 2;
+  const restore = saveScroll(el);
+  try {
+    let r = el.getBoundingClientRect();
+    if (r.top - gap < 0 || r.bottom + gap > view.innerHeight || r.left - gap < 0 || r.right + gap > view.innerWidth) {
+      el.scrollIntoView({ block: "center", inline: "center", behavior: "instant" as ScrollBehavior });
+      r = el.getBoundingClientRect();
+    }
+    const cx = (r.left + r.right) / 2;
+    const cy = (r.top + r.bottom) / 2;
+    const points = [
+      { x: cx, y: r.top - gap },
+      { x: cx, y: r.bottom + gap },
+      { x: r.left - gap, y: cy },
+      { x: r.right + gap, y: cy },
+    ];
+    const colours: RGB[] = [];
+    for (const p of points) {
+      // A neighbouring control (the next button in a row) is not the background next to the ring.
+      const top = el.ownerDocument.elementFromPoint(p.x, p.y);
+      const control = top?.closest("a[href], button, input, select, textarea, [role='button'], [tabindex]");
+      if (control && control !== el && !control.contains(el) && !el.contains(control)) continue;
+      const found = backgroundAt(el, p);
+      if (found.doubt) return { doubt: found.doubt, colours: [] };
+      if (found.color && !colours.some((c) => c.every((v, i) => Math.abs(v - (found.color as RGB)[i]!) <= 2))) colours.push(found.color);
+    }
+    return { doubt: "", colours };
+  } finally {
+    restore();
+  }
+}
+
+const TEXT_INPUT_TYPES = new Set(["", "text", "email", "search", "tel", "url", "password", "number"]);
+
+/** True inside a frame whose page comes from another site than the top page. */
+function isForeignFrame(view: Window): boolean {
+  if (view === view.top) return false;
+  try {
+    return view.top?.location.origin !== view.location.origin;
+  } catch {
+    return true; // reading the top page's address is blocked: another site
+  }
+}
+
+/** A field the user types into, which shows a text cursor when focused. */
+function isTextEntry(el: Element): boolean {
+  if (el.localName === "textarea") return true;
+  if (el.localName === "input") return TEXT_INPUT_TYPES.has((el.getAttribute("type") ?? "").toLowerCase());
+  return (el as HTMLElement).isContentEditable === true;
+}
+
 /** Dispatch a Tab keydown/keyup so pages that track input modality switch to keyboard mode. */
 function signalKeyboardUse(doc: Document): void {
   const view = doc.defaultView ?? window;
@@ -304,6 +392,7 @@ const UNMEASURED_KEYS = new Map<keyof StyleSnapshot, string>([
   ["textDecorationColor", "its underline colour"],
   ["color", "its text colour"],
   ["transform", "its size or position"],
+  ["opacity", "its opacity (it fades)"],
 ]);
 
 function changedKeys(a: StyleSnapshot, b: StyleSnapshot): Array<keyof StyleSnapshot> {
@@ -368,6 +457,9 @@ export function focusShadows(boxShadow: string, before = "none"): ShadowPart[] {
 }
 
 function outlineVisible(s: StyleSnapshot): boolean {
+  // Chrome draws an `auto` outline (its focus ring) at its own thickness even when the
+  // page sets outline-width to 0 (Verywell's inputs: `outline: auto 0px`).
+  if (s.outlineStyle === "auto") return true;
   const w = parseFloat(s.outlineWidth);
   return s.outlineStyle !== "none" && Number.isFinite(w) && w > 0;
 }
@@ -431,6 +523,16 @@ export const rule: CustomRule = {
       });
     } catch {
       return findings;
+    }
+    // A modal dialog is open (a cookie banner opened with showModal()): only its own controls can
+    // take focus. The page behind it is checked once the dialog is closed.
+    const modal = openModalDialog(doc);
+    if (modal) {
+      const behind = focusables.filter((el) => !modal.contains(el));
+      if (behind.length > 0) {
+        findings.push({ element: modal, type: "Semi", severity: PRIMARY.severity ?? "Serious", description: modalDialogNote(modal, behind.length), data: { ruleId: PRIMARY.id, modalDialog: true, skipped: behind.length } });
+        focusables = focusables.filter((el) => modal.contains(el));
+      }
     }
 
     // Without focus Chrome draws no focus styles, so every element would look unchanged.
@@ -515,12 +617,16 @@ export const rule: CustomRule = {
           let before: StyleSnapshot;
           let after: StyleSnapshot;
           let placement: { rect: DOMRect; clipped: boolean; opacity: number };
+          let baseline: Map<Element, string> | undefined;
           try {
             styleDecl.setProperty("transition", "none", "important");
             // The unfocused state must not carry the previous element's focus: a `:focus-within`
             // style on a shared ancestor (a search form) would already show in "before".
             const previous = doc.activeElement;
-            if (previous instanceof HTMLElement && previous !== doc.body && previous !== el) previous.blur();
+            // Blur whatever has focus, the element itself included (a dialog focuses its first
+            // button when it opens), so "before" is the unfocused look.
+            if (previous instanceof HTMLElement && previous !== doc.body) previous.blur();
+            baseline = overlayBaseline(doc, view);
             const beforeStyle = view.getComputedStyle(el);
             before = snapshot(beforeStyle);
             placement = { rect: el.getBoundingClientRect(), clipped: isClipped(beforeStyle), opacity: parseFloat(beforeStyle.opacity) };
@@ -566,7 +672,7 @@ export const rule: CustomRule = {
           const diff = changedKeys(before, after).filter((k) => showsOutline || !k.startsWith("outline"));
 
           if (hiddenUntilFocused(el, view, placement)) continue; // appears only when focused: that is the indicator
-          if (diff.length === 0 && indicatorElsewhere(el, view)) continue; // drawn on a pseudo-element, ancestor, child or sibling
+          if (diff.length === 0 && indicatorElsewhere(el, view, baseline)) continue; // drawn on a pseudo-element, ancestor, child or sibling
           if (diff.length === 0) {
             // Some sites add the indicator a frame after focus (React swapping a class, a script
             // setting a style): wait one frame, then look again on the element and around it.
@@ -574,17 +680,28 @@ export const rule: CustomRule = {
             if (doc.activeElement !== el) el.focus({ preventScroll: true, focusVisible: true } as FocusOptions);
             const later = snapshot(view.getComputedStyle(el));
             if (changedKeys(before, later).some((k) => showsOutline || outlineVisible(later) || !k.startsWith("outline"))) continue;
-            if (indicatorElsewhere(el, view)) continue;
+            if (indicatorElsewhere(el, view, baseline)) continue;
           }
           if (diff.length === 0) {
+            // A text field shows a blinking text cursor when focused, and often clears its
+            // placeholder or moves a floating label: none of that is a style change on the field.
+            // Whether that is enough is for the tester to judge, so it is not a definite failure.
+            const caretOnly = isTextEntry(el);
+            // Players and widgets embedded from another site (YouTube) often draw their ring only
+            // after a real key press inside their own frame, which a scan cannot make.
+            const foreign = isForeignFrame(view);
             findings.push({
               element: el,
-              type: focusVisible ? PRIMARY.type : "Semi",
+              type: focusVisible && !caretOnly && !foreign ? PRIMARY.type : "Semi",
               severity: PRIMARY.severity ?? "Serious",
-              description: focusVisible
-                ? `No visual change (outline, box-shadow, border, background, colour or text decoration) was detected when this ${el.tagName.toLowerCase()} received focus.`
-                : `No visual change was detected when this ${el.tagName.toLowerCase()} received focus, but the browser did not apply :focus-visible to the programmatic focus, so a :focus-visible style may exist. Confirm with the keyboard.`,
-              data: { ruleId: PRIMARY.id, focusVisibleApplied: focusVisible, outline: after.outlineStyle, boxShadow: after.boxShadow },
+              description: caretOnly
+                ? `No outline, border, shadow or background change was detected when this text field received focus; only the text cursor (and any placeholder or label change) shows where focus is. Check with the keyboard whether the focused field is easy to see.`
+                : foreign
+                  ? `No visual change was detected when this ${el.tagName.toLowerCase()} received focus. It is inside a frame embedded from another site, which may show its focus ring only after a real key press inside the frame. Tab into the frame and check.`
+                  : focusVisible
+                  ? `No visual change (outline, box-shadow, border, background, colour or text decoration) was detected when this ${el.tagName.toLowerCase()} received focus.`
+                  : `No visual change was detected when this ${el.tagName.toLowerCase()} received focus, but the browser did not apply :focus-visible to the programmatic focus, so a :focus-visible style may exist. Confirm with the keyboard.`,
+              data: { ruleId: PRIMARY.id, focusVisibleApplied: focusVisible, outline: after.outlineStyle, boxShadow: after.boxShadow, ...(caretOnly ? { caretOnly: true, uncertain: true } : {}), ...(foreign ? { foreignFrame: true, uncertain: true } : {}) },
             });
             continue;
           }
@@ -609,7 +726,9 @@ export const rule: CustomRule = {
           const fill = (): BackgroundResolution => (ownFill ??= resolveBackground(el, new Map())); // the focused fill: not from the shared cache
           if (outlineVisible(after) && outlineChanged) {
             // A negative outline-offset of at least the outline's width draws it inside the element, on its own fill.
-            const inside = parseFloat(after.outlineOffset) + parseFloat(after.outlineWidth) <= 0;
+            // An `auto` ring is drawn at least 2px thick whatever outline-width says.
+            const width = after.outlineStyle === "auto" ? Math.max(parseFloat(after.outlineWidth) || 0, 2) : parseFloat(after.outlineWidth);
+            const inside = parseFloat(after.outlineOffset) + width <= 0;
             const outlineColor = parseColor(after.outlineColor);
             if (inside) rings.push({ kind: "inset outline", indicator: outlineColor && outlineColor[3] > 0.01 ? paintOver(fill(), outlineColor) : null, adjacent: fill().color });
             else rings.push({ kind: "outline", indicator: compose(after.outlineColor), adjacent: surrounding.color });
@@ -653,7 +772,24 @@ export const rule: CustomRule = {
                 bestRatio = ratio;
               }
             }
-            if (bestRatio < 3 && overlayIndicator(el, view)) continue; // the real ring is a moving overlay
+            if (bestRatio < 3 && overlayIndicator(el, view, baseline)) continue; // the real ring is a moving overlay
+            // The colour next to a ring drawn outside the element is what is around the ring, not
+            // the parent's own background: a small round button on a black page (TED), a section
+            // painted by a ::before (France24), a full-width button over a video poster (Princeton).
+            let outside: { doubt: string; colours: RGB[] } | null = null;
+            if (bestRatio < 3 && !best.kind.startsWith("inset")) {
+              outside = colourAroundRing(el, view, after);
+              if (!outside.doubt && outside.colours.length > 0) {
+                const passesEverywhere = visibleRings.some((r) => !r.kind.startsWith("inset") && outside!.colours.every((c) => contrastRatioExact(r.indicator, c) >= 3));
+                if (passesEverywhere) continue;
+                const worst = outside.colours.reduce((a, c) => (contrastRatioExact(best.indicator, c) < contrastRatioExact(best.indicator, a) ? c : a));
+                if (visibleRings.some((r) => !r.kind.startsWith("inset") && outside!.colours.some((c) => contrastRatioExact(r.indicator, c) >= 3))) {
+                  outside.doubt = ` The indicator stands out on some sides of the element and not on others (${outside.colours.map((c) => toHex(c)).join(", ")} around it); check it with the keyboard.`;
+                }
+                best = { ...best, adjacent: worst };
+                bestRatio = contrastRatioExact(best.indicator, worst);
+              }
+            }
             if (bestRatio < 3) {
               const finding = contrastFinding(el, best.kind, best.indicator, best.adjacent, contrastRatio(best.indicator, best.adjacent));
               // Definite only when sure: the colour next to the ring is confirmed, and nothing else
@@ -662,8 +798,8 @@ export const rule: CustomRule = {
               const unmeasured = diff.filter((k) => UNMEASURED_KEYS.has(k));
               let doubt = unmeasured.length
                 ? ` The element also changes ${unmeasured.map((k) => UNMEASURED_KEYS.get(k)).join(", ")} on focus, which may make the focus visible; check it with the keyboard.`
-                : "";
-              if (!doubt) {
+                : (outside?.doubt ?? "");
+              if (!doubt && !outside) {
                 const restore = saveScroll(el);
                 try {
                   const r = el.getBoundingClientRect();
@@ -683,7 +819,7 @@ export const rule: CustomRule = {
             if (b) {
               // A background change must contrast with the *previous* state to be perceivable.
               const changeRatio = contrastRatio(b, a);
-              if (contrastRatioExact(b, a) < 3 && !overlayIndicator(el, view)) {
+              if (contrastRatioExact(b, a) < 3 && !overlayIndicator(el, view, baseline)) {
                 // The highlight sits behind the text, so a suggested colour must keep the text readable too.
                 findings.push(stateChangeFinding(contrastFinding(el, "background", b, a, changeRatio, compose(after.color) ?? undefined), a, b, changeRatio, ctx.wcagLevel ?? "AA"));
               }
@@ -697,7 +833,7 @@ export const rule: CustomRule = {
           if (rings.length === 0 || diff.some((k) => !ringKeys.has(k))) continue;
           // The element's own ring is transparent, but the indicator may be drawn elsewhere
           // (Tailwind `outline-none` with a ring on the parent through :has()).
-          if (indicatorElsewhere(el, view)) continue;
+          if (indicatorElsewhere(el, view, baseline)) continue;
 
           const kinds = rings.map((r) => r.kind).join(" and ");
           findings.push({
