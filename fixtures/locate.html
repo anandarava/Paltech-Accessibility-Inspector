@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Locate fixture - A11y Checker</title></head>
+<body>
+  <main>
+    <h1>Locate elements after the page changes</h1>
+    <!-- Re-drawn after the scan: same image, new node at a new place. -->
+    <div id="redraw-box"><div><img class="redrawn" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" width="30" height="30"></div></div>
+    <!-- Re-drawn at a new address with the same text: found by its text. -->
+    <div id="redraw-link"><p><span><a href="#report">click here</a></span></p></div>
+    <!-- Removed after the scan (a closed pop-up). -->
+    <div id="popup"><img class="gone" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" width="30" height="30"></div>
+    <!-- A frame from another origin (localhost vs 127.0.0.1) with its own finding. -->
+    <iframe id="other-origin" title="Embedded widget" width="300" height="80"></iframe>
+  </main>
+  <script>
+    const f = document.getElementById("other-origin");
+    f.src = location.href.replace("127.0.0.1", "localhost").replace("locate.html", "locate-frame.html");
+    window.changePage = () => {
+      const box = document.getElementById("redraw-box");
+      box.innerHTML = '<section><p>New layout</p><img class="redrawn" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" width="30" height="30"></section>';
+      document.getElementById("popup").remove();
+      document.getElementById("redraw-link").innerHTML = '<div><div><a href="#report">click here</a></div></div>';
+    };
+  </script>
+</body>
+</html>

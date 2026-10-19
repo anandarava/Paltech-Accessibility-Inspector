@@ -678,6 +678,34 @@ test.describe("PalTech A11y Inspector extension", () => {
     }
   });
 
+  test("view element: finds a re-drawn element, explains a removed one, and reaches cross-origin frames", async () => {
+    const { page, tabId } = await openFixture("locate");
+    try {
+      await page.waitForFunction(() => document.querySelector("iframe")?.contentWindow !== null);
+      await page.waitForTimeout(500);
+      const result = await scan(tabId);
+      const byClass = (cls: string) => result.issues.find((i) => i.ruleId === "IMG-01" && i.element.html.includes(`class="${cls}"`));
+      const redrawn = byClass("redrawn");
+      const gone = byClass("gone");
+      const inFrame = byClass("in-frame");
+      expect(redrawn && gone && inFrame, "scan found the three images").toBeTruthy();
+      expect(inFrame?.frameId ?? 0).not.toBe(0);
+      await page.evaluate(() => (window as unknown as { changePage(): void }).changePage());
+      const show = (issueId: string) => sendToBackground<{ found: boolean }>(panel, { type: "HIGHLIGHT_ISSUE", tabId, issueId });
+      expect((await show(redrawn!.id)).ok).toBe(true);
+      const vague = result.issues.find((i) => i.ruleId === "LNK-03" && i.element.html.includes("click here"));
+      expect(vague, "scan found the vague link").toBeTruthy();
+      expect((await show(vague!.id)).ok).toBe(true);
+      const removed = await show(gone!.id);
+      expect(removed.ok).toBe(false);
+      expect(removed.error).toMatch(/changed since the scan/);
+      const viaFrame = await sendToBackground<{ found: boolean }>(panel, { type: "LOCATE_IN_FRAME", tabId, frameId: inFrame!.frameId as number, issueId: inFrame!.id });
+      expect(viaFrame.ok, viaFrame.error).toBe(true);
+    } finally {
+      await page.close();
+    }
+  });
+
   test("bot-check page: one warning and every other finding moved to Needs review", async () => {
     const { page, tabId } = await openFixture("bot-check");
     try {

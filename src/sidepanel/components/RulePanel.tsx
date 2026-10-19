@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import type { Issue } from "@shared/types";
 import { sendToBackground } from "@shared/messages";
 import { useStore } from "@src/sidepanel/store";
-import { sendToPage } from "@src/sidepanel/hooks/messaging";
+import { locateIssue, sendToPage } from "@src/sidepanel/hooks/messaging";
 import { Button } from "./Button";
 import { ReasonForm } from "./ReasonForm";
 import { StatusLabel } from "./SeverityLabel";
@@ -41,9 +41,9 @@ export function RulePanel({ issues, selected, onOpen, children }: Props) {
     if (tabId === null) return;
     selectIssue(selected.id);
     setBusy("view");
-    const res = await sendToPage(tabId, { type: "HIGHLIGHT_ISSUE", tabId, issueId: selected.id });
+    const res = await locateIssue(tabId, selected);
     setBusy(null);
-    if (!res.ok) showToast({ kind: "error", message: `Could not locate element: ${res.error ?? "no response from page"}` });
+    if (!res.ok) showToast({ kind: "error", message: `Could not show the element. ${res.error ?? "The page did not respond."}` });
   };
 
   const submitReason = async (reason: string) => {

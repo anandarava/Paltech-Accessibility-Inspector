@@ -831,6 +831,13 @@ async function handleMessage(msg: Message, sender: Sender): Promise<unknown> {
       return settings;
     }
 
+    case "LOCATE_IN_FRAME": {
+      await ensureContentScript(msg.tabId);
+      const res = await sendToTab(msg.tabId, { type: "CS_LOCATE_IN_FRAME", issueId: msg.issueId }, msg.frameId);
+      if (!res.ok) throw new Error(res.error ?? "The embedded frame did not respond.");
+      return res.data;
+    }
+
     // UI -> CS messages that reached us by mistake: forward to the top frame.
     case "HIGHLIGHT_ISSUE":
     case "CLEAR_ISSUE_FOCUS":

@@ -3,7 +3,7 @@
  */
 import type { Message, Response } from "@shared/messages";
 import { sendToBackground, sendToTab } from "@shared/messages";
-import type { ScanResult, Settings } from "@shared/types";
+import type { Issue, ScanResult, Settings } from "@shared/types";
 import { useStore } from "@src/sidepanel/store";
 
 /**
@@ -17,6 +17,22 @@ export async function sendToPage<T = unknown>(tabId: number, msg: Message): Prom
   const viaBackground = await sendToBackground<T>(msg);
   if (viaBackground.ok) return viaBackground;
   return { ok: false, error: viaBackground.error ?? direct.error ?? "The page did not respond." };
+}
+
+/**
+ * Show an issue's element on the page. The top frame draws the overlay; an
+ * element inside an embedded frame from another site is shown by that frame
+ * itself (scrolled into view and outlined for a moment).
+ */
+export async function locateIssue(tabId: number, issue: Issue): Promise<Response<unknown>> {
+  const res = await sendToPage(tabId, { type: "HIGHLIGHT_ISSUE", tabId, issueId: issue.id });
+  if (res.ok) return res;
+  if ((issue.frameId ?? 0) !== 0) {
+    const inFrame = await sendToBackground({ type: "LOCATE_IN_FRAME", tabId, frameId: issue.frameId as number, issueId: issue.id });
+    if (inFrame.ok) return inFrame;
+    return { ok: false, error: inFrame.error ?? res.error };
+  }
+  return res;
 }
 
 /** Fetch settings from the service worker and store them. */

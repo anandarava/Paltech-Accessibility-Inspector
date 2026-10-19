@@ -54,6 +54,7 @@ const HANDLED_TYPES = new Set<string>([
   "CS_PREPARE_SCREENSHOT",
   "CS_RESTORE_AFTER_SCREENSHOT",
   "CS_SET_ISSUE_STATUS",
+  "CS_LOCATE_IN_FRAME",
   "KEYBOARD_TEST_START",
   "KEYBOARD_TEST_STOP",
   "KEYBOARD_TEST_RESULT",
@@ -378,6 +379,45 @@ function matchesFingerprint(issue: Issue, el: Element): boolean {
  * have changed) is kept as the fallback. `roots` lets callers that resolve
  * many issues share one DOM walk.
  */
+/**
+ * The element an issue points at after the page re-drew it: same kind of
+ * element with the same text, so the same fingerprint, at a new address.
+ * Used only when the saved selector and XPath find nothing.
+ */
+function findByFingerprint(issue: Issue): Element | null {
+  const tag = /^<\s*([a-z][a-z0-9-]*)/i.exec(issue.element.html ?? "")?.[1];
+  if (!tag || !issue.fingerprint) return null;
+  // Same kind of element with the same text. Without text (an image with no alt) any element of
+  // that kind would match, and several matches ("Learn more" links) would be a guess, so only a
+  // single match of an element with text is used.
+  const matches = Array.from(document.getElementsByTagName(tag))
+    .slice(0, 5000)
+    .filter((el) => textSnippet(el) !== "" && matchesFingerprint(issue, el));
+  return matches.length === 1 ? (matches[0] as Element) : null;
+}
+
+/** Outline an element for a moment without leaving anything behind (used where the overlay cannot draw). */
+function flashElement(el: Element): void {
+  const target = el as HTMLElement;
+  if (!target.style) return;
+  const hadStyle = target.hasAttribute("style");
+  const prevOutline = target.style.getPropertyValue("outline");
+  const prevOffset = target.style.getPropertyValue("outline-offset");
+  target.style.setProperty("outline", "3px solid #e0115f", "important");
+  target.style.setProperty("outline-offset", "2px", "important");
+  window.setTimeout(() => {
+    if (prevOutline) target.style.setProperty("outline", prevOutline);
+    else target.style.removeProperty("outline");
+    if (prevOffset) target.style.setProperty("outline-offset", prevOffset);
+    else target.style.removeProperty("outline-offset");
+    if (!hadStyle && target.getAttribute("style") === "") target.removeAttribute("style");
+  }, 2500);
+}
+
+/** Message shown when an issue's element cannot be found any more. */
+const ELEMENT_GONE =
+  "This element is no longer on the page. The page has changed since the scan (for example a carousel moved on, a pop-up or banner closed, or the page re-drew itself). Rescan the page to update the list.";
+
 function elementForIssue(issue: Issue, roots?: () => SearchRoot[]): Element | null {
   const direct = resolveInRoot(issue, document);
   if (direct && matchesFingerprint(issue, direct)) return direct;
@@ -893,8 +933,8 @@ function restoreScrollState(): void {
 async function handlePrepareScreenshot(msg: Record<string, unknown>, issueId: string): Promise<Handled> {
   const issue = findIssue(issueId);
   if (!issue) return fail(`Unknown issue "${issueId}"`);
-  const el = elementForIssue(issue);
-  if (!el) return fail("The element for this issue no longer exists on the page");
+  const el = elementForIssue(issue) ?? findByFingerprint(issue);
+  if (!el) return fail(ELEMENT_GONE);
   saveScrollState(el);
   try {
     el.scrollIntoView({ block: "center", inline: "center", behavior: "instant" as ScrollBehavior });
@@ -980,6 +1020,23 @@ async function handle(msg: Message): Promise<Handled> {
       return ok();
     }
 
+    case "CS_LOCATE_IN_FRAME": {
+      // This frame scanned the element itself; its own issue ids may lack the "@f<frame>" suffix
+      // the service worker adds when merging frames.
+      const wanted = String(raw.issueId ?? "");
+      const issue = localIssues.find((i) => i.id === wanted || i.id === wanted.replace(/@f\d+$/, ""));
+      if (!issue) return fail(ELEMENT_GONE);
+      const el = elementForIssue(issue) ?? findByFingerprint(issue);
+      if (!el) return fail(ELEMENT_GONE);
+      try {
+        el.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
+      } catch {
+        /* ignore */
+      }
+      flashElement(el);
+      return ok({ found: true });
+    }
+
     case "HIGHLIGHT_ISSUE": {
       const ov = requireOverlay();
       let found = false;
@@ -998,13 +1055,15 @@ async function handle(msg: Message): Promise<Handled> {
       }
       if (!found) {
         const issue = findIssue(msg.issueId);
-        const el = issue ? elementForIssue(issue) : null;
-        if (!el) return fail("The element for this issue no longer exists on the page");
+        if (issue && (issue.frameId ?? 0) !== 0) return fail("IN_FRAME: the element is inside an embedded frame");
+        const el = issue ? (elementForIssue(issue) ?? findByFingerprint(issue)) : null;
+        if (!el) return fail(ELEMENT_GONE);
         try {
           el.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
         } catch {
           /* ignore */
         }
+        flashElement(el);
       }
       return ok({ found });
     }

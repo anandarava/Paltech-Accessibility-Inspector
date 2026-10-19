@@ -4,7 +4,7 @@ import { contrastRatio, parseColor } from "@shared/color";
 import { sendToBackground, sendToTab } from "@shared/messages";
 import { wcagDocsUrl } from "@shared/wcag-map";
 import { issueNumbers, matchesFilters, ruleGroupKey, useStore } from "@src/sidepanel/store";
-import { sendToPage } from "@src/sidepanel/hooks/messaging";
+import { locateIssue, sendToPage } from "@src/sidepanel/hooks/messaging";
 import { applyEvidence } from "@src/sidepanel/hooks/useBackgroundEvents";
 import { useFocusHeading } from "@src/sidepanel/hooks/useFocusHeading";
 import { BackButton } from "./BackButton";
@@ -225,9 +225,9 @@ export function IssueDetail({ issueId, onBack, onInspect, wide = false }: Props)
   const locate = async () => {
     if (tabId === null) return;
     setBusy("locate");
-    const res = await sendToPage(tabId, { type: "HIGHLIGHT_ISSUE", tabId, issueId: issue.id });
+    const res = await locateIssue(tabId, issue);
     setBusy(null);
-    if (!res.ok) showToast({ kind: "error", message: `Could not locate element: ${res.error ?? "no response from page"}` });
+    if (!res.ok) showToast({ kind: "error", message: `Could not show the element. ${res.error ?? "The page did not respond."}` });
   };
 
   const screenshot = async () => {

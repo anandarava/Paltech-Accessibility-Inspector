@@ -46,6 +46,10 @@ export type Message =
   | { type: "PAGE_CHANGED"; tabId: number; reason: "route" | "dialog" | "dom" }
   // ---- Overlay / highlighting ----
   | { type: "HIGHLIGHT_ISSUE"; tabId: number; issueId: string }
+  /** UI -> SW: show an issue that was found inside a child frame (the top frame cannot reach it). */
+  | { type: "LOCATE_IN_FRAME"; tabId: number; frameId: number; issueId: string }
+  /** SW -> CS (that frame): scroll to the issue's element and outline it briefly. */
+  | { type: "CS_LOCATE_IN_FRAME"; issueId: string }
   /** Remove the pulsing outline of the issue that was open in the panel. */
   | { type: "CLEAR_ISSUE_FOCUS"; tabId: number }
   | { type: "ISSUE_CLICKED"; tabId: number; issueId: string }
