@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Overlay and no main landmark - A11y Checker</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; color: #1a1a1a; background: #ffffff; }
+    section { padding: 16px; }
+    a { color: #0b4f9c; }
+    /* NPR / Guardian: a cookie dialog's scrim over the whole page, with the banner at the bottom. */
+    .scrim { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.4); z-index: 10; }
+    .banner { position: fixed; left: 0; right: 0; bottom: 0; height: 80px; background: #ffffff; z-index: 11; padding: 16px; }
+  </style>
+</head>
+<body>
+  <!-- No <main>: every block below is outside a landmark (axe region), one cause. -->
+  <section><h1>No main landmark</h1><p>First block <a id="l1" href="#a">link one</a>.</p></section>
+  <section><p>Second block <a id="l2" href="#b">link two</a>.</p></section>
+  <section><p>Third block <a id="l3" href="#c">link three</a>.</p></section>
+  <section><p>Fourth block <a id="l4" href="#d">link four</a>.</p></section>
+  <section><p>Fifth block <a id="l5" href="#e">link five</a>.</p></section>
+  <div class="scrim" id="scrim"></div>
+  <div class="banner" role="dialog" aria-label="Cookies"><button type="button" id="accept">Accept cookies</button></div>
+</body>
+</html>

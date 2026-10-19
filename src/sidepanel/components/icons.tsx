@@ -57,6 +57,16 @@ export function KeyboardIcon(p: IconProps) {
   );
 }
 
+/** The half-filled contrast circle: the Contrast checker. */
+export function DropperIcon(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <circle cx="8" cy="8" r="6" />
+      <path d="M8 2a6 6 0 0 1 0 12Z" fill="currentColor" />
+    </Svg>
+  );
+}
+
 export function BookmarkIcon(p: IconProps) {
   return (
     <Svg {...p}>

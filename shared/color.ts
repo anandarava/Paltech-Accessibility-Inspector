@@ -318,9 +318,15 @@ export function contrastRatioExact(a: RGB, b: RGB): number {
   return (light + 0.05) / (dark + 0.05);
 }
 
-/** Contrast ratio rounded to 2 decimals, for display only: WCAG does not allow rounding up, so compare with `contrastRatioExact`. */
+/**
+ * Contrast ratio truncated to 2 decimals, for display only; compare with
+ * `contrastRatioExact`. Truncated, not rounded: WCAG does not allow rounding
+ * up, and a failing 4.4955:1 shown as "4.5:1, 4.5:1 is required" reads as a
+ * contradiction. Truncation shows 4.49:1, and a value shown as passing
+ * (>= the threshold) always passes.
+ */
 export function contrastRatio(a: RGB, b: RGB): number {
-  return Math.round(contrastRatioExact(a, b) * 100) / 100;
+  return Math.floor(contrastRatioExact(a, b) * 100) / 100;
 }
 
 /** Composite a translucent colour over an opaque one ("source over"). */

@@ -256,6 +256,163 @@ function failureSummaryText(node: axe.NodeResult): string {
 // axe results
 // ---------------------------------------------------------------------------
 
+/** True when some text inside `el` is painted and not inside an aria-hidden subtree. */
+function hasShownText(el: Element): boolean {
+  const walker = el.ownerDocument.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    if (!/\S/.test(n.textContent ?? "")) continue;
+    const parent = n.parentElement;
+    if (!parent || parent.closest("[aria-hidden='true']")) continue;
+    const range = el.ownerDocument.createRange();
+    range.selectNodeContents(n);
+    const r = range.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) continue;
+    const withCheck = parent as Element & { checkVisibility?: (o?: { visibilityProperty?: boolean; opacityProperty?: boolean }) => boolean };
+    if (typeof withCheck.checkVisibility === "function" && !withCheck.checkVisibility({ visibilityProperty: true, opacityProperty: true })) continue;
+    return true;
+  }
+  return false;
+}
+
+const LANDMARK_SELECTOR = "main, [role='main'], nav, [role='navigation'], [role='region'], [role='search'], [role='complementary'], aside, [role='contentinfo'], [role='banner']";
+
+/** An in-page link whose target is a landmark or sits in one (a skip link). */
+function isSkipLink(el: Element): boolean {
+  const href = el.getAttribute("href") ?? "";
+  if (el.localName !== "a" || !href.startsWith("#") || href.length < 2) return false;
+  let id = href.slice(1);
+  try {
+    id = decodeURIComponent(id);
+  } catch {
+    // keep the raw id
+  }
+  const target = el.ownerDocument.getElementById(id);
+  return !!target && (target.matches(LANDMARK_SELECTOR) || target.closest(LANDMARK_SELECTOR) !== null);
+}
+
+/**
+ * axe-core results that are known to be wrong for the element, checked on the
+ * live element:
+ *  - `label-content-name-mismatch` (experimental) on a control with no visible
+ *    text: the "label" it compares is hidden text (a 0x0, aria-hidden badge),
+ *    so there is no visible label to mismatch.
+ *  - deprecated axe rules, and `frame-tested` (frames are scanned separately).
+ *  - `video-caption` / `no-autoplay-audio` on a video nobody hears: muted
+ *    with no controls and no player buttons around it (a background loop), or
+ *    invisible.
+ *  - `region` on a skip link: axe exempts a skip link only when it is the first
+ *    link on the page, and cookie banners often come first. A link to a
+ *    landmark is a bypass mechanism, not content outside landmarks.
+ */
+/**
+ * A video that cannot play sound to anyone: muted with no controls to unmute
+ * (a background loop), or invisible. Read the `muted` property: frameworks set
+ * it without the attribute. A video without a source is kept: players such as
+ * JW Player load their source only when played.
+ */
+function isSilentVideo(el: Element): boolean {
+  if (!(el instanceof HTMLVideoElement)) return false;
+  const cs = (el.ownerDocument.defaultView ?? window).getComputedStyle(el);
+  if (cs.opacity === "0" || cs.visibility === "hidden") return true;
+  if (!el.muted || el.controls) return false;
+  // A player with its own buttons (JW Player, YouTube-style bars) can be unmuted: keep it.
+  let box: Element | null = el.parentElement;
+  for (let i = 0; box && i < 3; i++, box = box.parentElement) {
+    if (box.querySelector("button, [role='button'], [role='slider']")) return false;
+  }
+  return true;
+}
+
+function isKnownAxeMisfire(axeRuleId: string, element: Element | null, tags: string[] = []): boolean {
+  // Deprecated axe rules describe outdated requirements (landmark-complementary-is-top-level).
+  if (tags.includes("deprecated")) return true;
+  // frame-tested only says axe did not look inside a frame; this extension scans frames itself
+  // and lists the ones it could not reach as unscanned frames.
+  if (axeRuleId === "frame-tested") return true;
+  if (!element) return false;
+  try {
+    if (axeRuleId === "label-content-name-mismatch") return !hasShownText(element);
+    if (axeRuleId === "region") return isSkipLink(element);
+    if (axeRuleId === "video-caption" || axeRuleId === "no-autoplay-audio") return isSilentVideo(element);
+    // <blink>/<marquee> with nothing in them (a spacer) blink nothing.
+    if (axeRuleId === "blink" || axeRuleId === "marquee") return !/\S/.test(element.textContent ?? "") && !element.querySelector("img, svg");
+    // An empty popup list that is not open yet (a combobox's suggestions): its children come later.
+    if (axeRuleId === "aria-required-children") return element.children.length === 0 && element.getBoundingClientRect().height === 0;
+  } catch {
+    // keep the finding
+  }
+  return false;
+}
+
+const SEVERITY_RANK: Record<Severity, number> = { Minor: 0, Moderate: 1, Serious: 2, Critical: 3 };
+
+/** What to do with one axe "incomplete" (needs review) result. */
+type ReviewVerdict = "keep" | "drop" | "definite";
+
+/** Ids named in axe's `needsReview` text, e.g. `aria-controls="top-search menu"`. */
+function reviewIds(node: axe.NodeResult): { attribute: string; ids: string[] } | null {
+  for (const check of [...node.any, ...node.all, ...node.none]) {
+    const text = (check.data as { needsReview?: unknown } | null)?.needsReview;
+    if (typeof text !== "string") continue;
+    const m = /^(aria-[a-z]+)="([^"]*)"$/.exec(text.trim());
+    if (m) return { attribute: m[1] ?? "", ids: (m[2] ?? "").split(/\s+/).filter(Boolean) };
+  }
+  return null;
+}
+
+function messageKey(node: axe.NodeResult): string {
+  for (const check of [...node.any, ...node.all, ...node.none]) {
+    const key = (check.data as { messageKey?: unknown } | null)?.messageKey;
+    if (typeof key === "string") return key;
+  }
+  return "";
+}
+
+/**
+ * Decide an axe "incomplete" result that this extension can settle:
+ *  - `aria-allowed-role` on a hidden element whose role is already reported
+ *    as a definite failure on a visible element: a hidden copy (other
+ *    carousel slides), dropped.
+ *  - `aria-valid-attr-value` that axe leaves open because the control opens a
+ *    popup: dropped when the referenced ids exist now, or the control is
+ *    collapsed (popups are often built when opened).
+ *  - `aria-labelledby` where none of the referenced ids exist: the element
+ *    gets no name from it, a definite failure.
+ */
+function reviewVerdict(result: axe.Result, node: axe.NodeResult, element: Element | null, confirmedRoles: Set<string>): ReviewVerdict {
+  try {
+    if (result.id === "aria-allowed-role") {
+      const roles = [...node.any, ...node.all, ...node.none].flatMap((c) => (Array.isArray(c.data) ? c.data.map(String) : []));
+      return roles.length > 0 && roles.every((r) => confirmedRoles.has(r)) ? "drop" : "keep";
+    }
+    if (result.id === "aria-valid-attr-value" && element) {
+      // aria-hidden="" is the same as leaving it out; nothing to review.
+      if (element.getAttribute("aria-hidden") === "" && [...node.any, ...node.all, ...node.none].some((c) => /aria-hidden/.test(String(c.message)))) return "drop";
+      const ref = reviewIds(node);
+      if (!ref) return "keep";
+      const doc = element.ownerDocument;
+      const existing = ref.ids.filter((id) => doc.getElementById(id));
+      if (messageKey(node) === "controlsWithinPopup") {
+        return existing.length === ref.ids.length || element.getAttribute("aria-expanded") === "false" ? "drop" : "keep";
+      }
+      if (ref.attribute === "aria-labelledby" && ref.ids.length > 0 && existing.length === 0) return "definite";
+    }
+  } catch {
+    // keep the finding as axe reported it
+  }
+  return "keep";
+}
+
+/** Roles axe reports as definitely not allowed (aria-allowed-role violations), for reviewVerdict. */
+function confirmedDisallowedRoles(violations: axe.Result[]): Set<string> {
+  const roles = new Set<string>();
+  for (const result of violations) {
+    if (result.id !== "aria-allowed-role") continue;
+    for (const node of result.nodes ?? []) for (const c of [...node.any, ...node.all, ...node.none]) if (Array.isArray(c.data)) for (const r of c.data) roles.add(String(r));
+  }
+  return roles;
+}
+
 interface AxeMapping {
   ruleId: string;
   title: string;
@@ -276,7 +433,9 @@ function mapAxeRule(result: axe.Result, rulesFile: RulesFile, incomplete: boolea
 
   if (def) {
     const wcag = wcagForMappedAxeResult(ruleId, def, tags, firstCriterion);
-    const type: CheckType = def.type === "Semi" || incomplete ? "Semi" : "Auto";
+    // Experimental axe rules (p-as-heading, table-fake-caption, label-content-name-mismatch) are
+    // heuristics still being tuned upstream: their failures go to Needs review.
+    const type: CheckType = def.type === "Semi" || incomplete || tags.includes("experimental") ? "Semi" : "Auto";
     // When the level comes from the axe tags rather than the definition, the
     // definition's category/severity describe the WCAG failure, not this hit:
     // fall back to what axe says about this particular rule.
@@ -310,14 +469,14 @@ function mapAxeRule(result: axe.Result, rulesFile: RulesFile, incomplete: boolea
     title: collapse(result.help) || result.id,
     category,
     wcag,
-    type: incomplete ? "Semi" : "Auto",
+    type: incomplete || tags.includes("experimental") ? "Semi" : "Auto",
     severity: severityFromImpact(result.impact),
     docsUrl: (wcag.criterion && wcagDocsUrl(wcag.criterion)) || result.helpUrl,
     def: undefined,
   };
 }
 
-function normalizeAxeGroup(results: axe.Result[], rulesFile: RulesFile, incomplete: boolean, out: Issue[]): void {
+function normalizeAxeGroup(results: axe.Result[], rulesFile: RulesFile, incomplete: boolean, out: Issue[], confirmedRoles: Set<string> = new Set()): void {
   for (const result of results) {
     const mapping = mapAxeRule(result, rulesFile, incomplete);
     for (const node of result.nodes ?? []) {
@@ -327,6 +486,10 @@ function normalizeAxeGroup(results: axe.Result[], rulesFile: RulesFile, incomple
       } catch {
         element = null;
       }
+      if (isKnownAxeMisfire(result.id, element, result.tags ?? [])) continue;
+      const verdict: ReviewVerdict = incomplete ? reviewVerdict(result, node, element, confirmedRoles) : "keep";
+      if (verdict === "drop") continue;
+      const settled = verdict === "definite";
       const messages = checkMessages(node);
       const ref = elementRef(element, axeTargetToString(node.target), node.html);
       const snippet = element ? textSnippet(element) : collapse(node.html).slice(0, 40);
@@ -334,13 +497,21 @@ function normalizeAxeGroup(results: axe.Result[], rulesFile: RulesFile, incomple
       const summary = failureSummaryText(node);
       const descriptionParts = [sentence(result.description)];
       if (messages.length) descriptionParts.push(messages.map(sentence).join(" "));
-      if (incomplete) descriptionParts.push("axe-core could not determine the result automatically; verify manually.");
+      if (settled) descriptionParts.push("None of the referenced ids exist on the page, so the element gets no name from aria-labelledby.");
+      else if (incomplete) descriptionParts.push("axe-core could not determine the result automatically; verify manually.");
 
       const fixParts = [sentence(result.help)];
       if (summary) fixParts.push(sentence(summary));
       else if (messages.length) fixParts.push(messages.map(sentence).join(" "));
 
-      const severity = node.impact && !mapping.def?.severity ? severityFromImpact(node.impact) : mapping.severity;
+      let severity = node.impact && !mapping.def?.severity ? severityFromImpact(node.impact) : mapping.severity;
+      if (incomplete && !settled) {
+        // axe could not decide: the project rule's severity describes a confirmed failure, not this
+        // hit. Use axe's own impact for the element, and never call an undecided result Critical.
+        const impact = node.impact ?? result.impact;
+        if (impact) severity = severityFromImpact(impact);
+        if (SEVERITY_RANK[severity] > SEVERITY_RANK.Serious) severity = "Serious";
+      }
 
       out.push({
         id: nextIssueId(),
@@ -349,7 +520,7 @@ function normalizeAxeGroup(results: axe.Result[], rulesFile: RulesFile, incomple
         title: mapping.title,
         description: descriptionParts.join(" "),
         wcag: mapping.wcag,
-        type: mapping.type,
+        type: settled ? "Auto" : mapping.type,
         severity,
         category: mapping.category,
         element: ref,
@@ -375,7 +546,7 @@ function normalizeAxeGroup(results: axe.Result[], rulesFile: RulesFile, incomple
 export function normalizeAxeResults(results: axe.AxeResults, rulesFile: RulesFile): Issue[] {
   const issues: Issue[] = [];
   normalizeAxeGroup(results.violations ?? [], rulesFile, false, issues);
-  normalizeAxeGroup(results.incomplete ?? [], rulesFile, true, issues);
+  normalizeAxeGroup(results.incomplete ?? [], rulesFile, true, issues, confirmedDisallowedRoles(results.violations ?? []));
   return issues;
 }
 

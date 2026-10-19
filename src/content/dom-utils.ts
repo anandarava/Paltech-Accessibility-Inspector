@@ -603,3 +603,30 @@ export function queryAllIncludingRoot(root: Document | Element, selector: string
   if (root.nodeType === 1 && (root as Element).matches(selector)) found.unshift(root as Element);
   return found;
 }
+
+/**
+ * The modal <dialog> open on the page (`showModal()`, often a cookie banner), or null.
+ * While it is open everything outside it is inert: it cannot take focus and is
+ * covered by the dialog's backdrop, so focus checks there describe the dialog.
+ */
+export function openModalDialog(doc: Document): Element | null {
+  try {
+    const native = doc.querySelector("dialog:modal");
+    if (native) return native;
+  } catch {
+    // :modal not supported
+  }
+  // A script-driven modal (HubSpot's cookie banner: aria-modal="true", Tab kept inside it).
+  for (const d of Array.from(doc.querySelectorAll("[aria-modal='true']"))) {
+    const r = d.getBoundingClientRect();
+    const cs = doc.defaultView?.getComputedStyle(d);
+    if (r.width > 0 && r.height > 0 && cs && cs.visibility !== "hidden" && cs.display !== "none" && parseFloat(cs.opacity) > 0.01) return d;
+  }
+  return null;
+}
+
+/** A note for the focus rules when a modal dialog kept them from checking the page behind it. */
+export function modalDialogNote(dialog: Element, skipped: number): string {
+  const name = dialog.getAttribute("aria-label") ?? dialog.querySelector("h1, h2, h3")?.textContent?.trim() ?? "";
+  return `A modal dialog${name ? ` ("${name.slice(0, 60)}")` : ""} was open during the scan (for example a cookie consent dialog), so the ${skipped} focusable elements behind it could not be checked: the page behind a modal dialog cannot take focus. Close the dialog and rescan to check the page itself.`;
+}

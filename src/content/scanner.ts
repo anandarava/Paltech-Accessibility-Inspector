@@ -11,6 +11,7 @@ import type { CustomRule, RuleContext } from "./rules/types";
 import { CUSTOM_RULES, ruleIdsOf } from "./rules/index";
 import { axeIdsForProjectRule, dedupeIssues, normalizeAxeResults, normalizeCustomFindings } from "./normalizer";
 import { isVisible, yieldToMain } from "./dom-utils";
+import { isRendered } from "./rules/contrast";
 import { axeTagsFor, criterionInVersion } from "@shared/wcag-map";
 
 export interface FrameScanOutput {
@@ -23,6 +24,13 @@ export interface FrameScanOutput {
   frameUrl: string;
   isTop: boolean;
   durationMs: number;
+  /**
+   * Addresses of this frame's child frames that nobody can see (not rendered,
+   * at most 1px, or placed above or left of the page). The service worker
+   * drops findings from frames at these addresses: their content is never
+   * shown (tracking and messaging frames such as Facebook's xd_arbiter).
+   */
+  hiddenChildFrames?: string[];
 }
 
 export interface ScanContextExtras {
@@ -232,6 +240,168 @@ export async function runCustomRule(
   return issues.filter((issue) => isAllowed(issue.ruleId, options, disabled));
 }
 
+/**
+ * axe rules about the page as a whole. Inside a child frame they describe the
+ * embedded document, which needs none of these: a frame is named by the
+ * iframe's title attribute (axe `frame-title`), and its headings and
+ * landmarks belong to the page around it. Ad and tracking frames otherwise
+ * produce "no title / no h1 / no main" on almost every site.
+ */
+/**
+ * Page-level axe rules, meaningful for the top document only. `region` (content outside
+ * landmarks) and `css-orientation-lock` judge the page as a whole: a frame sits inside the
+ * parent's landmarks and follows the parent's orientation.
+ */
+const PAGE_LEVEL_AXE_RULES = new Set(["document-title", "page-has-heading-one", "landmark-one-main", "bypass", "region", "css-orientation-lock"]);
+/** Language rules apply to a child frame only when it shows text (an empty frame has nothing to pronounce). */
+const LANGUAGE_AXE_RULES = new Set(["html-has-lang", "html-lang-valid", "html-xml-lang-mismatch"]);
+
+function frameHasText(doc: Document): boolean {
+  try {
+    return /\S/.test(doc.body?.innerText ?? "");
+  } catch {
+    return true;
+  }
+}
+
+/** Drop page-level findings that do not apply inside a child frame. */
+const BOT_CHECK_RE =
+  /just a moment|access denied|attention required|are you (a )?(human|robot)|verify(ing)? (that )?you are (a )?human|checking (your browser|if the site connection is secure)|press (&|and) hold|pardon our interruption|request (could not be satisfied|rejected|blocked)|403 forbidden|bot or not|unusual traffic|security check|your access has been blocked/i;
+
+/**
+ * Why this document looks like a bot check, captcha or access-denied page
+ * rather than the site itself, or "" when it does not. Read from the title,
+ * from the visible text of a short page, and from a large visible captcha box.
+ */
+export function botCheckReason(doc: Document): string {
+  const title = doc.title ?? "";
+  if (BOT_CHECK_RE.test(title)) return `the page title is "${title.trim().slice(0, 60)}"`;
+  const body = doc.body;
+  if (!body) return "";
+  const text = (body.innerText ?? body.textContent ?? "").replace(/\s+/g, " ").trim();
+  if (text.length < 1500) {
+    const m = BOT_CHECK_RE.exec(text);
+    if (m) return `the page says "${m[0]}"`;
+  }
+  const view = doc.defaultView ?? window;
+  for (const el of Array.from(doc.querySelectorAll("[id*='captcha' i], [class*='captcha' i]")).slice(0, 20)) {
+    const r = el.getBoundingClientRect();
+    if (r.width >= 300 && r.height >= 150 && view.getComputedStyle(el).visibility !== "hidden") return "a large captcha is shown";
+  }
+  return "";
+}
+
+/**
+ * A scan of a bot check is not a scan of the site: every finding becomes
+ * Needs review, and the top frame adds one OTH-04 note saying so.
+ */
+export function markBotCheck(issues: Issue[], doc: Document, isTop: boolean, rulesFile: RulesFile): Issue[] {
+  let reason = "";
+  try {
+    reason = botCheckReason(doc);
+  } catch {
+    reason = "";
+  }
+  if (!reason) return issues;
+  const out = issues.map((i) => (i.type === "Semi" ? i : { ...i, type: "Semi" as const, description: `${i.description} (Found on a bot-check page; this may not apply to the real site.)` }));
+  if (isTop) {
+    const def = rulesFile.rules.find((r) => r.id === "OTH-04");
+    if (def) {
+      const body = doc.body ?? doc.documentElement;
+      out.unshift({
+        id: `bot-check-${Date.now().toString(36)}`,
+        ruleId: def.id,
+        source: "custom",
+        title: def.check,
+        description: `This scan probably did not see the real page: ${reason}. Sites show such pages to automated or unfamiliar browsers. Every other finding from this page has been moved to Needs review. Open the page normally, pass the check, and scan again.`,
+        wcag: { criterion: "", name: "Best practice", level: "BP" },
+        type: "Semi",
+        severity: "Minor",
+        category: "Other",
+        element: { selector: "body", xpath: "/html/body", html: `<${body.localName}>`, boundingBox: { x: 0, y: 0, width: 0, height: 0 } },
+        data: { ruleId: def.id, reason },
+        fix: { summary: "Complete the bot check or sign in, then scan again." },
+        fingerprint: "b07c8ec4",
+        status: "new",
+      } as Issue);
+    }
+  }
+  return out;
+}
+
+/** Region findings kept as examples when they are collapsed into one. */
+const REGION_SAMPLES = 10;
+
+/**
+ * A page without a main landmark puts every block "outside landmarks": axe
+ * `region` then lists dozens of elements for one cause. They are collapsed
+ * into one finding naming the cause and listing examples. With a main
+ * landmark each finding is a separate stray block and they are kept.
+ */
+export function collapseRegionFlood(issues: Issue[], doc: Document): Issue[] {
+  const region = issues.filter((i) => i.data?.axeRuleId === "region");
+  if (region.length <= 3 || doc.querySelector("main, [role='main']")) return issues;
+  const first = region[0] as Issue;
+  const merged: Issue = {
+    ...first,
+    description: `${region.length} blocks of content are outside any landmark because the page has no main landmark (<main> or role="main"). Screen reader users who move by landmark cannot reach this content. Examples: ${region.slice(0, 5).map((i) => i.element.selector).join("; ")}.`,
+    data: { ...first.data, regionCount: region.length, examples: region.slice(0, REGION_SAMPLES).map((i) => i.element.selector) },
+    fix: { ...first.fix, summary: "Wrap the page's main content in <main>, and put the header, navigation and footer in <header>, <nav> and <footer>. Every visible block should then be inside a landmark." },
+  };
+  return issues.filter((i) => i.data?.axeRuleId !== "region" || i === first).map((i) => (i === first ? merged : i));
+}
+
+export function filterFrameLevelIssues(issues: Issue[], isTop: boolean, doc: Document): Issue[] {
+  if (isTop) return issues;
+  // A frame nobody can see (display:none or 0x0: tracking and ad-sync frames, often about:blank,
+  // which the top frame cannot match by address) has nothing to report.
+  const view = doc.defaultView;
+  if (view && (view.innerWidth <= 1 || view.innerHeight <= 1)) return [];
+  let hasText: boolean | null = null;
+  // An empty child frame (about:blank or a tracking / loader frame with nothing shown) has nothing to report.
+  if (!frameHasText(doc) && !doc.querySelector("img, video, canvas, svg, input, select, textarea, button, a[href], [tabindex]")) return [];
+  return issues.filter((issue) => {
+    const axeId = String(issue.data?.axeRuleId ?? "");
+    if (PAGE_LEVEL_AXE_RULES.has(axeId)) return false;
+    if (LANGUAGE_AXE_RULES.has(axeId)) {
+      hasText ??= frameHasText(doc);
+      return hasText;
+    }
+    return true;
+  });
+}
+
+/** True when nobody can see the frame element: not rendered, at most 1px, or wholly above or left of the page. */
+function isHiddenFrame(frame: Element): boolean {
+  if (!isRendered(frame)) return true;
+  const rect = frame.getBoundingClientRect();
+  if (rect.width <= 1 || rect.height <= 1) return true;
+  const view = frame.ownerDocument.defaultView ?? window;
+  return rect.right + view.scrollX <= 0 || rect.bottom + view.scrollY <= 0;
+}
+
+/**
+ * Addresses of this document's child frames that nobody can see. A content
+ * script cannot map a frame element to the extension's frame id in Chrome
+ * (runtime.getFrameId is Firefox-only), so frames are matched by address. An
+ * address is listed only when every frame loading it is hidden, so a visible
+ * frame is never dropped because a hidden one shares its address.
+ */
+export function hiddenChildFrameUrls(doc: Document): string[] {
+  const hidden = new Map<string, boolean>();
+  for (const frame of Array.from(doc.querySelectorAll("iframe, frame"))) {
+    try {
+      const url = (frame as HTMLIFrameElement).src;
+      if (!/^https?:/i.test(url)) continue; // about:blank / srcdoc frames share one address
+      const isHidden = isHiddenFrame(frame);
+      hidden.set(url, (hidden.get(url) ?? true) && isHidden);
+    } catch {
+      // scan this frame as usual
+    }
+  }
+  return [...hidden].filter(([, isHidden]) => isHidden).map(([url]) => url);
+}
+
 const LEVEL_RANK = { A: 0, AA: 1, AAA: 2 } as const;
 
 /** True when a finding's WCAG level is within the selected level; best-practice ("BP") findings always are. */
@@ -309,6 +479,9 @@ export async function scanFrame(options: ScanOptions, rulesFile: RulesFile, rule
     const version = options.wcagVersion ?? "2.2";
     const keepReview = options.includeNeedsReview !== false;
     issues = dedupeIssues(issues).filter((issue) => (keepReview || issue.type !== "Semi") && criterionInVersion(issue.wcag.criterion, version));
+    issues = filterFrameLevelIssues(issues, isTop, document);
+    issues = collapseRegionFlood(issues, document);
+    issues = markBotCheck(issues, document, isTop, rulesFile);
     safeProgress(100, "Scan complete");
     return {
       issues,
@@ -318,6 +491,7 @@ export async function scanFrame(options: ScanOptions, rulesFile: RulesFile, rule
       frameUrl,
       isTop,
       durationMs: Math.round(performance.now() - started),
+      hiddenChildFrames: hiddenChildFrameUrls(document),
     };
   } finally {
     scanInProgress = false;

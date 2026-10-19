@@ -17,6 +17,7 @@ import type { Category, Issue, ScanResult, Severity } from "@shared/types";
 import { SEVERITY_ORDER } from "@shared/constants";
 import { effectivePassedRules } from "@shared/scoring";
 import { wcagDocsUrl } from "@shared/wcag-map";
+import { issueCause } from "@shared/cause";
 import { contrastRatio, parseColor, suggestPassingColor, toHex, type RGB } from "@shared/color";
 import { toolInfo } from "./json-report";
 import { guidanceFor, SEVERITY_MEANING, type AffectedUsers, type Effort, type RuleGuidance } from "./report-guidance";
@@ -584,6 +585,13 @@ function renderInstance(issue: Issue, n: number, total: number, group: RuleGroup
       ? `<p class="excluded-note"><b>${statusLabel(issue.status)}</b>${issue.reason ? `: ${escapeHtml(issue.reason)}` : " (no reason given)"}</p>`
       : "";
 
+  // A failure the tester confirmed with the Contrast checker (a "passes" check shows as the ignore reason).
+  const mc = issue.manualCheck;
+  const manual =
+    mc && mc.verdict === "fail"
+      ? `<p class="manual-note"><b>Confirmed by eye</b>: ${escapeHtml(mc.foreground)} on ${escapeHtml(mc.background)} is ${mc.ratio}:1 (${mc.required}:1 required), checked ${escapeHtml(formatDate(mc.checkedAt))}${mc.note ? `. ${escapeHtml(mc.note)}` : ""}</p>`
+      : "";
+
   const axeRule = typeof issue.data?.axeRuleId === "string" ? issue.data.axeRuleId : "";
   const tech = `<details class="tech"><summary>Technical details</summary><table class="kv"><tbody>
 ${issue.element?.xpath ? `<tr><th scope="row">XPath</th><td><code>${escapeHtml(issue.element.xpath)}</code></td></tr>` : ""}
@@ -594,6 +602,7 @@ ${issue.element?.xpath ? `<tr><th scope="row">XPath</th><td><code>${escapeHtml(i
   return `<li class="inst" data-sev="${issue.severity}">
 <div class="inst-h"><span class="inst-n">${n}<span class="sr-only"> of ${total}</span></span><span class="inst-what">${describeElement(issue)}</span><span class="inst-of" aria-hidden="true">Element ${n} of ${total}</span></div>
 ${excluded}
+${manual}
 ${findingHtml}
 ${contrast ? contrastPreview(contrast, sample) : ""}
 ${measurements ? `<table class="kv"><caption class="sr-only">Measurements for element ${n}</caption><tbody>${measurements}</tbody></table>` : ""}
@@ -954,6 +963,7 @@ ol.instances{list-style:none;margin:0;padding:0;display:grid;gap:.8rem}
 .inst-of{margin-left:auto;font-size:.76rem;color:var(--muted);white-space:nowrap;text-transform:uppercase;letter-spacing:.05em}
 .finding{margin:.3rem 0 .5rem}ul.finding{padding-left:1.2rem}
 .excluded-note{background:#f3f0ff;border:1px solid #d9d0fb;border-radius:8px;padding:.35rem .6rem;font-size:.9rem}
+.manual-note{background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:.35rem .6rem;font-size:.9rem}
 .contrast{display:flex;flex-wrap:wrap;gap:.6rem;margin:.4rem 0 .6rem}
 .tile{border:1px solid var(--line);border-radius:10px;overflow:hidden;min-width:13rem;flex:1;max-width:20rem}
 .tile-sample{padding:.8rem .9rem;font-size:1.05rem;font-weight:600;border-bottom:1px solid var(--line);min-height:3rem}
@@ -1178,6 +1188,9 @@ interface TemplateElement {
   selector: string;
   html: string;
   technical: Array<[string, string]>;
+  /** Shared-cause key and label (shared/cause.ts): elements with the same key are listed together. */
+  cause: string;
+  causeLabel: string;
 }
 
 interface TemplateRule {
@@ -1267,6 +1280,7 @@ function templateElement(issue: Issue, group: RuleGroup, sharedAdvice: string | 
   technical.push(["Found by", `${sourceLabel(issue.source)}${axeRule ? ` (${axeRule})` : ""}`]);
   technical.push(["Fingerprint", `${issue.fingerprint} (stable id used for ignore and baseline)`]);
 
+  const cause = issueCause(issue);
   return {
     element: describeElementText(issue),
     finding,
@@ -1279,6 +1293,8 @@ function templateElement(issue: Issue, group: RuleGroup, sharedAdvice: string | 
     selector: issue.element?.selector ?? "",
     html,
     technical,
+    cause: cause.key,
+    causeLabel: cause.label,
   };
 }
 

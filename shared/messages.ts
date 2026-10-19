@@ -15,12 +15,17 @@ import type {
   ColorBlindnessMode,
   ExportFormat,
   Issue,
+  ElementColors,
+  ManualCheck,
   KeyboardTestResult,
   OverlayMode,
   ScanResult,
   WcagLevel,
   WcagVersion,
 } from "./types";
+
+/** What the side panel sends for a manual contrast check; the service worker adds the rest. */
+export type ManualCheckInput = Omit<ManualCheck, "originalType" | "author" | "checkedAt">;
 
 export interface ScanOptions {
   scope: "page" | "selector";
@@ -46,6 +51,10 @@ export type Message =
   | { type: "PAGE_CHANGED"; tabId: number; reason: "route" | "dialog" | "dom" }
   // ---- Overlay / highlighting ----
   | { type: "HIGHLIGHT_ISSUE"; tabId: number; issueId: string }
+  /** UI -> SW: show an issue that was found inside a child frame (the top frame cannot reach it). */
+  | { type: "LOCATE_IN_FRAME"; tabId: number; frameId: number; issueId: string }
+  /** SW -> CS (that frame): scroll to the issue's element and outline it briefly. */
+  | { type: "CS_LOCATE_IN_FRAME"; issueId: string }
   /** Remove the pulsing outline of the issue that was open in the panel. */
   | { type: "CLEAR_ISSUE_FOCUS"; tabId: number }
   | { type: "ISSUE_CLICKED"; tabId: number; issueId: string }
@@ -91,6 +100,23 @@ export type Message =
   | { type: "IGNORE_ADD"; tabId: number; issueIds: string[]; reason: string }
   | { type: "BASELINE_REMOVE"; origin: string; fingerprints: string[] }
   | { type: "IGNORE_REMOVE"; origin: string; fingerprints: string[] }
+  /** UI -> SW: record the tester's Contrast checker verdict on a contrast finding (kept for the site). */
+  | { type: "MANUAL_CHECK_SET"; tabId: number; issueId: string; check: ManualCheckInput }
+  /** UI -> SW: remove a manual contrast check; the finding goes back to what the scan reported. */
+  | { type: "MANUAL_CHECK_REMOVE"; tabId: number; issueId: string }
+  /**
+   * UI -> SW: get the page ready for the eyedropper: hide everything the extension draws, scroll
+   * the issue's element into view and, for a focus-ring check, focus it (the SW emulates a focused
+   * page so the ring stays drawn while the tester works in the panel). Answers with its colours.
+   */
+  | { type: "COLOR_PREPARE"; tabId: number; issueId?: string; focus?: boolean }
+  /** UI -> SW: undo COLOR_PREPARE (scroll, focus, overlay, focus emulation). */
+  | { type: "COLOR_RESTORE"; tabId: number }
+  /** SW -> CS: the page side of COLOR_PREPARE / COLOR_RESTORE. */
+  | { type: "CS_COLOR_PREPARE"; tabId: number; issueId?: string; focus?: boolean }
+  | { type: "CS_COLOR_RESTORE"; tabId: number }
+  /** UI -> CS: colours of the element the picker chose (PICKER_RESULT selector). */
+  | { type: "CS_ELEMENT_COLORS"; tabId: number; selector: string }
   // ---- State queries ----
   | { type: "GET_LAST_RESULT"; tabId: number }
   | { type: "GET_SETTINGS" }

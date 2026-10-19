@@ -73,11 +73,21 @@
 
       <article>
         <h3>Vague link text</h3>
-        <!-- LNK-03 (best practice): vague link text (3): "Click here", "Read more", "here". The fourth link is descriptive. -->
-        <p>Our new contrast engine is faster than ever. <a href="#contrast-article">Click here</a></p>
-        <p>The keyboard tester now detects modal traps. <a href="#keyboard-test-article">Read more</a></p>
-        <p>Release notes for version 1.0 are available <a href="#release-notes">here</a>.</p>
+        <!-- LNK-03 (best practice): vague link text with nothing around it to explain it (3):
+             "Click here", "Read more", "here". One heading over three vague links explains none of them.
+             The fourth link is descriptive. -->
+        <ul>
+          <li><a href="#contrast-article">Click here</a></li>
+          <li><a href="#keyboard-test-article">Read more</a></li>
+          <li><a href="#release-notes">here</a></li>
+        </ul>
         <p>Read more about <a href="#contrast-article">how the contrast engine blends transparent backgrounds</a>.</p>
+      </article>
+
+      <article>
+        <!-- Not LNK-03: the purpose is clear from the context (2.4.4): the card's heading (H80) and a sentence. -->
+        <div class="card"><h3>Contrast engine</h3><p>Blends transparent backgrounds.</p><a id="card-more" href="#contrast-article">Learn more</a></div>
+        <p>The keyboard tester now detects modal traps. <a id="sentence-more" href="#keyboard-test-article">Read more</a></p>
       </article>
 
       <article>

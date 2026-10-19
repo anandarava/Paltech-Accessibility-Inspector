@@ -62,6 +62,7 @@ export const STORAGE_KEYS = {
   rules: "rules",
   baseline: (origin: string) => `baseline:${origin}`,
   ignored: (origin: string) => `ignored:${origin}`,
+  manualChecks: (origin: string) => `manualChecks:${origin}`,
   lastResult: (tabId: number) => `lastResult:${tabId}`,
   savedScanIndex: "savedScans",
   savedScan: (id: string) => `savedScan:${id}`,

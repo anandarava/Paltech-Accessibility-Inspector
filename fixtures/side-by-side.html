@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Side-by-side misfires - A11y Checker</title>
+  <!--
+    Patterns from the 55-site side-by-side run against axe-core (2026-10-19) that PalTech
+    reported as definite failures although they were fine, next to look-alikes that still fail.
+  -->
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; background: #ffffff; color: #1a1a1a; }
+    main { padding: 16px; }
+    section { margin: 16px 0; }
+
+    /* Linear "+", Ruby's 160px quotation mark: symbols only, not text to read. */
+    #sym-only { color: #9a9a9a; font-size: 18px; }
+    /* Cornell: a screen-reader-only label parked far off the page inside a clipping box. */
+    .clip-box { overflow: hidden; height: 30px; }
+    #far-off { position: absolute; left: -9464px; top: -10000px; color: #ffffff; }
+    /* ClickUp: low-contrast text inside an aria-hidden product mock-up. */
+    #mockup-text { color: #9a9a9a; }
+
+    /* France24: a dark band drawn by the section's ::before, full width with left:50% + translateX(-50%),
+       a faint tint layered over a dark gradient. */
+    .band { position: relative; padding: 24px 0; width: 600px; }
+    .band::before { content: ""; position: absolute; top: 0; left: 50%; width: 1280px; height: 100%; transform: translateX(-50%);
+      background: linear-gradient(0deg, rgba(0, 167, 227, 0.03), rgba(0, 167, 227, 0.03)), linear-gradient(90deg, rgb(1, 29, 38), rgb(22, 49, 58)); }
+    #band-text { position: relative; color: #ffffff; margin: 0; }
+
+    /* The Verge: the selected tab paints its own purple over a grey track beside it. */
+    .tabs { position: relative; width: 220px; height: 44px; }
+    .tabs .track { position: absolute; inset: 0; background: #e9e9e9; }
+    #pill-tab { position: relative; background: rgb(82, 0, 255); color: #ffffff; border: 0; height: 44px; padding: 0 16px; font-weight: 600; }
+
+    /* NPS: white credit text on a 60% black panel over a hero photo whose box is grey while it loads. */
+    .hero { position: relative; width: 600px; height: 160px; }
+    .hero .photo { position: absolute; inset: 0; background: #808080 url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10'%3E%3Crect width='10' height='10' fill='%23c8b090'/%3E%3C/svg%3E"); }
+    .hero .panel { position: relative; background: rgba(0, 0, 0, 0.6); margin: 40px; padding: 8px; }
+    #photo-credit { color: #ffffff; margin: 0; }
+
+    /* Linear: text with an opaque panel drawn over it. */
+    .layered { position: relative; height: 40px; }
+    #covered-text { color: #9a9a9a; }
+    .layered .cover { position: absolute; inset: 0; background: #ffffff; }
+
+    /* DW: a flying-focus box inside a page wrapper (not a direct child of the body). */
+    .fly { position: absolute; border: 2px solid rgb(99, 222, 157); visibility: hidden; pointer-events: none; }
+    #fly-link { outline: none; }
+    /* Verywell: outline auto with a width of 0 still draws Chrome's ring. */
+    #auto-zero:focus { outline-style: auto; outline-width: 0; }
+    /* Lenovo / NerdWallet: a text field whose only focus sign is the text cursor. */
+    #caret-only:focus { outline: none; }
+    /* TED: a ring outside a small grey circle on a black area. */
+    .dark { background: #000000; padding: 20px; }
+    .circle { display: inline-block; background: #808080; border-radius: 50%; }
+    #ring-on-dark { width: 30px; height: 30px; border: 0; border-radius: 50%; background: #808080; }
+    #ring-on-dark:focus { outline: 2px solid #1c54e5; outline-offset: 4px; }
+
+    /* USPS: focus shown by fading the control. */
+    #fade-focus { outline: none; opacity: 1; }
+    #fade-focus:focus { opacity: 0.25; }
+    /* UCLA / USPS: links in a collapsed box that hides its overflow are never shown. */
+    .collapsed { height: 0; overflow: hidden; }
+    #collapsed-link { color: #ffffff; }
+    /* Contrast checker: a translucent text colour is read with its alpha. */
+    #alpha-text { color: rgba(0, 0, 0, 0.5); }
+    /* Clickup / Linear: decoration hidden from screen readers, clipped when text spacing is applied. */
+    #deco-clip { width: 120px; height: 18px; overflow: hidden; font-size: 14px; line-height: 18px; }
+  </style>
+</head>
+<body>
+  <div id="page-wrapper">
+    <div class="fly" id="fly"></div>
+    <main>
+      <h1>Side-by-side misfires</h1>
+
+      <section>
+        <p><span id="sym-only">+</span></p>
+        <div class="clip-box"><label id="far-off" for="q">Search</label><input id="q" type="search" aria-label="Search"></div>
+        <div aria-hidden="true"><span id="mockup-text">9:14 am</span></div>
+      </section>
+
+      <section class="band"><p id="band-text">Reporters</p></section>
+
+      <section><div class="tabs"><div class="track"></div><button id="pill-tab" type="button" role="tab" aria-selected="true">Latest</button></div></section>
+
+      <section class="hero"><div class="photo"></div><div class="panel"><p id="photo-credit">Bering Land Bridge, NPS / Katie Cullen</p></div></section>
+
+      <section class="layered"><span id="covered-text">Jun 25</span><div class="cover"></div></section>
+
+      <section>
+        <p><a id="fly-link" href="#top">Explore more</a></p>
+        <p><label for="auto-zero">Email</label> <input id="auto-zero" type="text"></p>
+        <p><label for="caret-only">Name</label> <input id="caret-only" type="text"></p>
+        <div class="dark"><span class="circle"><button id="ring-on-dark" type="button" aria-label="Play"></button></span></div>
+      </section>
+
+      <section><div aria-hidden="true" id="deco-clip">Product mock-up label text that wraps</div></section>
+
+      <section>
+        <!-- LA Times / Wired: data-click is an analytics tag here, not a click handler. -->
+        <div id="analytics-tag" data-click="ad-column">Advertisement column</div>
+        <!-- Vanguard: a template token, not a click attribute ("expression" contains "press"). -->
+        <span id="template-token" data-placeholder-expression="rate">4.5%</span>
+        <p><button id="fade-focus" type="button">Next slide</button></p>
+        <div class="collapsed"><a id="collapsed-link" href="#po">PO Boxes</a></div>
+        <!-- Kaggle / go.dev: "Learn more" in a cookie bar's sentence held in a plain div. -->
+        <p id="alpha-text">Half-transparent black text</p>
+        <div class="cookie-bar"><span>This site uses cookies from Google to deliver its services.</span> <a id="cookie-more" href="#cookies">Learn more</a></div>
+      </section>
+    </main>
+  </div>
+  <script>
+    // DW's flying focus: the box moves to the focused element (here only to its own test link).
+    const fly = document.getElementById("fly");
+    document.addEventListener("focusin", (e) => {
+      if (e.target.id !== "fly-link") return;
+      const r = e.target.getBoundingClientRect();
+      Object.assign(fly.style, { left: `${r.left + scrollX - 2}px`, top: `${r.top + scrollY - 2}px`, width: `${r.width}px`, height: `${r.height}px`, visibility: "visible" });
+    });
+    document.addEventListener("focusout", () => setTimeout(() => (fly.style.visibility = "hidden"), 100));
+  </script>
+</body>
+</html>

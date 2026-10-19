@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Real-site cases fixture - A11y Checker</title>
+  <!--
+    Patterns that produced false findings on real sites (MISFIRE_REPORT.md),
+    next to look-alikes that must still be reported.
+  -->
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: #1a1a1a; background: #ffffff; margin: 0; line-height: 1.5; }
+    main { max-width: 760px; margin: 0 auto; padding: 24px; }
+    section { margin: 24px 0; }
+
+    /* Chrome's default focus ring on a dark band (Stack Overflow, WordPress, Python). */
+    .dark { background: #1b1b1b; padding: 12px; }
+    .dark a { color: #ffffff; }
+
+    /* gov.uk: the button text is pushed out of the button and only an icon shows. */
+    #icon-search { width: 40px; height: 40px; overflow: hidden; text-indent: -5000px; white-space: nowrap; color: #c0c0c0; background: #ffffff; border: 2px solid #1a1a1a; }
+    /* Text parked left of the page. */
+    #offscreen { position: absolute; left: -9999px; color: #c0c0c0; }
+    /* Still reported: plain low-contrast text. */
+    #low { color: #c0c0c0; }
+
+    /* Carousel: the second slide waits outside an overflow:hidden window and is shown later. */
+    .slider { width: 300px; overflow: hidden; white-space: nowrap; }
+    .slide { display: inline-block; width: 300px; white-space: normal; }
+    #slide-two { color: #c0c0c0; }
+
+    /* Mars: a tall image strip clipped to a short window; text below it has no image behind it. */
+    .strip-window { height: 60px; overflow: hidden; position: relative; }
+    .strip-window canvas { display: block; }
+    .night { background: #344b6e; padding: 8px; position: relative; }
+    #countdown { color: #067ab4; }
+    /* Apple: a gallery slide waiting outside the window, its caption over its own image. */
+    .gallery { width: 300px; overflow: hidden; white-space: nowrap; }
+    .card { display: inline-block; width: 300px; height: 80px; position: relative; vertical-align: top; background: #c69851; }
+    .card canvas { position: absolute; inset: 0; }
+    #gallery-caption { position: absolute; left: 8px; top: 8px; margin: 0; color: #f5f5f7; }
+
+    /* Wikipedia: an external-link icon drawn in the link's right padding, beside the text. */
+    .ext { color: #3366cc; padding-right: 14px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12'%3E%3Crect width='12' height='12' fill='%23000'/%3E%3C/svg%3E") no-repeat 100% 50% / 12px auto; }
+    /* Still needs review: the same icon under the start of the text. */
+    #icon-under { color: #3366cc; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12'%3E%3Crect width='12' height='12' fill='%23000'/%3E%3C/svg%3E") no-repeat 0 50% / 12px auto; }
+    /* Python: gradients. Passes on every colour / fails on every colour / passes on part only. */
+    #grad-pass { color: #ffffff; background: linear-gradient(#1a3a5a 10%, #10243a 90%); padding: 8px; }
+    #grad-fail { color: #9a9a9a; background: linear-gradient(#a0a0a0 10%, #b0b0b0 90%); padding: 8px; }
+    /* Stripe/Shopify: a photo under a white card and under a button with its own fill.
+       Text on the card or the button is not over the photo; bare text is. */
+    .stage { position: relative; width: 360px; height: 120px; }
+    .stage canvas { position: absolute; inset: 0; }
+    .stage .white-card { position: absolute; left: 10px; top: 10px; width: 160px; padding: 8px; background: #ffffff; color: #333333; }
+    .stage .own-fill { position: absolute; left: 190px; top: 10px; background: #0e0e0e; color: #ffffff; border: 0; padding: 6px; }
+    .stage .bare { position: absolute; left: 190px; top: 70px; margin: 0; color: #ffffff; }
+    /* NPR: a caption over a lazy image that has not loaded (no src yet, 0 height). */
+    .lazy-card { position: relative; width: 200px; }
+    .lazy-card img { width: 100%; }
+    .lazy-card .cap-wrap { position: absolute; right: 4px; bottom: 4px; }
+    #lazy-caption { color: #ffffff; margin: 0; }
+    /* Salesforce: white text whose purple gradient is drawn by a positioned sibling box. */
+    .grad-card { position: relative; width: 260px; height: 70px; background: #ffffff; }
+    .grad-card .grad-bg { position: absolute; inset: 0; background: linear-gradient(140deg, #5a1ba9, #0b5cab); }
+    #on-grad-sibling { position: relative; color: #ffffff; margin: 0; padding: 10px; }
+    /* Still definite: grey text on a plain white page. */
+    #plain-fail { color: #aaaaaa; }
+    /* WebAIM: dark text over a light background image the page can read: measured, passes. */
+    #over-light-image { color: #333333; padding: 6px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Crect width='8' height='8' fill='%23f6f6f6'/%3E%3C/svg%3E") repeat; }
+    /* Shopify: a chip whose top layer is one solid colour over a pattern image. */
+    #solid-chip { color: #ffffff; padding: 4px; background: linear-gradient(#181d20, #181d20) padding-box, url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4'%3E%3Crect width='4' height='4' fill='%23fff'/%3E%3C/svg%3E"); }
+    /* Canada.ca: a 90% navy band over a photo; white text passes whatever the photo is. */
+    .photo-band { position: relative; width: 300px; height: 60px; }
+    .photo-band canvas { position: absolute; inset: 0; }
+    .photo-band .band { position: absolute; inset: 0; background: rgba(38, 55, 74, 0.9); }
+    #over-band { position: relative; color: #ffffff; margin: 0; padding: 8px; }
+    /* Atlassian: the selected tab's dark pill is a separate positioned element. */
+    .tabs { position: relative; display: inline-block; background: #f0f1f2; padding: 4px; }
+    .tabs .pill { position: absolute; left: 4px; top: 4px; width: 120px; height: 28px; background: #101214; pointer-events: none; }
+    #on-pill { position: relative; display: inline-block; width: 120px; line-height: 28px; color: #ffffff; text-align: center; }
+    /* Notion: a word box whose width is set by script; clipping goes to review. */
+    #scripted-word { overflow: hidden; height: 24px; font: 16px/normal monospace; }
+    /* Duolingo: button fills drawn by ::before behind the label. */
+    .pbtn { position: relative; display: inline-block; padding: 6px 10px; color: #000437; z-index: 0; margin: 4px; }
+    .pbtn::before { content: ""; position: absolute; inset: 0; z-index: -1; }
+    #pseudo-pass::before { background: #ffffff; }
+    #pseudo-fail { color: #ffffff; }
+    #pseudo-fail::before { background: #58cc02; }
+    .navy { background: #100f3e; padding: 6px; }
+    /* NPR: screen-reader-only wrapper; the text inside is not seen. */
+    .sr-wrap { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+    #sr-inner { color: #eeeeee; }
+    /* MIT: a hard-stop 1px underline gradient on a dark band. */
+    .maroon { background: #620011; padding: 6px; }
+    #hardstop { color: #ffffff; background: linear-gradient(transparent calc(100% - 1px), #ff1423 0); }
+    /* Harvard: a hover underline grown with background-size (0 wide until hover). Not the background. */
+    #underline-grad { color: #1e1e1e; background: linear-gradient(currentColor, currentColor) no-repeat 0 100% / 0px 2px; }
+    /* Shopify: gradient clipped to the text; the real backdrop is the white page. */
+    #clip-grad { color: #1e1e1e; }
+    .clip-wrap { background: linear-gradient(#5fd5b6, #865cff); -webkit-background-clip: text; background-clip: text; }
+    #grad-mixed { color: #e6e8ea; background: linear-gradient(#3776ab 30%, #1d3f5c 95%); padding: 8px; }
+
+    /* Targets nobody can press, each next to small buttons that would otherwise make it fail. */
+    .tiny { width: 16px; height: 16px; padding: 0; margin: 0 2px 0 0; border: 1px solid #1a1a1a; background: #fff; }
+    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    #chevron { pointer-events: none; }
+    .cover-wrap { position: relative; display: inline-block; }
+    .cover { position: absolute; inset: -4px; background: #ffffff; }
+
+    /* Text spacing (ZM-03). Monospace keeps the widths predictable: 11 characters are about 100px,
+       and about 125px with the WCAG letter and word spacing. */
+    .zm { font: 16px/normal monospace; overflow: hidden; }
+    /* Mars: the paragraph spacing only adds margin below the text; no text is cut off. */
+    #zm-margin { height: 40px; width: 300px; }
+    #zm-margin p { margin: 0; }
+    /* Cut off: the text wraps to a second line that the 24px box hides. */
+    #zm-clip { height: 24px; width: 120px; }
+    /* Shortened on purpose: needs review. */
+    #zm-ellipsis { height: 24px; width: 110px; white-space: nowrap; text-overflow: ellipsis; }
+
+    /* KBD-01 card patterns (Guardian, A11Y Project). */
+    .kcard { position: relative; width: 240px; padding: 8px; border: 1px solid #1a1a1a; margin: 4px 0; }
+    .kcard .overlay-link { position: absolute; inset: 0; }
+    .kcard .media { height: 30px; background: #ddd; cursor: pointer; }
+
+    /* MDN: a sidebar that scrolls on its own, with a sticky header inside it. */
+    #sidebar { height: 120px; overflow: auto; width: 240px; border: 1px solid #1a1a1a; }
+    #sidebar .sb-head { position: sticky; top: 0; height: 32px; background: #ffffff; border-bottom: 1px solid #1a1a1a; }
+    #sidebar a { display: block; padding: 4px 8px; color: #0b4f9c; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Real-site cases</h1>
+
+    <section id="targets">
+      <a class="sr-only" id="skip-hidden" href="#cited">Skip to content</a><button class="tiny" id="tiny-a" type="button" aria-label="A"></button><button class="tiny" id="tiny-a2" type="button" aria-label="A2"></button><button class="tiny" id="chevron" type="button" aria-label="Open menu"></button><span class="cover-wrap"><button class="tiny" id="covered" type="button" aria-label="Covered"></button><span class="cover"></span></span><button class="tiny" id="tiny-b" type="button" aria-label="B"></button>
+    </section>
+
+    <section>
+      <nav id="sidebar" aria-label="Sidebar">
+        <div class="sb-head">Menu</div>
+        <a id="sb-first" href="#s1">First page</a><a href="#s2">Second page</a><a href="#s3">Third page</a><a href="#s4">Fourth page</a><a href="#s5">Fifth page</a><a href="#s6">Sixth page</a><a href="#s7">Seventh page</a><a href="#s8">Eighth page</a>
+      </nav>
+      <!-- The reader has scrolled the sidebar down, as MDN does to show the current page. -->
+      <script>document.getElementById("sidebar").scrollTop = 10000;</script>
+    </section>
+
+    <section>
+      <div class="zm" id="zm-margin"><p>Order today</p></div>
+      <div class="zm" id="zm-clip">Order today</div>
+      <div class="zm" id="zm-ellipsis">Order today</div>
+    </section>
+
+    <section>
+      <!-- Guardian: a pointer-cursor image under a link that covers the whole card. -->
+      <div class="kcard"><div class="media" id="k-overlay-media"></div><a class="overlay-link" href="#story" aria-label="Story"></a><p>Story title</p></div>
+      <!-- A11Y Project: onclick goes where the card's own link goes. -->
+      <div class="kcard"><div class="media" id="k-same-href" onclick="location.href='#spotlight'"></div><a href="#spotlight">Meet Frank</a></div>
+      <!-- Spotify: a small title link inside a whole-card click layer. -->
+      <div class="kcard" style="height:60px"><div role="button" tabindex="0" style="position:absolute;inset:0" id="card-layer"></div><a href="#album" id="card-title" style="position:relative;font-size:12px;line-height:14px;display:inline-block">Album</a></div>
+      <!-- Guardian consent: an href="#" action with target=_blank opens no window. -->
+      <a href="#" target="_blank" id="hash-blank">partners</a>
+      <!-- Duolingo: an empty handler does nothing. -->
+      <div id="k-empty" onclick="">Empty handler</div>
+      <!-- Still reported: a clickable div with no keyboard equivalent. -->
+      <div class="kcard"><div id="k-real" onclick="location.href='#elsewhere'">Open the gallery</div><a href="#other">Other page</a></div>
+    </section>
+
+    <section class="dark">
+      <a id="default-ring" href="#a">Default focus ring</a>
+    </section>
+
+    <section>
+      <button id="icon-search" type="button">Search this site</button>
+      <span id="offscreen">Parked text</span>
+      <p id="low">Low contrast text that is shown.</p>
+    </section>
+
+    <section class="slider">
+      <div class="slide">First slide</div><div class="slide" id="slide-two">Second slide, shown later</div>
+    </section>
+
+    <section>
+      <div class="strip-window"><canvas width="300" height="400"></canvas></div>
+      <div class="night"><p id="countdown">Countdown to launch</p></div>
+    </section>
+
+    <section class="gallery">
+      <div class="card"></div><div class="card"><canvas width="300" height="80"></canvas><p id="gallery-caption">Today's hits</p></div>
+    </section>
+
+    <section>
+      <p>Read <a class="ext" id="ext-link" href="https://example.com/">an external source</a> for more.</p>
+      <p>Read <a id="icon-under" href="https://example.com/">a source with an icon under it</a> for more.</p>
+      <p id="grad-pass">White text on a dark gradient</p>
+      <p id="grad-fail">Grey text on a grey gradient</p>
+      <p><span id="underline-grad">Dark text with an underline gradient</span></p>
+      <div class="clip-wrap"><p id="clip-grad">Dark text under a clip-text gradient</p></div>
+      <div class="stage"><canvas width="360" height="120"></canvas><div class="white-card" id="on-card">Card text over a photo</div><button type="button" class="own-fill" id="on-button">Search</button><p class="bare" id="on-photo">Bare text</p></div>
+      <div class="lazy-card"><img alt="" loading="lazy" data-src="later.jpg"><div><div class="cap-wrap"><p id="lazy-caption">i</p></div></div></div>
+      <p><span id="solid-chip">Payments</span></p>
+      <div class="grad-card"><div class="grad-bg"></div><p id="on-grad-sibling">Financial Services</p></div>
+      <p id="plain-fail">Light grey text on white</p>
+      <pp-card><span id="in-component">Slotted text</span></pp-card>
+      <p id="over-light-image">Dark text over a light picture</p>
+      <div class="photo-band"><canvas width="300" height="60"></canvas><div class="band"></div><p id="over-band">Text on a 90% band over a photo</p></div>
+      <div class="tabs"><span class="pill"></span><span id="on-pill">Teamwork</span></div>
+      <div id="scripted-word" style="width: 110px">Order today</div>
+      <div class="navy"><span class="pbtn" id="pseudo-pass">Try 1 week free</span> <span class="pbtn" id="pseudo-fail">Get started</span></div>
+      <div class="sr-wrap"><span id="sr-inner">Volume 90%</span></div>
+      <p class="maroon"><a id="hardstop" href="#mit">Hard-stop underline link</a></p>
+      <p id="grad-mixed">Pale text on a blue gradient</p>
+    </section>
+
+    <section>
+      <p id="cited">Accessibility is about people<sup><a id="cite-1" href="#n1">[1]</a></sup><sup><a id="cite-2" href="#n2">[2]</a></sup> and the web.</p>
+      <ol>
+        <li id="n1"><span><a id="back-1" href="#cited">^</a></span> <span>First source.</span></li>
+        <li id="n2"><span><a id="back-2" href="#cited">^</a></span> <span>Second source.</span></li>
+      </ol>
+    </section>
+
+    <section>
+      <p>See the <a id="code-link" href="#role"><code>link</code></a> role.</p>
+    </section>
+
+    <!-- An empty frame, as ad and tracking frames are: no title, lang, h1 or main. -->
+    <iframe id="empty-frame" title="Advertisement" src="real-site-empty-frame.html" width="300" height="50"></iframe>
+    <!-- A frame placed above the page, as Facebook's messaging frames are. -->
+    <iframe id="parked-frame" title="Messaging" src="real-site-parked-frame.html" style="position:absolute;top:-10000px;left:0" width="300" height="100"></iframe>
+  </main>
+  <script>
+    // A web component that paints its own dark background; the text is slotted in from outside.
+    customElements.define("pp-card", class extends HTMLElement {
+      constructor() {
+        super();
+        this.attachShadow({ mode: "open" }).innerHTML = '<div style="background:#002991;padding:8px"><slot></slot></div>';
+      }
+    });
+    document.getElementById("in-component").style.color = "#ffffff";
+  </script>
+</body>
+</html>

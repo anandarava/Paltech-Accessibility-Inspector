@@ -9,7 +9,7 @@ import { contrastRatioExact } from "@shared/color";
 import rulesFile from "@shared/a11y-rules.json";
 import type { RulesFile } from "@shared/types";
 import { paintOver, resolveBackground } from "@src/content/rules/contrast";
-import { shadowColor } from "@src/content/rules/focus-visible";
+import { focusShadows } from "@src/content/rules/focus-visible";
 import { resolveElement } from "@src/content/overlay/highlighter";
 import { HeadingLayer } from "@src/content/overlay/heading-map";
 import { startSpaObserver } from "@src/content/observers/spa-observer";
@@ -46,20 +46,32 @@ describe("contrast opacity compositing", () => {
   });
 });
 
-describe("focus-visible shadowColor", () => {
-  it("prefers the shadow added on focus over a decorative pre-existing one", () => {
+describe("focus-visible focusShadows", () => {
+  it("takes the shadows added on focus, not a decorative pre-existing one, keeping alpha", () => {
     const before = "rgba(0, 0, 0, 0.075) 0px 1px 1px 0px inset";
     const after = "rgba(0, 0, 0, 0.075) 0px 1px 1px 0px inset, rgba(13, 110, 253, 0.25) 0px 0px 0px 4px";
-    expect(shadowColor(after, before)).toEqual([13, 110, 253, 0.25]);
+    expect(focusShadows(after, before)).toEqual([{ color: [13, 110, 253, 0.25], inset: false }]);
   });
 
-  it("falls back to the non-inset ring with spread when nothing is new", () => {
-    const list = "rgba(0, 0, 0, 0.075) 0px 1px 1px 0px inset, rgb(13, 110, 253) 0px 0px 0px 3px";
-    expect(shadowColor(list, list)).toEqual([13, 110, 253, 1]);
+  it("returns every part of a multi-part ring (Stack Overflow: white inside blue)", () => {
+    const after = "rgb(255, 255, 255) 0px 0px 0px 2px, rgb(27, 117, 208) 0px 0px 0px 4px";
+    expect(focusShadows(after)).toEqual([
+      { color: [255, 255, 255, 1], inset: false },
+      { color: [27, 117, 208, 1], inset: false },
+    ]);
   });
 
-  it("returns null for none", () => {
-    expect(shadowColor("none")).toBeNull();
+  it("keeps an offset-only underline (gov.uk) and marks inset rings (WordPress)", () => {
+    expect(focusShadows("rgb(255, 221, 0) 0px -2px 0px 0px, rgb(11, 12, 12) 0px 4px 0px 0px").map((p) => p.color)).toEqual([
+      [255, 221, 0, 1],
+      [11, 12, 12, 1],
+    ]);
+    expect(focusShadows("rgb(255, 255, 255) 0px 0px 0px 3px inset")).toEqual([{ color: [255, 255, 255, 1], inset: true }]);
+  });
+
+  it("leaves out shadows that draw nothing", () => {
+    expect(focusShadows("rgb(0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 3px")).toEqual([]);
+    expect(focusShadows("none")).toEqual([]);
   });
 });
 

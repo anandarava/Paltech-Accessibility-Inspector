@@ -16,6 +16,7 @@ import { Filters } from "./components/Filters";
 import { IssueList } from "./components/IssueList";
 import { IssueDetail } from "./components/IssueDetail";
 import { KeyboardTest } from "./components/KeyboardTest";
+import { ContrastChecker } from "./components/ContrastChecker";
 import { SavedScans } from "./components/SavedScans";
 import { CompareView } from "./components/CompareView";
 import { OverlayMenu, useOverlayModeSync } from "./components/OverlayMenu";
@@ -25,7 +26,7 @@ import { SaveScanButton } from "./components/SaveScanButton";
 import { Toast } from "./components/Toast";
 import { PageChangedBanner } from "./components/PageChangedBanner";
 import { SelectMenu, WCAG_LEVEL_OPTIONS, WCAG_VERSION_OPTIONS } from "./components/SelectMenu";
-import { BookmarkIcon, KeyboardIcon } from "./components/icons";
+import { BookmarkIcon, DropperIcon, KeyboardIcon } from "./components/icons";
 
 export interface AppProps {
   /** DevTools passes chrome.devtools.inspectedWindow.tabId; the side panel resolves the active tab itself. */
@@ -92,6 +93,8 @@ export function App({ tabIdOverride, inspectable = false, onInspect, getInspecte
   const scanning = useStore((s) => s.scanning);
   const readOnly = useStore((s) => s.viewingSaved !== null);
   const setInspectable = useStore((s) => s.setInspectable);
+  const checkerIssueId = useStore((s) => s.checkerIssueId);
+  const openChecker = useStore((s) => s.openChecker);
   const changeSettings = useChangeSettings();
   const startScan = useStartScan();
   const [rootRef, width] = useWidth<HTMLDivElement>();
@@ -113,6 +116,14 @@ export function App({ tabIdOverride, inspectable = false, onInspect, getInspecte
     if (wide) selectIssue(null);
     setView("list");
   }, [setView, selectIssue, wide]);
+
+  /** From the checker: back to the finding it was opened for, or to the list. */
+  const backFromChecker = useCallback(() => {
+    if (checkerIssueId) {
+      selectIssue(checkerIssueId);
+      setView("detail");
+    } else backToList();
+  }, [checkerIssueId, selectIssue, setView, backToList]);
 
   const resultsView = view === "list" || view === "detail";
   // No scan yet for this tab: show the landing view instead of the (empty) results UI.
@@ -216,6 +227,9 @@ export function App({ tabIdOverride, inspectable = false, onInspect, getInspecte
         <Button onClick={() => setView("keyboard")} disabled={tabId === null} aria-pressed={view === "keyboard"} size="action" className="flex-1 basis-[5.5rem] whitespace-normal leading-tight">
           <KeyboardIcon /> Keyboard test
         </Button>
+        <Button onClick={() => openChecker(null)} aria-pressed={view === "contrast"} size="action" className="flex-1 basis-[5.5rem] whitespace-normal leading-tight">
+          <DropperIcon /> Contrast checker
+        </Button>
         <Button onClick={() => setView("saved")} aria-pressed={view === "saved" || view === "compare"} size="action" className="flex-1 basis-[5.5rem] whitespace-normal leading-tight">
           <BookmarkIcon /> Saved Scans
         </Button>
@@ -235,6 +249,7 @@ export function App({ tabIdOverride, inspectable = false, onInspect, getInspecte
         )}
         {!landing && resultsView && !wide && (view === "list" ? listPane : detailPane)}
         {view === "keyboard" && <KeyboardTest onBack={backToList} />}
+        {view === "contrast" && <ContrastChecker key={checkerIssueId ?? "standalone"} onBack={backFromChecker} />}
         {view === "saved" && <SavedScans onBack={backToList} />}
         {view === "compare" && <CompareView onBack={() => setView("saved")} />}
       </main>

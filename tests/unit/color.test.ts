@@ -87,8 +87,8 @@ describe("contrastRatio", () => {
     expect(contrastRatio([119, 119, 119], WHITE)).toBe(contrastRatio(WHITE, [119, 119, 119]));
   });
 
-  it("computes #777777 on #FFFFFF as 4.48 (fails AA) and #767676 as 4.54 (passes)", () => {
-    expect(contrastRatio([0x77, 0x77, 0x77], WHITE)).toBe(4.48);
+  it("shows #777777 on #FFFFFF as 4.47 (fails AA, truncated like WebAIM) and #767676 as 4.54 (passes)", () => {
+    expect(contrastRatio([0x77, 0x77, 0x77], WHITE)).toBe(4.47);
     expect(contrastRatio([0x76, 0x76, 0x76], WHITE)).toBe(4.54);
   });
 

@@ -17,6 +17,12 @@
  *    also set a pointer cursor (false negative), and a pointer cursor used
  *    for decoration produces a false positive; that is why pointer-only
  *    findings are Semi.
+ *  - Not reported: an empty handler (`onclick=""`), an element with no area,
+ *    an element inside one already reported, and a card part whose action
+ *    a keyboard user already has through the card's link (same URL as an
+ *    `onclick="location.href=…"`, a link drawn on top of the element's
+ *    centre (hit-tested; off-screen: an absolutely positioned link that
+ *    contains the element), or a range input beside a slider track).
  *  - "Focusable" means: native focusable element (link with href, enabled
  *    button/input/select/textarea, summary, iframe, contenteditable, media
  *    with controls), or a tabindex attribute, or a focusable descendant (the
@@ -66,9 +72,66 @@ const COMPOSITE_CHILD_ROLES = new Set(["option", "menuitem", "menuitemcheckbox",
 const COMPOSITE_CONTAINER = "[role='listbox'], [role='menu'], [role='menubar'], [role='tree'], [role='treegrid'], [role='tablist'], [role='grid'], [role='combobox'], [role='radiogroup']";
 const SKIP_TAGS = new Set(["HTML", "BODY", "SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE", "HEAD", "META", "LINK", "TITLE", "LABEL", "OPTION", "SUMMARY", "SVG", "PATH", "G", "USE", "BR", "WBR"]);
 
+/** Ancestors searched for a card's keyboard-reachable link. */
+const CARD_LEVELS = 4;
+
+/** URL an inline handler navigates to (`location.href='/x'`, `window.location = "/x"`), resolved; null otherwise. */
+function onclickTarget(el: Element): string | null {
+  const m = /location(?:\.href)?\s*=\s*["']([^"']+)["']/.exec(el.getAttribute("onclick") ?? "");
+  if (!m) return null;
+  try {
+    return new URL(m[1] ?? "", el.ownerDocument.baseURI).href;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * True when a keyboard user can already do what clicking `el` does through a
+ * link or button of the same card (up to four ancestors up):
+ *  - the handler navigates to the URL of a focusable link in the card
+ *    (a card image or heading with `onclick="location.href='/x'"` next to a
+ *    "Read more" link to /x);
+ *  - for a pointer-cursor-only element: a focusable link or button covers the
+ *    element's centre (the card-overlay pattern, an absolutely positioned
+ *    link over the whole card), or a native control sits next to it (a
+ *    progress bar with a range input).
+ */
+/** An absolutely positioned link at least as large as `r` that contains it: the card-overlay pattern. */
+function coversAsOverlay(link: Element, r: DOMRect, view: Window): boolean {
+  const pos = view.getComputedStyle(link).position;
+  if (pos !== "absolute" && pos !== "fixed") return false;
+  const b = link.getBoundingClientRect();
+  return b.left <= r.left + 1 && b.top <= r.top + 1 && b.right >= r.right - 1 && b.bottom >= r.bottom - 1;
+}
+
+function hasCardEquivalent(el: Element, pointerOnly: boolean, view: Window): boolean {
+  // The handler's URL; a pointer-only element (a card image) takes its card's handler.
+  let target = onclickTarget(el);
+  for (let a = el.parentElement, i = 0; !target && pointerOnly && a && i < CARD_LEVELS; a = a.parentElement, i++) target = onclickTarget(a);
+  // What a pointer at the element's centre really reaches: a link drawn on top (the card overlay).
+  const r = el.getBoundingClientRect();
+  const doc = el.ownerDocument;
+  const inView = r.left + r.width / 2 >= 0 && r.top + r.height / 2 >= 0 && r.left + r.width / 2 < view.innerWidth && r.top + r.height / 2 < view.innerHeight;
+  const onTop = pointerOnly && inView ? doc.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) : null;
+  let node: Element | null = el.parentElement;
+  for (let level = 0; node && level < CARD_LEVELS && node !== el.ownerDocument.body; level++, node = node.parentElement) {
+    for (const link of Array.from(node.querySelectorAll("a[href], button, input:not([type='hidden']), select, textarea"))) {
+      if (link === el || el.contains(link) || !isFocusable(link)) continue;
+      if (target && link instanceof HTMLAnchorElement && link.href === target) return true;
+      if (!pointerOnly) continue;
+      if (link.matches("input[type='range']") && level < 2) return true; // a slider's keyboard control beside its track
+      if (onTop && (onTop === link || link.contains(onTop))) return true;
+      if (!inView && coversAsOverlay(link, r, view)) return true; // off-screen: judge by the overlay's shape
+    }
+  }
+  return false;
+}
+
 function hasDataClickAttribute(el: Element): boolean {
   for (const attr of Array.from(el.attributes)) {
-    if (attr.name.startsWith("data-") && /click|tap|press/i.test(attr.name)) return true;
+    // Whole name parts only: data-click, data-on-tap, data-track-click; not data-placeholder-expression.
+    if (attr.name.startsWith("data-") && /(^|[-_])(on)?(click|tap|press)(ed|able)?($|[-_])/i.test(attr.name.slice(5))) return true;
   }
   return false;
 }
@@ -178,14 +241,16 @@ export const rule: CustomRule = {
         if (isExtensionElement(el, ctx)) continue;
 
         const role = (el.getAttribute("role") ?? "").trim().toLowerCase();
-        const hasOnclick = el.hasAttribute("onclick");
+        const hasOnclick = /\S/.test(el.getAttribute("onclick") ?? ""); // an empty handler does nothing
         const hasRole = INTERACTIVE_ROLES.has(role);
         const hasDataClick = hasDataClickAttribute(el);
         let pointerOwn = false;
         let signals: string[] = [];
         if (hasOnclick) signals.push("onclick attribute");
         if (hasRole) signals.push(`role="${role}"`);
-        if (hasDataClick) signals.push("data-*click attribute");
+        // data-click is also how analytics tags elements (LA Times' ad columns and headings, Wired's
+        // sticky ad wrapper): on its own it counts only with a pointer cursor.
+        if (hasDataClick && (hasOnclick || hasRole || view.getComputedStyle(el).cursor === "pointer")) signals.push("data-*click attribute");
         if (signals.length === 0) {
           // Cheap pre-filter before getComputedStyle: elements with no children of their own text are rarely clickable containers.
           const cs = view.getComputedStyle(el);
@@ -209,7 +274,13 @@ export const rule: CustomRule = {
         const inComposite = hasRole && !pointerOwn && composite === "unmanaged";
         // A pointer cursor on a large container (cards, rows) usually wraps a real link; only flag leaf-ish elements.
         if (pointerOwn && el.getElementsByTagName("*").length > 40) continue;
-        if (reported.has(el)) continue;
+        // Inside an element already reported (a clickable card and its image): the same control.
+        let insideReported = false;
+        for (let a = el.parentElement; a; a = a.parentElement) if (reported.has(a)) insideReported = true;
+        if (insideReported || reported.has(el)) continue;
+        const box = el.getBoundingClientRect();
+        if (box.width <= 0 || box.height <= 0) continue; // nothing to click
+        if (hasCardEquivalent(el, pointerOwn, view)) continue; // the card's own link or control does the same
         reported.add(el);
 
         let name = "";

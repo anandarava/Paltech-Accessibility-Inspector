@@ -142,17 +142,18 @@ These run only when **axe-core only** is ✗. They are counted under
 | CLR-09 | 2.4.13 AAA | Moderate | Focus shown only by a background change below 3:1 against the unfocused state (AAA scans only) | axe has no rule for 2.4.13 |
 | FRM-02 | 3.3.2 A | Serious | Placeholder is the only label | axe's `label-title-only` covers title-only labels; FRM-02 covers the placeholder case |
 | FRM-03 | 1.3.1 A | Moderate | Radio or checkbox group without a group label | axe once had `radiogroup` / `checkboxgroup` rules but removed them |
+| FRM-12 | 3.2.2 A | Serious | A `<select>` whose inline `onchange` navigates or submits, with no button in its form (Needs review) | axe has no rule for 3.2.2 |
 | FRM-11 | 3.3.2 A | Moderate | Field named only by aria-label, a visually hidden label or hidden text, with no label shown on screen (Needs review). Not flagged when a visible button sits beside the field or nearby visible text says the same | axe accepts any accessible name, visible or not |
 | ARIA-02 | 4.1.2 A | Moderate (Serious if focusable) | aria-label / aria-labelledby on a div, span, p and similar without a role, which ARIA forbids | axe's `aria-prohibited-attr` reports this only as "incomplete" |
 | ARIA-03 | 4.1.2 A | Serious | An ARIA id list where some ids do not exist (aria-labelledby: definite; aria-describedby, -controls, -owns, -flowto, -details: Needs review) | axe fails an attribute only when none of its ids exist |
-| STR-08 | 4.1.2 A | Serious | An id used by more than one element and referenced by ARIA or `<label for>` | axe's `duplicate-id-aria` reports this only as "incomplete" |
+| STR-08 | 4.1.2 A | Serious | An id used by more than one element and referenced by ARIA or `<label for>`. Not reported when the copies are identical or only the first (the one the reference finds) is shown | axe's `duplicate-id-aria` reports this only as "incomplete" |
 | FRM-04 | 3.3.2 A | Moderate | Required field not marked as required in code | axe's only 3.3.2 rule is `form-field-multiple-labels` |
 | KBD-01 | 2.1.1 A | Critical | Clickable element that cannot be reached with the keyboard | axe does not test click handlers |
 | KBD-02 | 2.1.2 A | Critical | Keyboard trap (found by the **Keyboard test**) | axe cannot press keys |
-| KBD-05 | 2.4.7 AA | Serious | No visible focus indicator | axe has no rule for 2.4.7 |
-| KBD-06 | 2.4.11 AA | Serious | Focused element hidden under a sticky header or footer | axe has no rule for 2.4.11 (WCAG 2.2) |
+| KBD-05 | 2.4.7 AA | Serious | No visible focus indicator. A text field whose only sign of focus is the text cursor, and a control inside a frame from another site (which may draw its ring only after a real key press), go to Needs review | axe has no rule for 2.4.7 |
+| KBD-06 | 2.4.11 AA | Serious | Focused element hidden under a sticky header, footer or banner (for example a cookie banner) when reached with Tab from the top of the page. A visually hidden (1px) control is not checked | axe has no rule for 2.4.11 (WCAG 2.2) |
 | ZM-02 | 1.4.10 AA | Serious | Horizontal scrolling at 320 px width (reflow) | axe has no rule for 1.4.10 |
-| LNK-03 | Best practice | Moderate | Vague link text ("click here", "read more") | axe's `link-name` only checks that a link has a name |
+| LNK-03 | Best practice | Moderate | Vague link text ("click here", "read more") with nothing around it that explains it. A link whose sentence, list item, table cell or card heading (technique H80) gives its purpose passes 2.4.4 and is not reported | axe's `link-name` only checks that a link has a name |
 | LNK-05 | Best practice | Minor | Link opens a new window without warning | axe's only 3.2.5 rule is about `<meta http-equiv="refresh">` |
 
 ### 4b. Stronger versions of axe-core checks
@@ -163,7 +164,7 @@ These run only when **axe-core only** is ✗. They are counted under
 | CLR-02 | 1.4.3 AA | Serious | Large text contrast (3:1) as its own rule, with a suggested colour | Replaces `color-contrast` (large text) |
 | TGT-01 | 2.5.8 AA | Moderate | Target size, applying WCAG's 24 px spacing exception correctly | Replaces `target-size` |
 | TGT-02 | 2.5.5 AAA | Minor | Target smaller than 44 x 44 px; no spacing exception. Runs in AAA scans only | axe has no rule for 2.5.5 |
-| ZM-03 | 1.4.12 AA | Moderate | Applies the 1.4.12 text spacing to the page and looks for clipped text | Runs alongside `avoid-inline-spacing` |
+| ZM-03 | 1.4.12 AA | Moderate | Applies the 1.4.12 text spacing to the page and looks for clipped text. Decoration hidden from screen readers and cut-off letter tails are ignored; a row of items cut off sideways (a carousel) goes to Needs review | Runs alongside `avoid-inline-spacing` |
 
 ### 4c. WCAG requirements only the advanced rules check
 

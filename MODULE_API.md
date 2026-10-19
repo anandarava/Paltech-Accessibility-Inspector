@@ -117,7 +117,10 @@ if needed; simplest: the SW scans every frame with `sendToTab(tabId, msg, frameI
 Exports for other modules:
 ```ts
 // src/content/scanner.ts
-export interface FrameScanOutput { issues: Issue[]; passedRules: string[]; incompleteCount: number; frameUrl: string; isTop: boolean; durationMs: number }
+export interface FrameScanOutput { issues: Issue[]; passedRules: string[]; incompleteCount: number; frameUrl: string; isTop: boolean; durationMs: number; hiddenChildFrames?: string[] }
+// In child frames, page-level axe rules (document-title, page-has-heading-one, landmark-one-main, bypass) are dropped,
+// and language rules only apply when the frame shows text. hiddenChildFrames lists the addresses of child frames nobody
+// can see (not rendered, <= 1px, or above/left of the page); the SW drops findings from frames at those addresses.
 export function scanFrame(options: ScanOptions, rulesFile: RulesFile, ruleConfig: RuleConfig, ctxExtras: { isExtensionNode(el: Element): boolean; onProgress(percent: number, stage: string): void }): Promise<FrameScanOutput>
 // Runs axe.run with runOnly tags by level (tags: A -> wcag2a,wcag21a; AA adds wcag2aa,wcag21aa,wcag22aa; AAA adds wcag2aaa; plus "best-practice" when includeBestPractices),
 // exclude the overlay host, resultTypes violations+incomplete; then runs CUSTOM_RULES; then normalize().
@@ -163,20 +166,31 @@ in the scan options, the scanner and the service worker drop them.
 
 | File | Emits | Notes |
 |---|---|---|
-| `contrast.ts` | CLR-01, CLR-02, CLR-03, CLR-04 | Walk visible text nodes, ancestor background with alpha blending (`shared/color.ts`), large text 24px / 18.66px bold (weight >= 700), CLR-03 Semi when background-image/gradient/video/canvas; CLR-04 for input/button/select borders vs surrounding background. Suggest nearest passing colour by stepping lightness in HSL. Chunk work with `yieldToMain` every 200 nodes. |
-| `focus-visible.ts` | KBD-05, CLR-05, CLR-09 | For each focusable: snapshot outline/box-shadow/border/background/color/text-decoration, `el.focus({ preventScroll: true })`, compare; if identical -> KBD-05 (type Semi when `:focus-visible` may not have applied, i.e. when `el.matches(":focus-visible")` is false after focus); if different compute indicator contrast vs adjacent background -> CLR-05 when < 3:1. A background-only change is measured against the unfocused state: CLR-09 (2.4.13 AAA) in AAA scans, CLR-05 Semi (Needs review) in A/AA scans. Restore original activeElement. Skip if the page has > 400 focusables (report one Semi finding on body explaining the cap). |
-| `focus-obscured.ts` | KBD-06 | For each focusable (cap 400): scrollIntoView block "nearest", check `elementFromPoint` at centre and at the four corners inset by 2px; if a `position: fixed|sticky` element that is not an ancestor covers the centre -> KBD-06. Restore scroll position. |
+| `contrast.ts` | CLR-01, CLR-02, CLR-03, CLR-04 | Walk visible text nodes, ancestor background with alpha blending (`shared/color.ts`), large text 24px / 18.66px bold (weight >= 700), CLR-03 Semi when background-image/video/canvas (a no-repeat icon that stays clear of the text lines is ignored; a gradient is measured against each colour stop: all pass -> pass, all fail -> CLR-01/02 against the most favourable stop, mixed -> CLR-03 with the range) (media counts only with the part an `overflow: hidden` container leaves visible, unless that container also holds the text); text pushed out of its own `overflow: hidden` box or parked above/left of the page is skipped; CLR-04 for field/select/checkbox/radio/switch/slider borders vs surrounding background (not buttons; transparent borders are not drawn). Suggest nearest passing colour by stepping lightness in HSL. Chunk work with `yieldToMain` every 200 nodes. |
+| `focus-visible.ts` | KBD-05, CLR-05, CLR-09 | For each focusable: snapshot outline/box-shadow/border/background/color/text-decoration, `el.focus({ preventScroll: true })`, compare; if identical -> KBD-05 (type Semi when `:focus-visible` may not have applied, i.e. when `el.matches(":focus-visible")` is false after focus); if different measure every part of the indicator (outline, each box-shadow entry, border; inset shadows and outlines drawn inside the element against its own focused fill, the rest against the surrounding background) and report CLR-05 when even the best part is < 3:1. Chrome's default `outline: auto` ring passes. When the element itself does not change, its ::before/::after, up to 3 ancestors, its first 20 descendants and its shadow root's first 20 elements are compared unfocused vs focused; a change there is the indicator (not KBD-05). Page transitions are switched off with a temporary style while measuring. The previous element is blurred before each "before" snapshot so `:focus-within` styles do not leak in. A background-only change is measured against the unfocused state: CLR-09 (2.4.13 AAA) in AAA scans, CLR-05 Semi (Needs review) in A/AA scans. Restore original activeElement. Skip if the page has > 400 focusables (report one Semi finding on body explaining the cap). |
+| `focus-obscured.ts` | KBD-06 | Scroll the window to the top, then for each focusable in order (cap 400) call `el.focus()` so the browser scrolls it as it does for Tab, keeping scroll positions from one element to the next (fallback `scrollIntoView` block "nearest" when focus cannot move); check `elementFromPoint` on a 3x3 grid inset by 2px; if a visible `position: fixed|sticky` element (not opacity 0 / hidden, more than 2px each way) that is not an ancestor covers the centre -> KBD-06 (Auto when every point is covered, otherwise Semi). Restore focus and every scroll position. |
 | `alt-quality.ts` | IMG-02, IMG-03, IMG-08, IMG-09 | Filename regex `\.(jpe?g|png|gif|svg|webp|avif|bmp)$` or `^(IMG|DSC|DCIM)[_-]?\d+`; generic words list; inline svg without role/name/aria-hidden -> IMG-08 Semi; `<img alt="">` with a non-empty `title` and no aria-label/aria-labelledby -> IMG-09. |
 | `link-text.ts` | LNK-03, LNK-05 | Vague text list (click here, here, read more, more, learn more, link, details); `target=_blank` with no visible/sr text or aria-label containing "new window"/"new tab"/"opens in" and no rel-annotated icon. |
-| `target-size.ts` | TGT-01, TGT-02 | Only interactive targets (a[href], button, input, [role=button|link|checkbox|radio|tab|menuitem|switch]); compute bounding box < 24x24; pass if inline-in-sentence link or if the 24px circle centred on the target does not intersect any other target's circle (spacing exception). Threshold key `minSize`. TGT-02 (AAA scans only, `ctx.wcagLevel === "AAA"`): every target below `thresholds.enhancedMinSize` (default 44) in either dimension, with the inline and user-agent-control exceptions but no spacing exception. |
+| `target-size.ts` | TGT-01, TGT-02 | Only interactive targets (a[href], button, input, [role=button|link|checkbox|radio|tab|menuitem|switch]); compute bounding box < 24x24; pass if inline-in-sentence link (text found in the parent, or in the nearest block around inline wrappers such as `<sup>`/`<span>`) or if the 24px circle centred on the target does not intersect any other target's circle (spacing exception). Not targets: `pointer-events: none`, visually hidden (<= 1px, clip, clip-path, opacity 0), cut away by an `overflow: hidden` ancestor, or covered at the centre by another element (inside the viewport). Threshold key `minSize`. TGT-02 (AAA scans only, `ctx.wcagLevel === "AAA"`): every target below `thresholds.enhancedMinSize` (default 44) in either dimension, with the inline and user-agent-control exceptions but no spacing exception. |
 | `visible-label.ts` | FRM-11 | Visible field with an author-provided name (aria-label, aria-labelledby or a <label>) but no label text shown on screen (not clipped, larger than 1x1 px, on screen). Skipped when a named button sits beside a text field (G167) or visible text within three ancestor levels matches the name. Semi. |
 | `aria-strict.ts` | ARIA-02, ARIA-03, STR-08 | aria-label/aria-labelledby on div, span, p and similar without a role (Auto); ARIA id lists with some missing ids (aria-labelledby Auto, others Semi; aria-controls skipped while aria-expanded="false"); ids referenced by ARIA or <label for> that occur more than once (Auto, on every copy). A definite finding replaces axe-core's "incomplete" one for the same element (dedupeIssues). |
 | `forms.ts` | FRM-03, FRM-04, FRM-05, FRM-06 | Group detection by shared `name` across >= 2 radio/checkbox inputs; required via `required`/`aria-required`; error text heuristics: elements with role=alert / `.error`, `[class*=error]`, `[id*=error]` near an input that lack `aria-describedby` linkage; `aria-invalid` missing when such an error is visible. FRM-05/06 are Semi. |
 | `keyboard.ts` | KBD-01, KBD-08 | KBD-01: elements with `onclick` attribute or `cursor: pointer` computed style and a click listener heuristic (`onclick`, `role` in interactive set, `data-*click`), that are not focusable (no tabindex/native focusable) and no focusable descendant -> Critical. KBD-08: open `[role=dialog]`/`dialog[open]` that does not contain `document.activeElement` -> Semi. |
-| `reflow.ts` | ZM-02, ZM-03 | ZM-02 only when `window.innerWidth <= 320` (the page must already be that narrow); check `document.documentElement.scrollWidth > innerWidth`. ZM-03: inject a style tag applying the 1.4.12 spacing (line-height 1.5, paragraph spacing 2em, letter 0.12em, word 0.16em) for a moment, detect elements whose `scrollWidth/scrollHeight` exceed client size with `overflow: hidden` and text inside, then remove the style. |
+| `page-heuristics.ts` | STR-12, STR-07, FRM-12, OTH-02 | All Semi. OTH-02: carousel-like elements (class carousel/slider/slideshow/swiper/slick/marquee/ticker, or aria-roledescription carousel) watched for 2.5 s in the top frame; reported when they change by themselves and no pause/stop/play control is in them or a small wrapper. STR-12: short, bold or large `<p>`/`<div>` text without sentence punctuation, only when the page has no h2–h6 (max 10). STR-07: a table of at least 2x2 cells with no `<th>`, no role and numeric or bordered cells. FRM-12: `select[onchange]` whose handler navigates or submits, with no button in its form. Also new elsewhere: KBD-05 reports an element that drops focus on arrival (F55); IMG-03 adds decorative shape words ("bullet", "arrow"…) and alt text over 300 characters (Semi); ARIA-03 reports an aria-label containing HTML markup; ARIA-04 reports elements Tab reaches inside aria-hidden="true" (iframes included); IMG-03 reports a background image whose only description is a generic title (Semi); contrast reads same-origin background images pixel by pixel; the focus check recognises a page-level overlay moved onto the focused element ("flying focus"); axe `td-has-header` feeds STR-07. |
+| `reflow.ts` | ZM-02, ZM-03 | ZM-02 only when `window.innerWidth <= 320` (the page must already be that narrow); check `document.documentElement.scrollWidth > innerWidth`. ZM-03: inject a style tag applying the 1.4.12 spacing (line-height 1.5, paragraph spacing 2em, letter 0.12em, word 0.16em) for a moment, detect `overflow: hidden` elements whose text lines (Range rects) reach outside their client box with the spacing but not without it (a grown `scrollHeight` alone is not clipping: paragraph margin raises it), then remove the style. Text shortened on purpose (`-webkit-line-clamp`, `text-overflow: ellipsis`) is judged by scroll size and reported as Semi. |
 
 Every rule must skip `ctx.isExtensionNode(el)` and invisible elements, and never leave the page
 modified (restore focus, scroll, injected styles).
+
+## `shared/cause.ts` (pure, unit-tested)
+
+`issueCause(issue): { key, label }` and `groupByCause(items, causeOf)`. The cause of a finding is
+read from its data where the rule records it (colour pair for CLR-*, indicator colours for
+CLR-05/09, `obscuredBy` for KBD-06, the id for STR-08, the text for LNK-03), otherwise it is the
+element kind (`<tag.class>` without generated classes) plus the message with quoted values, ids
+and numbers removed. Used by `IssueList` (rule mode: shared causes become an expandable
+"label × N" row) and by the HTML report (`TemplateElement.cause` / `causeLabel`, rendered as a
+`details.cause` group). Grouping never changes counts, score, ignore or baseline.
 
 ## `shared/color.ts` (pure, unit-tested)
 
@@ -256,3 +270,26 @@ fixture page, trigger a scan through the service worker (`context.serviceWorkers
 counts from the fixture's `<script type="application/json" id="expected">` manifest.
 Fixtures in `fixtures/*.html` (images, forms, keyboard-trap, contrast, structure, aria, links) each
 include that expected-results manifest.
+
+## Contrast checker and manual checks
+
+- `shared/contrast-check.ts`: `parseColorInput` (hex with or without `#`, any CSS colour),
+  `evaluateContrast(fg, bg)` (translucent colours blended as drawn; ratio truncated for display,
+  pass/fail on the unrounded ratio; AA, AAA and non-text criteria), `suggestFixes`.
+- `src/content/color-pick.ts`: `elementColors(el)`: the exact computed text colour (with
+  ancestor opacity) and the background from the contrast rule, with `backgroundSure`.
+- Messages:
+  - `COLOR_PREPARE` / `COLOR_RESTORE` (UI -> SW -> `CS_COLOR_PREPARE` / `CS_COLOR_RESTORE`):
+    hide the overlay, scroll to (and for focus rings focus) the finding's element, and answer
+    with its `ElementColors`. The SW turns on focus emulation for a focus-ring check and off
+    on restore.
+  - `CS_ELEMENT_COLORS` (UI -> CS): colours of the element chosen with the picker. The panel's
+    `colorPicking` flag routes the `PICKER_RESULT` to the checker instead of the scan scope.
+  - `MANUAL_CHECK_SET` / `MANUAL_CHECK_REMOVE` (UI -> SW): record or undo a `ManualCheck` on
+    an issue.
+- Verdicts:
+  - **pass:** the issue is ignored for the origin, with the measured colours as the reason.
+  - **fail:** the issue becomes `Auto`; a previous "pass" ignore is removed.
+- Storage and rescans: checks are stored per origin under `manualChecks:<origin>`, keyed by
+  fingerprint, and reapplied after every scan (`applyManualChecks`). `IGNORE_REMOVE` also
+  drops a "pass" check.

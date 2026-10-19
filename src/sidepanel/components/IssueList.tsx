@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Category, Issue, RulesFile, Severity } from "@shared/types";
 import rulesJson from "@shared/a11y-rules.json";
 import { AXE_TO_RULE } from "@shared/wcag-map";
+import { groupByCause, issueCause } from "@shared/cause";
 import {
   CATEGORY_ORDER,
   failedRules,
@@ -69,6 +70,9 @@ export function IssueList({ onOpen, wide = false }: { onOpen(issueId: string): v
   const selectIssue = useStore((s) => s.selectIssue);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  // Cause groups the tester opened, keyed `${rule group key}|${cause key}`.
+  const [openCauses, setOpenCauses] = useState<string[]>([]);
+  const toggleCause = (key: string): void => setOpenCauses((list) => (list.includes(key) ? list.filter((k) => k !== key) : [...list, key]));
 
   // Focus management on mount: return focus to the item the tester came from
   // (back from detail view), otherwise land on the heading.
@@ -333,9 +337,48 @@ export function IssueList({ onOpen, wide = false }: { onOpen(issueId: string): v
           const inline = isRule && !wide;
           const selectedHere = group.issues.find((i) => i.id === selectedIssueId) ?? group.issues[0];
           const rowSel = inline ? selectedHere.id : selectedIssueId;
+          // Rule mode: elements that share a cause (same colours, same covering element, same
+          // component) are listed under one expandable row; single ones stay plain rows.
+          const causes = isRule ? groupByCause(group.issues, issueCause) : [];
+          const grouped = causes.length > 0 && causes.length < group.issues.length;
           const rows = (
             <ul id={inline ? undefined : panelId} aria-label={inline ? "Instances" : undefined} className={isRule ? (inline ? "space-y-0.5" : "border-t border-slate-200 py-0.5 pl-3") : "ml-1"}>
-              {group.issues.map((issue) => instanceRow(issue, isRule ? "rule" : "category", rowSel, inline))}
+              {grouped && causes.length === 1 && (
+                <li className="px-1 pb-0.5 text-[11px] text-slate-700">
+                  All {group.issues.length} share one cause: {causes[0].cause.label}
+                </li>
+              )}
+              {!grouped || causes.length === 1
+                ? group.issues.map((issue) => instanceRow(issue, isRule ? "rule" : "category", rowSel, inline))
+                : causes.map(({ cause, items }) => {
+                    if (items.length === 1) return instanceRow(items[0], "rule", rowSel, inline);
+                    const causeKey = `${group.key}|${cause.key}`;
+                    const causeOpen = openCauses.includes(causeKey) || items.some((i) => i.id === rowSel);
+                    const causeId = `cause-${causeKey.replace(/[^a-z0-9]+/gi, "-")}`;
+                    return (
+                      <li key={causeKey}>
+                        <button
+                          type="button"
+                          aria-expanded={causeOpen}
+                          aria-controls={causeId}
+                          onClick={() => toggleCause(causeKey)}
+                          className="flex w-full items-center gap-1.5 rounded px-1 py-1 text-left text-xs text-slate-900 hover:bg-slate-100"
+                        >
+                          <span className="shrink-0 text-slate-600">{causeOpen ? <ChevronDownIcon size={12} /> : <ChevronRightIcon size={12} />}</span>
+                          <span className="min-w-0 flex-1 truncate font-mono">{cause.label}</span>
+                          <span className="shrink-0 rounded bg-slate-100 px-1.5 text-[11px] font-semibold tabular-nums text-slate-800">
+                            × {items.length}
+                            <span className="sr-only"> elements</span>
+                          </span>
+                        </button>
+                        {causeOpen && (
+                          <ul id={causeId} className="ml-4 border-l border-slate-200 pl-1">
+                            {items.map((issue) => instanceRow(issue, "rule", rowSel, inline))}
+                          </ul>
+                        )}
+                      </li>
+                    );
+                  })}
             </ul>
           );
           return (

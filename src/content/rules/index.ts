@@ -15,6 +15,7 @@ import { rule as contrast } from "./contrast";
 import { rule as focusVisible } from "./focus-visible";
 import { rule as focusObscured } from "./focus-obscured";
 import { rule as reflow } from "./reflow";
+import { rule as pageHeuristics } from "./page-heuristics";
 
 export const CUSTOM_RULES: CustomRule[] = [
   altQuality,
@@ -22,6 +23,7 @@ export const CUSTOM_RULES: CustomRule[] = [
   forms,
   visibleLabel,
   ariaStrict,
+  pageHeuristics,
   keyboard,
   targetSize,
   contrast,

@@ -17,10 +17,15 @@
  *    (b) the `minSize` circle centred on any other undersized target (centre
  *    distance >= minSize).
  *  - Inline: a target whose computed display is inline and that sits in a
- *    sentence (its parent has non-whitespace text nodes besides the link)
- *    is exempt, since its size is constrained by the line height.
+ *    sentence (its parent, or the nearest block around inline wrappers such
+ *    as <sup> or <span>, has other non-whitespace text) is exempt, since its
+ *    size is constrained by the line height.
  *  - User agent control: native-appearance checkbox/radio inputs are drawn
  *    by the browser at their default size and are exempt.
+ *  - Not targets at all: elements with `pointer-events: none`, visually
+ *    hidden ones (1x1 skip links, clip / clip-path, opacity 0), ones cut away
+ *    by an `overflow: hidden` ancestor, and ones whose centre another element
+ *    covers (checked inside the viewport only).
  *  - The "essential" and "equivalent target elsewhere" exceptions cannot be
  *    detected and may cause false positives (icon buttons that duplicate a
  *    larger control, map pins, etc.).
@@ -32,7 +37,7 @@
  */
 import rulesJson from "@shared/a11y-rules.json";
 import type { RuleDefinition, RulesFile } from "@shared/types";
-import { isExtensionElement } from "./contrast";
+import { isClippedAway, isExtensionElement } from "./contrast";
 import { queryAllIncludingRoot } from "@src/content/dom-utils";
 import type { CustomRule, RuleContext, RuleFinding } from "./types";
 
@@ -84,18 +89,65 @@ function largestRect(el: Element): DOMRect | null {
   return best;
 }
 
-/** Inline target that is part of a sentence: parent has other non-empty text. */
-function isInlineInSentence(el: Element, cs: CSSStyleDeclaration): boolean {
-  if (!cs.display.startsWith("inline") || cs.display === "inline-block" || cs.display === "inline-flex" || cs.display === "inline-grid") return false;
-  const parent = el.parentElement;
-  if (!parent) return false;
+/**
+ * A target nobody can see or press: `pointer-events: none` (clicks pass
+ * through it), a visually hidden skip link (1x1, clip, clip-path), fully
+ * transparent, or cut away by an `overflow: hidden` ancestor. It is neither
+ * reported nor counted as a neighbour of other targets.
+ */
+function isUnpressable(el: Element, cs: CSSStyleDeclaration, rect: DOMRect): boolean {
+  if (cs.pointerEvents === "none") return true;
+  if (rect.width <= 1 || rect.height <= 1) return true;
+  if (/^rect\(\s*0(px)?[\s,]+0(px)?[\s,]+0(px)?[\s,]+0(px)?\s*\)$/.test(cs.clip)) return true;
+  if (/^inset\(\s*(50|100)%/.test(cs.clipPath)) return true;
+  if (cs.opacity === "0") return true;
+  return isClippedAway(el);
+}
+
+/**
+ * True when another element sits on top of the target's centre, so a pointer
+ * there reaches that element instead. Only decidable inside the viewport.
+ */
+function isCovered(target: Target, ctx: RuleContext): boolean {
+  const doc = target.element.ownerDocument;
+  const view = doc.defaultView ?? window;
+  if (target.cx < 0 || target.cy < 0 || target.cx >= view.innerWidth || target.cy >= view.innerHeight) return false;
+  const hit = doc.elementFromPoint(target.cx, target.cy);
+  if (!hit || target.element.contains(hit) || isExtensionElement(hit, ctx)) return false;
+  return !hit.contains(target.element); // an ancestor at the centre means the target's own box is not there
+}
+
+function isInlineDisplay(display: string): boolean {
+  return display.startsWith("inline") && display !== "inline-block" && display !== "inline-flex" && display !== "inline-grid" && display !== "inline-table";
+}
+
+/** True when a child of `parent` other than `skip` shows text that is not itself a target. */
+function hasOtherText(parent: Element, skip: Element): boolean {
   for (const node of Array.from(parent.childNodes)) {
-    if (node === el) continue;
+    if (node === skip) continue;
     if (node.nodeType === Node.TEXT_NODE && /\S/.test(node.textContent ?? "")) return true;
     if (node.nodeType === Node.ELEMENT_NODE) {
       const e = node as Element;
       if (!e.matches(TARGET_SELECTOR) && /\S/.test(e.textContent ?? "")) return true;
     }
+  }
+  return false;
+}
+
+/**
+ * Inline target that is part of a sentence. The text may sit outside inline
+ * wrappers around the target: a citation link `<sup><a>[1]</a></sup>` in a
+ * paragraph, or a back-link `<span><a>^</a></span>` before the reference text.
+ * Walk up through inline ancestors to the first block and look for other text
+ * at each level.
+ */
+function isInlineInSentence(el: Element, cs: CSSStyleDeclaration): boolean {
+  if (!isInlineDisplay(cs.display)) return false;
+  const view = el.ownerDocument.defaultView ?? window;
+  let child: Element = el;
+  for (let parent = el.parentElement; parent; child = parent, parent = parent.parentElement) {
+    if (hasOtherText(parent, child)) return true;
+    if (!isInlineDisplay(view.getComputedStyle(parent).display)) return false;
   }
   return false;
 }
@@ -149,6 +201,7 @@ export const rule: CustomRule = {
         if (outer && outer !== el) continue;
         const rect = largestRect(el);
         if (!rect) continue;
+        if (isUnpressable(el, view.getComputedStyle(el), rect)) continue;
         const undersized = rect.width + 0.5 < minSize || rect.height + 0.5 < minSize;
         const target: Target = {
           element: el,
@@ -190,6 +243,7 @@ export const rule: CustomRule = {
       const { target, cs } = entry;
       try {
         if (isInlineInSentence(target.element, cs)) continue;
+        if (isCovered(target, ctx)) continue; // another element takes the pointer here
 
         // Spacing exception: a circle of diameter minSize centred on the target must
         // not intersect (a) any other target's bounding box, nor (b) the minSize
@@ -216,11 +270,18 @@ export const rule: CustomRule = {
 
         const w = Math.round(target.width * 10) / 10;
         const h = Math.round(target.height * 10) / 10;
+        // The neighbour is a larger target whose box contains this one (a whole-card click
+        // layer under the card's title link): a near miss lands on the card, which usually
+        // does the same. Listed for review rather than as a failure.
+        const n = nearest as Target;
+        const insideLarger = n.left <= target.left + 1 && n.top <= target.top + 1 && n.right >= target.right - 1 && n.bottom >= target.bottom - 1;
         findings.push({
           element: target.element,
-          type: PRIMARY.type,
+          type: insideLarger ? "Semi" : PRIMARY.type,
           severity: PRIMARY.severity ?? "Moderate",
-          description: `This ${target.element.tagName.toLowerCase()} target is ${w}x${h}px (minimum ${minSize}x${minSize}px) and a ${minSize}px circle centred on it intersects the nearest other target (centre ${Math.round(nearestDist)}px away), so the spacing exception does not apply.`,
+          description: insideLarger
+            ? `This ${target.element.tagName.toLowerCase()} target is ${w}x${h}px (minimum ${minSize}x${minSize}px) and sits inside a larger target (<${n.element.tagName.toLowerCase()}>, ${Math.round(n.right - n.left)}x${Math.round(n.bottom - n.top)}px). If a near miss on the larger target does the same thing, this is fine; otherwise make this target at least ${minSize}x${minSize}px.`
+            : `This ${target.element.tagName.toLowerCase()} target is ${w}x${h}px (minimum ${minSize}x${minSize}px) and a ${minSize}px circle centred on it intersects the nearest other target (centre ${Math.round(nearestDist)}px away), so the spacing exception does not apply.`,
           data: {
             ruleId: PRIMARY.id,
             width: w,
@@ -247,6 +308,7 @@ export const rule: CustomRule = {
       const { target, cs } = entry;
       try {
         if (isInlineInSentence(target.element, cs)) continue;
+        if (isCovered(target, ctx)) continue;
         const w = Math.round(target.width * 10) / 10;
         const h = Math.round(target.height * 10) / 10;
         findings.push({

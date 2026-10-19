@@ -12,6 +12,7 @@ import type {
   BaselineEntry,
   Issue,
   IssueStatus,
+  ManualCheck,
   KeyboardTestResult,
   RuleConfig,
   RuleDefinition,
@@ -20,7 +21,7 @@ import type {
   Settings,
   Severity,
 } from "@shared/types";
-import type { Message, MessageOf, Response, ScanOptions } from "@shared/messages";
+import type { ManualCheckInput, Message, MessageOf, Response, ScanOptions } from "@shared/messages";
 import { isMessage, issueFrameTarget, sendToTab } from "@shared/messages";
 import { computeScore, isNotConformant, summarize } from "@shared/scoring";
 import { wcagDocsUrl } from "@shared/wcag-map";
@@ -43,15 +44,20 @@ import {
   getLastResult,
   getRuleConfig,
   getSettings,
+  getManualChecks,
   removeBaseline,
   removeIgnored,
+  removeManualChecks,
   setLastResult,
+  setManualCheck,
 } from "./storage";
 import { downloadText } from "./offscreen-client";
 import { captureIssueEvidence } from "./evidence";
 import { deleteSavedScan, getSavedScan, listSavedScans, renameSavedScan, saveScan } from "./storage";
 
 const RULES_FILE = rulesJson as RulesFile;
+/** Tabs where the Contrast checker turned on focus emulation (COLOR_PREPARE with focus). */
+const colorPickEmulation = new Set<number>();
 const FRAME_SCAN_TIMEOUT_MS = 120_000;
 const KEEPALIVE_INTERVAL_MS = 20_000;
 const BASELINE_AUTHOR = "tester";
@@ -261,6 +267,21 @@ async function scanFrame(tabId: number, frameId: number, options: ScanOptions): 
   return res;
 }
 
+/**
+ * Re-apply the tester's manual contrast checks to a new scan: the check is
+ * attached again, and a confirmed failure is a definite (Auto) finding even
+ * when the scan only had it for review. A "pass" is applied through the
+ * ignore list like any ignored finding.
+ */
+function applyManualChecks(issues: Issue[], checks: Record<string, ManualCheck>): void {
+  for (const issue of issues) {
+    const check = checks[issue.fingerprint];
+    if (!check) continue;
+    issue.manualCheck = { ...check, originalType: issue.type };
+    if (check.verdict === "fail") issue.type = "Auto";
+  }
+}
+
 function applyKnownStatuses(
   issues: Issue[],
   baseline: BaselineEntry[],
@@ -326,12 +347,13 @@ async function performScan(tabId: number, requested: ScanOptions | undefined): P
     if (!SCANNABLE_URL_RE.test(url)) throw new Error(UNSUPPORTED_PAGE_ERROR);
     const origin = originOf(url);
 
-    const [settings, ruleConfig, baseline, ignored, previous] = await Promise.all([
+    const [settings, ruleConfig, baseline, ignored, previous, manualChecks] = await Promise.all([
       getSettings(),
       getRuleConfig(),
       getBaseline(origin),
       getIgnored(origin),
       getLastResult(tabId),
+      getManualChecks(origin).catch((): Record<string, ManualCheck> => ({})),
     ]);
 
     const options: ScanOptions = {
@@ -376,6 +398,9 @@ async function performScan(tabId: number, requested: ScanOptions | undefined): P
     // them (see focus-emulation.ts). axe-core-only scans have no focus rules.
     const emulatingFocus = options.axeOnly ? false : await enableFocusEmulation(tabId);
     try {
+      // Addresses of child frames nobody can see, reported by their parent frame (parents
+      // have lower frame ids, so they are scanned first). Their findings are dropped.
+      const hiddenFrameUrls = new Set<string>();
       for (let idx = 0; idx < frameIds.length; idx++) {
         const frameId = frameIds[idx];
         broadcast({
@@ -392,6 +417,8 @@ async function performScan(tabId: number, requested: ScanOptions | undefined): P
           continue;
         }
         const out = res.data;
+        for (const u of Array.isArray(out.hiddenChildFrames) ? out.hiddenChildFrames : []) if (typeof u === "string") hiddenFrameUrls.add(u);
+        if (frameId !== 0 && hiddenFrameUrls.has(out.frameUrl)) continue;
         for (const issue of out.issues) {
           if (!isIssue(issue)) continue;
           pushIssue(issue, frameId);
@@ -410,6 +437,7 @@ async function performScan(tabId: number, requested: ScanOptions | undefined): P
 
     broadcast({ type: "SCAN_PROGRESS", tabId, percent: 92, stage: "Applying baseline" });
     applyKnownStatuses(issues, baseline, ignored, previous);
+    applyManualChecks(issues, manualChecks);
 
     const now = new Date();
     const result: ScanResult = {
@@ -590,6 +618,69 @@ async function markIssuesNow(
   return result;
 }
 
+/** Short "#fff on #000 is 2.1:1 (4.5:1 required)" for a manual check. */
+function manualCheckSummary(check: ManualCheck): string {
+  return `Checked by eye: ${check.foreground} on ${check.background} is ${check.ratio}:1 (${check.required}:1 required)${check.note ? `. ${check.note}` : ""}`;
+}
+
+/**
+ * Record a manual contrast check. "pass": the finding is a false positive and
+ * is ignored for the site (with the measured colours as the reason). "fail":
+ * the failure is confirmed; a Needs review finding becomes definite and counts.
+ */
+async function setManualCheckNow(tabId: number, issueId: string, input: ManualCheckInput): Promise<ScanResult> {
+  const result = await requireLastResult(tabId);
+  const issue = result.issues.find((i) => i.id === issueId);
+  if (!issue) throw new Error("This finding is no longer in the current result. Rescan the page.");
+  const check: ManualCheck = {
+    ...input,
+    originalType: issue.manualCheck?.originalType ?? issue.type,
+    author: BASELINE_AUTHOR,
+    checkedAt: new Date().toISOString(),
+  };
+  issue.manualCheck = check;
+  if (check.verdict === "pass") {
+    issue.type = check.originalType;
+    const reason = manualCheckSummary(check);
+    await addIgnored(result.origin, entriesFor([issue], reason));
+    await removeBaseline(result.origin, [issue.fingerprint]);
+    issue.status = "ignored";
+    issue.reason = reason;
+  } else {
+    issue.type = "Auto";
+    if (issue.status === "ignored") {
+      await removeIgnored(result.origin, [issue.fingerprint]);
+      issue.status = "new";
+      issue.reason = undefined;
+    }
+  }
+  await setManualCheck(result.origin, issue.fingerprint, check);
+  recompute(result);
+  await setLastResult(tabId, result);
+  await pushStatusToContentScript(tabId, issue);
+  return result;
+}
+
+/** Undo a manual contrast check: the finding is again what the scan reported. */
+async function removeManualCheckNow(tabId: number, issueId: string): Promise<ScanResult> {
+  const result = await requireLastResult(tabId);
+  const issue = result.issues.find((i) => i.id === issueId);
+  if (!issue?.manualCheck) throw new Error("This finding has no manual check.");
+  const check = issue.manualCheck;
+  issue.type = check.originalType;
+  delete issue.manualCheck;
+  if (check.verdict === "pass" && issue.status === "ignored") {
+    await removeIgnored(result.origin, [issue.fingerprint]);
+    issue.status = "new";
+    issue.reason = undefined;
+  }
+  await removeManualChecks(result.origin, [issue.fingerprint]);
+  recompute(result);
+  await setLastResult(tabId, result);
+  await pushStatusToContentScript(tabId, issue);
+  return result;
+}
+
 /** After BASELINE_REMOVE / IGNORE_REMOVE: reset matching issues in every open tab of that origin. */
 async function unmarkIssues(origin: string, fingerprints: string[], fromStatus: IssueStatus): Promise<void> {
   const fps = new Set(fingerprints);
@@ -614,6 +705,10 @@ async function unmarkIssues(origin: string, fingerprints: string[], fromStatus: 
       const changed: Issue[] = [];
       for (const issue of result.issues) {
         if (issue.status === fromStatus && fps.has(issue.fingerprint)) {
+          if (fromStatus === "ignored" && issue.manualCheck?.verdict === "pass") {
+            issue.type = issue.manualCheck.originalType;
+            delete issue.manualCheck;
+          }
           const other = otherByFp.get(issue.fingerprint);
           issue.status = other ? otherStatus : "new";
           issue.reason = other ? other.reason : undefined;
@@ -756,10 +851,37 @@ async function handleMessage(msg: Message, sender: Sender): Promise<unknown> {
       await unmarkIssues(msg.origin, msg.fingerprints, "baselined");
       return undefined;
 
-    case "IGNORE_REMOVE":
+    case "IGNORE_REMOVE": {
       await removeIgnored(msg.origin, msg.fingerprints);
+      // A finding ignored by a manual "passes" check is open again: drop that check too.
+      const checks = await getManualChecks(msg.origin).catch((): Record<string, ManualCheck> => ({}));
+      const passed = msg.fingerprints.filter((fp) => checks[fp]?.verdict === "pass");
+      if (passed.length) await removeManualChecks(msg.origin, passed);
       await unmarkIssues(msg.origin, msg.fingerprints, "ignored");
       return undefined;
+    }
+
+    case "COLOR_PREPARE": {
+      await ensureContentScript(msg.tabId);
+      // A focus ring is drawn only while the page has focus, which it loses when the tester
+      // clicks the eyedropper in the panel: emulate a focused page as the scan does.
+      if (msg.focus && !colorPickEmulation.has(msg.tabId) && (await enableFocusEmulation(msg.tabId))) colorPickEmulation.add(msg.tabId);
+      const res = await sendToTab(msg.tabId, { type: "CS_COLOR_PREPARE", tabId: msg.tabId, issueId: msg.issueId, focus: msg.focus }, 0);
+      if (!res.ok) throw new Error(res.error ?? "The page did not respond.");
+      return res.data;
+    }
+
+    case "COLOR_RESTORE": {
+      await sendToTab(msg.tabId, { type: "CS_COLOR_RESTORE", tabId: msg.tabId }, 0).catch(() => undefined);
+      if (colorPickEmulation.delete(msg.tabId)) await disableFocusEmulation(msg.tabId);
+      return undefined;
+    }
+
+    case "MANUAL_CHECK_SET":
+      return withResultLock(msg.tabId, () => setManualCheckNow(msg.tabId, msg.issueId, msg.check));
+
+    case "MANUAL_CHECK_REMOVE":
+      return withResultLock(msg.tabId, () => removeManualCheckNow(msg.tabId, msg.issueId));
 
     case "GET_LAST_RESULT":
       return getLastResult(msg.tabId);
@@ -824,6 +946,13 @@ async function handleMessage(msg: Message, sender: Sender): Promise<unknown> {
       const settings = await getSettings();
       await pushSettingsToTabs(settings);
       return settings;
+    }
+
+    case "LOCATE_IN_FRAME": {
+      await ensureContentScript(msg.tabId);
+      const res = await sendToTab(msg.tabId, { type: "CS_LOCATE_IN_FRAME", issueId: msg.issueId }, msg.frameId);
+      if (!res.ok) throw new Error(res.error ?? "The embedded frame did not respond.");
+      return res.data;
     }
 
     // UI -> CS messages that reached us by mistake: forward to the top frame.
@@ -915,6 +1044,10 @@ async function recordTrapIssueNow(tabId: number, result: KeyboardTestResult): Pr
   if (added > 0) {
     const [baseline, ignored] = await Promise.all([getBaseline(last.origin), getIgnored(last.origin)]);
     applyKnownStatuses(last.issues, baseline, ignored, undefined);
+    applyManualChecks(
+      last.issues.filter((i) => !i.manualCheck),
+      await getManualChecks(last.origin).catch((): Record<string, ManualCheck> => ({})),
+    );
     recompute(last);
     await setLastResult(tabId, last);
     void sendToTab(tabId, { type: "SCAN_RESULT", tabId, result: last }, 0);

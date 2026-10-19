@@ -2,11 +2,12 @@ import { useState, type ReactNode } from "react";
 import type { Issue } from "@shared/types";
 import { sendToBackground } from "@shared/messages";
 import { useStore } from "@src/sidepanel/store";
-import { sendToPage } from "@src/sidepanel/hooks/messaging";
+import { locateIssue, sendToPage } from "@src/sidepanel/hooks/messaging";
 import { Button } from "./Button";
 import { ReasonForm } from "./ReasonForm";
 import { StatusLabel } from "./SeverityLabel";
-import { CheckIcon, EyeIcon, InfoCircleIcon, LightbulbIcon } from "./icons";
+import { CheckIcon, DropperIcon, EyeIcon, InfoCircleIcon, LightbulbIcon } from "./icons";
+import { CHECKABLE_RULES } from "./ContrastChecker";
 
 interface Props {
   /** All instances of the rule in the list (at least one). */
@@ -30,6 +31,7 @@ export function RulePanel({ issues, selected, onOpen, children }: Props) {
   const selectIssue = useStore((s) => s.selectIssue);
   const updateIssues = useStore((s) => s.updateIssues);
   const showToast = useStore((s) => s.showToast);
+  const openChecker = useStore((s) => s.openChecker);
   const [form, setForm] = useState(false);
   const [busy, setBusy] = useState<"view" | "ignore" | null>(null);
 
@@ -41,9 +43,9 @@ export function RulePanel({ issues, selected, onOpen, children }: Props) {
     if (tabId === null) return;
     selectIssue(selected.id);
     setBusy("view");
-    const res = await sendToPage(tabId, { type: "HIGHLIGHT_ISSUE", tabId, issueId: selected.id });
+    const res = await locateIssue(tabId, selected);
     setBusy(null);
-    if (!res.ok) showToast({ kind: "error", message: `Could not locate element: ${res.error ?? "no response from page"}` });
+    if (!res.ok) showToast({ kind: "error", message: `Could not show the element. ${res.error ?? "The page did not respond."}` });
   };
 
   const submitReason = async (reason: string) => {
@@ -93,6 +95,11 @@ export function RulePanel({ issues, selected, onOpen, children }: Props) {
         <Button variant="primary" onClick={() => void viewElement()} disabled={tabId === null || readOnly || busy === "view"}>
           <EyeIcon /> View element
         </Button>
+        {CHECKABLE_RULES.has(selected.ruleId) && !readOnly && (
+          <Button onClick={() => openChecker(selected.id)} disabled={tabId === null}>
+            <DropperIcon /> Check by eye
+          </Button>
+        )}
         {canReview && (
           <Button onClick={() => setForm((f) => !f)} aria-expanded={form} disabled={tabId === null}>
             <CheckIcon /> Mark as reviewed

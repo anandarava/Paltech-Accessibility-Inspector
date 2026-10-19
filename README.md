@@ -24,6 +24,11 @@ Highlights:
   accessible-name tooltips, colour-blindness simulation
 - Keyboard test: records where focus goes while you press Tab through the page
   and detects keyboard traps and unreachable controls
+- Contrast checker: type colours (hex, rgb, hsl, names), pick them on the page
+  with the eyedropper, or read an element's exact CSS colour; shows the WCAG ratio,
+  AA/AAA and non-text results and the nearest passing colours. "Check by eye" on
+  a contrast finding records a verdict (false positive, or confirmed failure) that
+  is kept for the site, reapplied on rescans and shown in reports
 - SPA support: rescans (or prompts) on `pushState` route changes, dialog
   opening, and large DOM changes
 - Evidence screenshots per issue with redaction; HTML and JSON export. The
@@ -53,7 +58,11 @@ axe DevTools-style workflow:
   free-text search, a **Status** filter (Open / Ignored / Baselined, with
   "Open only" and "Excluded only" shortcuts) to review ignored or baselined
   issues across all rules, results **grouped by rule** ("Text contrast (12)") with a
-  "3 of 12 ◀ ▶" instance stepper and auto-highlight on the page
+  "3 of 12 ◀ ▶" instance stepper and auto-highlight on the page. Inside a rule,
+  elements that share a cause (the same colour pair, the same covering banner, the
+  same component) are listed under one expandable row such as
+  "Text #999999 on #fcfcfc · 2.77:1 × 4"; every element is still counted. The HTML
+  report lists them the same way
 - **Saved scans**: name and save results, reopen them read-only, export,
   rename, delete, and compare two scans (or one with the current scan) as
   new / fixed / unchanged
@@ -328,6 +337,7 @@ custom).
 | CLR-08 | Text contrast below 7:1 (enhanced) | 1.4.6 Contrast (Enhanced) (AAA) | Auto | Minor | axe: `color-contrast-enhanced` | no |
 | FRM-10 | Form field has multiple labels | Best practice | Auto | Minor | axe: `form-field-multiple-labels` | yes |
 | FRM-11 | Field has no visible label (named only by aria-label or hidden text) | 3.3.2 Labels or Instructions (A) | Semi | Moderate | custom | yes |
+| FRM-12 | Changing a drop-down navigates or submits without a button | 3.2.2 On Input (A) | Semi | Serious | custom | yes |
 | KBD-03 | Positive tabindex value used | 2.4.3 Focus Order (A) | Auto | Serious | axe: `tabindex` | yes |
 | KBD-11 | Duplicate accesskey values | Best practice | Auto | Minor | axe: `accesskeys` | yes |
 | STR-03 | No &lt;h1&gt; on the page | Best practice | Auto | Moderate | axe: `page-has-heading-one` | yes |
@@ -418,6 +428,7 @@ custom).
 | OTH-01 | Timed refresh or redirect via &lt;meta http-equiv="refresh"&gt; | 2.2.1 Timing Adjustable (A) | Auto | Serious | axe: `meta-refresh`, `meta-refresh-no-exceptions` | yes |
 | OTH-02 | Blinking or scrolling content (&lt;blink&gt;, &lt;marquee&gt;) | 2.2.2 Pause, Stop, Hide (A) | Auto | Serious | axe: `blink`, `marquee` | yes |
 | OTH-03 | Orientation locked via CSS | 1.3.4 Orientation (AA) | Auto | Serious | axe: `css-orientation-lock` | yes |
+| OTH-04 | Scan landed on a bot check or access-denied page; all other findings from that page moved to Needs review | Best practice | Semi | Minor | custom | yes |
 
 Notes: results axe cannot decide (`aria-hidden-focus`, `duplicate-id-aria`,
 `th-has-data-cells`, `color-contrast` over images…) and the catalogue's
@@ -435,10 +446,16 @@ unless enabled explicitly.
   necessary. The score is not a compliance certification.
 - The tool cannot judge the quality or accuracy of alt text, labels, or
   instructions; it only catches obvious patterns (filenames, generic words).
-- Contrast over images, gradients, and videos is not checked (it cannot be
-  decided automatically).
+- Contrast over images and videos is not checked (it cannot be decided
+  automatically); such text is listed under Needs review. Text on a colour
+  gradient is measured against each of the gradient's colours, and a small
+  icon beside the text (such as an external-link icon) is ignored.
 - Content inside cross-origin iframes may not be scanned without additional
   host permissions; such frames are listed as unscanned.
+- Frames nobody can see (hidden, 1px or smaller, or placed above or left of
+  the page, like tracking and messaging frames) are not reported, and
+  page-level checks (title, h1, main landmark, and language when the frame
+  shows no text) apply to the top page only.
 - Canvas-based content (charts, games) cannot be inspected semantically.
 - Issues that appear only after specific interactions (hover menus, error
   states, later SPA views) are found only if you trigger those states before

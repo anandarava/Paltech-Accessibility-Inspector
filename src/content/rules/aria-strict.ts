@@ -40,6 +40,8 @@ function ruleDef(id: string): RuleDefinition {
 const NAMING = ruleDef("ARIA-02");
 const REFERENCE = ruleDef("ARIA-03");
 const DUPLICATE = ruleDef("STR-08");
+const HIDDEN_FOCUS = ruleDef("ARIA-04");
+const TABBABLE = "a[href], area[href], button, input:not([type='hidden']), select, textarea, iframe, summary, [tabindex], [contenteditable='true'], [contenteditable='']";
 const CHUNK = 200;
 
 /** Elements whose implicit role (generic, paragraph, emphasis, strong, code...) cannot be named. */
@@ -78,6 +80,20 @@ function namingFindings(el: Element, focusable: Set<Element>, doc: Document): Ru
   };
 }
 
+/** aria-label holding HTML markup (a template bug): screen readers read the tags out. */
+function markupInLabel(el: Element): RuleFinding | null {
+  const label = el.getAttribute("aria-label") ?? "";
+  if (!/<\/?[a-z][a-z0-9-]*(\s[^>]*)?>/i.test(label)) return null;
+  return {
+    element: el,
+    type: REFERENCE.type,
+    severity: "Serious",
+    description: `The aria-label of this ${snippet(el)} contains HTML markup ("${label.length > 80 ? `${label.slice(0, 79)}…` : label}"), so screen readers announce the tags and attributes as part of its name.`,
+    data: { ruleId: REFERENCE.id, attribute: "aria-label", markup: true },
+    fix: { summary: "Put plain text in aria-label (the visible link text), or remove aria-label and let the element's content name it.", docsUrl: "https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html" },
+  };
+}
+
 function referenceFindings(el: Element, doc: Document): RuleFinding[] {
   const out: RuleFinding[] = [];
   for (const attr of REFERENCE_ATTRS) {
@@ -104,7 +120,7 @@ function referenceFindings(el: Element, doc: Document): RuleFinding[] {
 
 export const rule: CustomRule = {
   id: NAMING.id,
-  emits: [REFERENCE.id, DUPLICATE.id],
+  emits: [REFERENCE.id, DUPLICATE.id, HIDDEN_FOCUS.id],
   title: "ARIA checks stricter than axe-core",
   category: NAMING.category,
   wcag: NAMING.wcag,
@@ -146,8 +162,34 @@ export const rule: CustomRule = {
         const named = namingFindings(el, focusable, doc);
         if (named) findings.push(named);
         findings.push(...referenceFindings(el, doc));
+        const markup = markupInLabel(el);
+        if (markup) findings.push(markup);
       } catch {
         // next element
+      }
+    }
+
+    // ARIA-04: elements that Tab still reaches inside aria-hidden="true" (axe-core skips some, e.g.
+    // iframes). Screen readers then land on something they are told does not exist.
+    const view = doc.defaultView ?? window;
+    for (const hidden of queryAllIncludingRoot(ctx.root, "[aria-hidden='true']")) {
+      if (ctx.isExtensionNode(hidden)) continue;
+      for (const el of [hidden, ...Array.from(hidden.querySelectorAll(TABBABLE))]) {
+        try {
+          if (!el.matches(TABBABLE) || (el as HTMLElement).tabIndex < 0 || el.matches(":disabled") || el.closest("[inert]")) continue;
+          const cs = view.getComputedStyle(el);
+          if (cs.visibility === "hidden" || (el as Element & { checkVisibility?: (o?: object) => boolean }).checkVisibility?.({ visibilityProperty: true }) === false) continue;
+          findings.push({
+            element: el,
+            type: HIDDEN_FOCUS.type,
+            severity: HIDDEN_FOCUS.severity ?? "Serious",
+            description: `This ${snippet(el)} is inside aria-hidden="true" but keyboard users can still Tab to it, so screen reader users land on an element that is hidden from them${el.localName === "iframe" ? " (focus moves into the embedded frame)" : ""}.`,
+            data: { ruleId: HIDDEN_FOCUS.id, hiddenBy: el === hidden ? "self" : snippet(hidden) },
+            fix: { summary: 'Remove aria-hidden, or take the element out of the tab order (tabindex="-1", or the inert attribute on the hidden container).', docsUrl: "https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html" },
+          });
+        } catch {
+          // next element
+        }
       }
     }
 
@@ -165,11 +207,20 @@ export const rule: CustomRule = {
       if (owners.length < 2) continue;
       const ref = referenced.get(id);
       if (!ref) continue;
+      // Harmless copies: the same element with the same text (Wired's two <title>WIRED</title>),
+      // so the reference gives the same result whichever it finds; or only the first copy, the one
+      // the reference resolves to, is shown (the others are hidden duplicates of a responsive layout).
+      const sameCopies = owners.every((o) => o.localName === owners[0]?.localName && (o.textContent ?? "").trim() === (owners[0]?.textContent ?? "").trim());
+      const onlyFirstShown = ctx.isVisible(owners[0] as Element) && owners.slice(1).every((o) => !ctx.isVisible(o));
+      if (sameCopies || onlyFirstShown) continue;
+      // The element that refers to the id is not shown at this width (a mobile menu button): the
+      // reference is not in use now, so the tester judges it.
+      const referrerShown = ctx.isVisible(ref.by);
       for (const owner of owners) {
         if (ctx.root !== doc && !(ctx.root as Element).contains(owner)) continue;
         findings.push({
           element: owner,
-          type: DUPLICATE.type,
+          type: referrerShown ? DUPLICATE.type : "Semi",
           severity: "Serious",
           description: `The id "${id}" is used by ${owners.length} elements, and ${ref.attr === "for" ? "a <label for>" : ref.attr} on a ${snippet(ref.by)} refers to it. The reference resolves to the first one, which may not be the element meant.`,
           data: { ruleId: DUPLICATE.id, id, count: owners.length, referencedBy: ref.attr },

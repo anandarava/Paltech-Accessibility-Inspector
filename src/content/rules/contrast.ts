@@ -7,7 +7,9 @@
  *  - CLR-03  text over an image / gradient / media (Semi, Moderate): the real
  *            background cannot be determined from computed styles alone.
  *  - CLR-04  form control border (or fill) below 3:1 against its surroundings
- *            (Auto, Serious, WCAG 1.4.11).
+ *            (Auto, Serious, WCAG 1.4.11). Fields, drop-downs, checkboxes,
+ *            radios, switches and sliders only; buttons are identified by
+ *            their text or icon and need no boundary.
  *
  * How the background is resolved
  * ------------------------------
@@ -27,18 +29,46 @@
  *  - Positioned siblings that overlap the text (a card floating over a hero,
  *    absolutely positioned decorations) are not ancestors and are ignored, so
  *    the background may be wrong in either direction.
- *  - `background-image`, gradients, `mix-blend-mode`, filters, `backdrop-filter`
- *    and `-webkit-background-clip: text` cannot be evaluated; those cases are
- *    downgraded to CLR-03 "needs review" instead of a pass/fail.
+ *  - `background-image`, `mix-blend-mode`, filters, `backdrop-filter` and
+ *    `-webkit-background-clip: text` cannot be evaluated; those cases are
+ *    downgraded to CLR-03 "needs review" instead of a pass/fail. Two kinds of
+ *    background image are judged after all (see judgeBackgroundImages): a
+ *    no-repeat icon that stays clear of the text (an external-link icon in
+ *    the link's padding) is ignored, and a gradient is measured against each
+ *    of its colours: passing on all of them is a pass, failing on all is a
+ *    failure, and anything in between is CLR-03.
  *  - Text shadows and outlines that improve legibility are ignored (WCAG does
  *    allow them to count); such text may be flagged although it passes.
  *  - Disabled controls and placeholder text are exempt from 1.4.3 and skipped.
- *  - Screen-reader-only text (1x1 clipped) is skipped because it is not seen.
+ *  - Screen-reader-only text (1x1 clipped) is skipped because it is not seen,
+ *    and so is text pushed out of its own `overflow: hidden` box (image
+ *    replacement) or placed above / left of the page (see isTextOutOfSight).
+ *  - A background image from the page's own origin is read pixel by pixel
+ *    (scaled down) and the text measured against its colours like a
+ *    gradient; images from other origins cannot be read and stay CLR-03.
+ *  - A solid single-colour gradient on top hides the layers under it; text
+ *    that passes over the overlay layers whatever the image (composited over
+ *    black and white) is not reported; an absolutely positioned sibling box
+ *    under the text (a tab's pill) is its background.
+ *  - A fill drawn by an absolutely positioned ::before/::after behind the
+ *    text is its background; a screen-reader-only clip on an ancestor hides
+ *    the text; a gradient transparent except its last 3px is an underline;
+ *    off-screen text in a card fading in (opacity transition) is review.
+ *  - Text positioned over a container whose image has not loaded yet (a lazy
+ *    image below the fold) is CLR-03, not measured against the page colour.
+ *  - Images and video count as "behind the text" only with the part an
+ *    `overflow: hidden` ancestor leaves visible (see mediaRectBehind), and
+ *    only when they are inside the text's nearest opaque box: media outside
+ *    the text's own button, chip or card is covered by it.
  *  - Text inside `aria-hidden="true"` subtrees IS checked: 1.4.3/1.4.11 are
  *    about what sighted users see, and such text (captions, cloned carousel
  *    slides, icon-font glyphs) is still painted. Only rendering (display,
  *    visibility, opacity, box) decides whether text is measured here, not
  *    assistive-technology exposure.
+ *  - A failure is definite only when the measured background is certainly
+ *    what is drawn behind the text (see backgroundDoubt): text in a web
+ *    component, another element drawn behind it, or an assumed background
+ *    sends the finding to Needs review instead.
  *  - When no opaque layer is reached and the canvas colour had to be inferred
  *    from a dark colour scheme, findings are downgraded to Semi
  *    (`data.reachedOpaque === false`, `data.canvas === "dark"`).
@@ -78,6 +108,8 @@ export interface BackgroundResolution {
   color: RGB;
   /** True when any layer up to the first opaque one paints a background-image/gradient. */
   hasImage: boolean;
+  /** The elements that paint those background images, innermost first (empty when `hasImage` is false). */
+  imageLayers?: Element[];
   /** Product of `opacity` from this element up to the root (1 = fully opaque group). */
   cumulativeOpacity: number;
   /**
@@ -187,14 +219,15 @@ export function resolveBackground(el: Element | null, cache: BackgroundCache = n
     const ownRaw = Math.min(1, Math.max(0, own[3]));
     const inner: RGB = ownRaw > 0 ? blend([own[0], own[1], own[2], ownRaw], innerBase) : innerBase;
     const alpha = Math.min(1, Math.max(0, own[3])) * cumulativeOpacity;
-    const ownImage = cs.backgroundImage !== "none" && cs.backgroundImage !== "";
+    const ownImage = hasRealImage(cs.backgroundImage);
     if (alpha >= 0.999) {
-      result = { color: [own[0], own[1], own[2]], hasImage: ownImage, cumulativeOpacity, inner, reachedOpaque: true, canvas: parent.canvas };
+      result = { color: [own[0], own[1], own[2]], hasImage: ownImage, imageLayers: ownImage ? [el] : [], cumulativeOpacity, inner, reachedOpaque: true, canvas: parent.canvas };
     } else {
       const layer: RGBA = [own[0], own[1], own[2], alpha];
       result = {
         color: alpha > 0 ? blend(layer, parent.color) : parent.color,
         hasImage: ownImage || parent.hasImage,
+        imageLayers: ownImage ? [el, ...(parent.imageLayers ?? [])] : (parent.imageLayers ?? []),
         cumulativeOpacity,
         inner,
         reachedOpaque: parent.reachedOpaque,
@@ -219,6 +252,12 @@ export function paintOver(bg: BackgroundResolution, fg: RGBA): RGB {
   const k = Math.min(1, Math.max(0, fg[3])) * bg.cumulativeOpacity;
   const ch = (i: 0 | 1 | 2): number => Math.min(255, Math.max(0, Math.round(bg.color[i] + k * (fg[i] - bg.inner[i]))));
   return [ch(0), ch(1), ch(2)];
+}
+
+/** True when a computed background-image draws something: not "none" and not only empty url("") layers. */
+export function hasRealImage(value: string): boolean {
+  if (!value || value === "none") return false;
+  return splitTopLevel(value).some((layer) => layer !== "none" && !/^url\(\s*(""|''|)\s*\)$/.test(layer));
 }
 
 /** Parse a computed font-weight ("400", "bold", "normal", "bolder"). */
@@ -291,6 +330,16 @@ export function isRendered(el: Element): boolean {
 
 /** Screen-reader-only text (clip/clip-path/1px boxes) is not seen and must not be measured. */
 function isVisuallyHiddenText(el: Element, cs: CSSStyleDeclaration): boolean {
+  if (hiddenBySelf(el, cs)) return true;
+  // The screen-reader-only pattern is often on a wrapper (`<div class="sr-only"><span>…`).
+  const view = el.ownerDocument.defaultView ?? window;
+  for (let a = el.parentElement; a && a !== el.ownerDocument.body; a = a.parentElement) {
+    if (hiddenBySelf(a, view.getComputedStyle(a))) return true;
+  }
+  return false;
+}
+
+function hiddenBySelf(el: Element, cs: CSSStyleDeclaration): boolean {
   const clip = cs.clip;
   if (clip && /rect\(\s*0(px)?[,\s]+0(px)?[,\s]+0(px)?[,\s]+0(px)?\s*\)/.test(clip) && cs.position === "absolute") return true;
   const clipPath = cs.clipPath;
@@ -298,6 +347,386 @@ function isVisuallyHiddenText(el: Element, cs: CSSStyleDeclaration): boolean {
   if (cs.overflow === "hidden" || cs.overflowX === "hidden" || cs.overflowY === "hidden") {
     const rect = el.getBoundingClientRect();
     if (rect.width <= 1 && rect.height <= 1) return true;
+  }
+  return false;
+}
+
+/** The x/y translation of a computed transform (`matrix(a, b, c, d, e, f)`), 0 when there is none. */
+function translation(transform: string): { x: number; y: number } {
+  const m = /^matrix\(([^)]+)\)$/.exec(transform.trim());
+  if (!m) return { x: 0, y: 0 };
+  const v = (m[1] ?? "").split(",").map((n) => parseFloat(n));
+  return { x: Number.isFinite(v[4]) ? (v[4] as number) : 0, y: Number.isFinite(v[5]) ? (v[5] as number) : 0 };
+}
+
+/**
+ * The window of a carousel that hides `text` sideways: the nearest ancestor of
+ * `el` below `stop` that clips its overflow and that the text lies (partly)
+ * outside of horizontally. The slide is seen there once the carousel moves.
+ */
+function slideWindow(el: Element, stop: Element, text: Rect): Rect | null {
+  const view = el.ownerDocument.defaultView ?? window;
+  for (let n = el.parentElement; n && n !== stop; n = n.parentElement) {
+    const cs = view.getComputedStyle(n);
+    if (!hides(cs.overflowX)) continue;
+    const b = n.getBoundingClientRect();
+    if (text.left >= b.left - 1 && text.right <= b.right + 1) return null; // shown already
+    return { left: b.left, top: b.top, right: b.right, bottom: b.bottom };
+  }
+  return null;
+}
+
+/** Most colours kept when gradient layers are stacked (each layer multiplies the combinations). */
+const MAX_STACKED_COLOURS = 16;
+
+/**
+ * The colours that stacked gradient layers can show: the last layer is
+ * painted on `base`, each earlier layer on top of that (a faint tint over a
+ * dark gradient stays dark).
+ */
+function stackGradients(layers: string[], base: RGB): RGB[] {
+  let colours: RGB[] = [base];
+  for (let i = layers.length - 1; i >= 0; i--) {
+    const stops = gradientStops(layers[i] as string);
+    if (stops.length === 0) continue;
+    const next: RGB[] = [];
+    for (const under of colours) for (const stop of stops) next.push(blend(stop, under));
+    const seen = new Set<string>();
+    colours = next.filter((c) => {
+      const key = c.map((v) => Math.round(v)).join(",");
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).slice(0, MAX_STACKED_COLOURS);
+  }
+  return colours;
+}
+
+/** How far up the ancestors a ::before/::after fill behind the text is looked for. */
+const PSEUDO_LEVELS = 15;
+
+/**
+ * Fill painted by an absolutely positioned ::before/::after that covers the
+ * text (a button whose colour is drawn by a pseudo-element behind its label,
+ * Duolingo's buttons; France24's dark section gradient drawn by the section's
+ * ::before). Checked on the text element and its ancestors up to the first one
+ * with an opaque background of its own. A solid fill gives one colour; a
+ * gradient gives each of its colour stops (painted over the pseudo-element's
+ * own colour, or over `under`). Null when there is none, or when the fill is
+ * an image that cannot be measured.
+ */
+function pseudoBackdrop(el: Element, text: Rect | null, under: RGB): RGB[] | null {
+  if (!text) return null;
+  const view = el.ownerDocument.defaultView ?? window;
+  let node: Element | null = el;
+  for (let level = 0; node && level < PSEUDO_LEVELS; level++, node = node.parentElement) {
+    const box = node.getBoundingClientRect();
+    for (const pseudo of ["::before", "::after"]) {
+      const cs = view.getComputedStyle(node, pseudo);
+      if (cs.content === "none" || cs.content === "normal" || cs.display === "none") continue;
+      if (cs.position !== "absolute" || readOpacity(cs) < 0.999 || cs.visibility === "hidden") continue;
+      // The pseudo-element's box from its offsets, size and translation (a full-width band drawn
+      // with `left: 50%; transform: translateX(-50%)`); it must cover the text.
+      const shift = translation(cs.transform);
+      const left = box.left + (parseFloat(cs.left) || 0) + shift.x;
+      const top = box.top + (parseFloat(cs.top) || 0) + shift.y;
+      const w = parseFloat(cs.width);
+      const h = parseFloat(cs.height);
+      // A carousel slide parked beside its window is shown inside that window: judge the window's width.
+      const across = slideWindow(el, node, text) ?? text;
+      if (!(left <= across.left + 1 && top <= text.top + 1 && left + w >= across.right - 1 && top + h >= text.bottom - 1)) continue;
+      const c = parseColor(cs.backgroundColor);
+      const base: RGB = c && c[3] >= 0.999 ? [c[0], c[1], c[2]] : c && c[3] > 0.01 ? blend(c, under) : under;
+      if (hasRealImage(cs.backgroundImage)) {
+        const layers = splitTopLevel(cs.backgroundImage).filter((l) => l !== "none");
+        if (!layers.every((l) => /gradient\(/i.test(l))) continue; // a picture: not measurable here
+        const colours = stackGradients(layers, base);
+        if (colours.length > 0) return colours;
+        continue;
+      }
+      if (c && c[3] >= 0.999) return [base];
+    }
+    // Stop at the first box that paints its own opaque background.
+    const own = parseColor(view.getComputedStyle(node).backgroundColor);
+    if (own && own[3] >= 0.999) return null;
+  }
+  return null;
+}
+
+/**
+ * True when the background layers between the text and the image (`stopAt`,
+ * exclusive) are translucent enough that the text passes whatever the image
+ * shows: the layers are composited over black and over white, and the text
+ * must reach `required` against both (Canada.ca's 90% navy band over a photo).
+ */
+function readableOverAnyImage(el: Element, stopAt: Element | null, fg: RGBA, required: number, text: Rect | null): boolean {
+  const view = el.ownerDocument.defaultView ?? window;
+  const layers: RGBA[] = [];
+  let last: Element = el;
+  for (let node: Element | null = el; node && node !== stopAt && !(stopAt && node.contains(stopAt)); node = parentOf(node)) {
+    const c = parseColor(view.getComputedStyle(node).backgroundColor);
+    if (c && c[3] > 0) layers.push(c);
+    last = node;
+  }
+  // An overlay drawn as a positioned sibling of the text's box (a tinted band between the photo
+  // and the caption) lies under the text as well.
+  const holder = last.parentElement;
+  if (holder && text) {
+    for (const s of Array.from(holder.children)) {
+      if (s === last || s.contains(el) || (stopAt && (s === stopAt || s.contains(stopAt)))) continue;
+      const cs = view.getComputedStyle(s);
+      if (cs.position !== "absolute" && cs.position !== "fixed") continue;
+      const c = parseColor(cs.backgroundColor);
+      const b = s.getBoundingClientRect();
+      if (c && c[3] > 0 && b.left <= text.left + 1 && b.top <= text.top + 1 && b.right >= text.right - 1 && b.bottom >= text.bottom - 1) layers.push(c);
+    }
+  }
+  if (layers.length === 0) return false;
+  for (const base of [[0, 0, 0], [255, 255, 255]] as RGB[]) {
+    let colour: RGB = base;
+    for (let i = layers.length - 1; i >= 0; i--) colour = blend(layers[i] as RGBA, colour);
+    if (contrastRatioExact(blend(fg, colour), colour) < required) return false;
+  }
+  return true;
+}
+
+/**
+ * Opaque fill of an absolutely positioned box beside the text's ancestors that
+ * lies under the whole text (a selected tab's indicator pill drawn as a
+ * separate element, often with pointer-events: none). Checks the other
+ * children of the text's first three ancestors. Null when there is none.
+ */
+function siblingBackdrop(el: Element, text: Rect): RGB | null {
+  const found = siblingUnder(el, text);
+  return found && !found.image ? found.color : null;
+}
+
+/**
+ * A positioned box beside the text's ancestors that lies under the whole text:
+ * its colour, or `image` set when it shows a picture (NPS's hero photo box,
+ * whose grey background colour only shows while the photo loads).
+ */
+function siblingUnder(el: Element, text: Rect): { element: Element; color: RGB; image: boolean } | null {
+  const view = el.ownerDocument.defaultView ?? window;
+  let child: Element = el;
+  for (let parent = el.parentElement, level = 0; parent && level < 3; child = parent, parent = parent.parentElement, level++) {
+    // A box between the text and these siblings paints its own solid background over them
+    // (The Verge's selected tab is purple over the grey track beside it).
+    const own = parseColor(view.getComputedStyle(child).backgroundColor);
+    if (own && own[3] >= 0.999) return null;
+    for (const s of Array.from(parent.children)) {
+      if (s === child || s.contains(el)) continue;
+      const cs = view.getComputedStyle(s);
+      if (cs.position !== "absolute" || readOpacity(cs) < 0.999 || cs.visibility === "hidden") continue;
+      const image =hasRealImage(cs.backgroundImage) || /^(img|video|picture|canvas)$/.test(s.localName);
+      const c = parseColor(cs.backgroundColor);
+      if (!image && (!c || c[3] < 0.999)) continue;
+      const b = s.getBoundingClientRect();
+      if (b.left <= text.left + 1 && b.top <= text.top + 1 && b.right >= text.right - 1 && b.bottom >= text.bottom - 1) {
+        // Drawn over the text rather than under it (a panel covering a mock-up's text): not its background.
+        const cx = (text.left + text.right) / 2;
+        const cy = (text.top + text.bottom) / 2;
+        if (cx >= 0 && cy >= 0 && cx < view.innerWidth && cy < view.innerHeight) {
+          const hit = el.ownerDocument.elementFromPoint(cx, cy);
+          if (hit && (hit === s || s.contains(hit))) return null;
+        }
+        return { element: s, color: c ? [c[0], c[1], c[2]] : WHITE, image };
+      }
+    }
+  }
+  return null;
+}
+
+/** A photo or video in a box beside the text's ancestors, under the whole text. */
+function imageSiblingUnder(el: Element, text: Rect | null): Element | null {
+  if (!text) return null;
+  const found = siblingUnder(el, text);
+  return found?.image ? found.element : null;
+}
+
+/**
+ * Why the background measured for `el` cannot be trusted, or "" when it can.
+ * A definite contrast failure is reported only when the measured background
+ * is certainly what is drawn behind the element; otherwise the finding goes
+ * to Needs review (axe-core's rule: never a definite result from a guess).
+ *  - text slotted into a web component: the component's shadow tree may paint
+ *    its own background, which the ancestor walk does not see;
+ *  - something other than the element's own ancestors is drawn behind it at
+ *    the measured point (a gradient or image box, a hero photo under a fixed
+ *    header, a layer with negative z-index), before an ancestor with an
+ *    opaque background is reached;
+ *  - no opaque background was found and the point could not be checked.
+ * `point` is in viewport coordinates; when it is outside the viewport the
+ * element is scrolled into view for the check (the caller restores scroll).
+ */
+export function backgroundDoubt(el: Element, point: { x: number; y: number } | null, reachedOpaque: boolean): string {
+  return stackBackground(el, point, reachedOpaque).doubt;
+}
+
+/**
+ * The background drawn behind `el` at `point`, worked out from the browser's
+ * own stack of elements there (as axe-core does), and why it cannot be
+ * trusted ("" when it can). Every box below the element that fully covers it
+ * with a plain colour is part of the background, ancestor or not: their
+ * colours are blended down to the first opaque one (the canvas is white).
+ * Doubt: text in a web component; another element's image, gradient or media
+ * behind it; a coloured box that covers it only partly; an unchecked point
+ * with no opaque background found. Images on the element's own ancestors
+ * were already judged by the caller (an icon beside the text) and are not
+ * doubted here. `color` is null when it could not be worked out.
+ */
+export function stackBackground(el: Element, point: { x: number; y: number } | null, reachedOpaque: boolean): { doubt: string; color: RGB | null } {
+  const result = (doubt: string, color: RGB | null = null): { doubt: string; color: RGB | null } => ({ doubt, color });
+  for (let n: Element | null = el; n; n = parentOf(n)) {
+    // Slotted into a web component, open or closed (PayPal's footer: a closed shadow root paints
+    // the dark background; `assignedSlot` is null for closed roots, so look at the host too).
+    const host = n.parentElement;
+    if ((n as Element & { assignedSlot?: Element | null }).assignedSlot || (host && hasShadowRoot(host))) return result(" The element is placed inside a web component that may draw its own background, so the background could not be confirmed.");
+  }
+  const doc = el.ownerDocument;
+  const view = doc.defaultView ?? window;
+  let p = point;
+  if (p && (p.x < 0 || p.y < 0 || p.x >= view.innerWidth || p.y >= view.innerHeight)) {
+    try {
+      const before = el.getBoundingClientRect();
+      el.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" as ScrollBehavior });
+      const after = el.getBoundingClientRect();
+      p = { x: p.x + (after.left - before.left), y: p.y + (after.top - before.top) };
+    } catch {
+      p = null;
+    }
+  }
+  if (!p || p.x < 0 || p.y < 0 || p.x >= view.innerWidth || p.y >= view.innerHeight) {
+    return result(reachedOpaque ? "" : " No solid background was found behind it and the area could not be checked on screen, so the background is assumed.");
+  }
+  const stack = doc.elementsFromPoint(p.x, p.y);
+  const at = stack.findIndex((s) => s === el || el.contains(s));
+  // Another element is drawn over the text here: it may not be visible at all (axe-core leaves it for review).
+  if (at < 0) {
+    // The text is not under the point (pointer-events: none on its container, a page that would
+    // not scroll to it): covered only when the top element there paints something opaque.
+    const topEl = stack[0];
+    const cs = topEl ? view.getComputedStyle(topEl) : null;
+    const fill = cs ? parseColor(cs.backgroundColor) : null;
+    const covered = !!topEl && !topEl.contains(el) && !!cs && readOpacity(cs) > 0.01 && ((!!fill && fill[3] >= 0.999) || hasRealImage(cs.backgroundImage));
+    if (covered) return result(` Another element (${elementLabel(topEl as Element)}) is drawn over this text, so it may not be visible and its background could not be confirmed.`);
+    return result(reachedOpaque ? "" : " Another element covers this point, so the background could not be confirmed.");
+  }
+  for (const s of stack.slice(0, at)) {
+    if (s.contains(el)) continue;
+    const cs = view.getComputedStyle(s);
+    const fill = parseColor(cs.backgroundColor);
+    if (readOpacity(cs) > 0.01 && ((fill && fill[3] >= 0.999) || hasRealImage(cs.backgroundImage))) {
+      return result(` Another element (${elementLabel(s)}) is drawn over this text, so it may not be visible and its background could not be confirmed.`);
+    }
+  }
+  const box = el.getBoundingClientRect();
+  const layers: RGBA[] = []; // top to bottom
+  for (const s of stack.slice(at + 1)) {
+    if (s === el || el.contains(s)) continue;
+    const cs = view.getComputedStyle(s);
+    const opacity = readOpacity(cs);
+    if (opacity <= 0.01) continue;
+    const isAncestor = s.contains(el) || s === doc.documentElement;
+    if (!isAncestor && (hasRealImage(cs.backgroundImage) || /^(img|video|canvas|svg|picture|iframe|object|embed)$/.test(s.localName))) {
+      return result(` Another element (<${s.localName}>) draws an image or gradient behind it, so the background could not be confirmed.`);
+    }
+    const own = parseColor(cs.backgroundColor);
+    if (!own || own[3] <= 0.01) continue;
+    if (!isAncestor) {
+      const b = s.getBoundingClientRect();
+      const covers = b.left <= box.left + 1 && b.top <= box.top + 1 && b.right >= box.right - 1 && b.bottom >= box.bottom - 1;
+      if (!covers) return result(` Another element (<${s.localName}>) covers it only partly, so the background could not be confirmed.`);
+    }
+    layers.push([own[0], own[1], own[2], Math.min(1, own[3] * opacity)]);
+    if (own[3] * opacity >= 0.999) break;
+  }
+  let color: RGB = WHITE;
+  for (let i = layers.length - 1; i >= 0; i--) color = blend(layers[i] as RGBA, color);
+  return result("", color);
+}
+
+/**
+ * The colour drawn at viewport `point`, from the browser's stack of elements
+ * there, leaving out `skip` and everything inside it (the focused element whose
+ * ring is being judged). Absolutely positioned ::before/::after fills count
+ * (France24 paints its dark sections with one). Doubt when an image, gradient
+ * or media element is drawn there. Colours are blended down to the first
+ * opaque one; the canvas is white.
+ */
+export function backgroundAt(skip: Element, point: { x: number; y: number }): { doubt: string; color: RGB | null } {
+  const doc = skip.ownerDocument;
+  const view = doc.defaultView ?? window;
+  if (point.x < 0 || point.y < 0 || point.x >= view.innerWidth || point.y >= view.innerHeight) return { doubt: "", color: null };
+  const layers: RGBA[] = []; // top to bottom
+  for (const s of doc.elementsFromPoint(point.x, point.y)) {
+    if (s === skip || skip.contains(s)) continue;
+    const cs = view.getComputedStyle(s);
+    const opacity = readOpacity(cs);
+    if (opacity <= 0.01) continue;
+    const box = s.getBoundingClientRect();
+    for (const pseudo of ["::before", "::after"]) {
+      const pc = view.getComputedStyle(s, pseudo);
+      if (pc.content === "none" || pc.content === "normal" || pc.display === "none") continue;
+      if ((pc.position !== "absolute" && pc.position !== "fixed") || readOpacity(pc) <= 0.01) continue;
+      const shift = translation(pc.transform);
+      const left = box.left + (parseFloat(pc.left) || 0) + shift.x;
+      const top = box.top + (parseFloat(pc.top) || 0) + shift.y;
+      if (point.x < left || point.y < top || point.x > left + parseFloat(pc.width) || point.y > top + parseFloat(pc.height)) continue;
+      if (hasRealImage(pc.backgroundImage)) return { doubt: ` The area around it is painted by a ${pseudo} image or gradient, so the colour next to the indicator could not be confirmed.`, color: null };
+      const c = parseColor(pc.backgroundColor);
+      if (c && c[3] > 0.01) layers.push([c[0], c[1], c[2], Math.min(1, c[3] * opacity)]);
+    }
+    if (hasRealImage(cs.backgroundImage) || /^(img|video|canvas|svg|picture|iframe|object|embed)$/.test(s.localName)) {
+      return { doubt: ` An image (<${s.localName}>) is drawn next to the indicator, so the colour next to it could not be confirmed.`, color: null };
+    }
+    const own = parseColor(cs.backgroundColor);
+    if (own && own[3] > 0.01) layers.push([own[0], own[1], own[2], Math.min(1, own[3] * opacity)]);
+    if (layers.length && (layers[layers.length - 1] as RGBA)[3] >= 0.999) break;
+  }
+  let color: RGB = WHITE;
+  for (let i = layers.length - 1; i >= 0; i--) color = blend(layers[i] as RGBA, color);
+  return { doubt: "", color };
+}
+
+/** True when `el` hosts a shadow root, open or closed (closed roots are visible to the extension only). */
+function hasShadowRoot(el: Element): boolean {
+  if (el.shadowRoot) return true;
+  try {
+    const dom = (globalThis as unknown as { chrome?: { dom?: { openOrClosedShadowRoot?: (e: Element) => ShadowRoot | null } } }).chrome?.dom;
+    return !!dom?.openOrClosedShadowRoot?.(el);
+  } catch {
+    return false;
+  }
+}
+
+/** `<div.cookie-banner>`: an element's tag with its id or first class, to name it in a message. */
+function elementLabel(el: Element): string {
+  const cls = typeof el.className === "string" ? el.className.trim().split(/\s+/)[0] : "";
+  return `<${el.localName}${el.id ? `#${el.id}` : cls ? `.${cls}` : ""}>`;
+}
+
+/** Scroll positions of the window and every scrollable ancestor of `el`, to restore later. */
+export function saveScroll(el: Element): () => void {
+  const view = el.ownerDocument.defaultView ?? window;
+  const x = view.scrollX;
+  const y = view.scrollY;
+  const boxes: Array<[Element, number, number]> = [];
+  for (let n = el.parentElement; n; n = n.parentElement) if (n.scrollTop || n.scrollLeft || n.scrollHeight > n.clientHeight || n.scrollWidth > n.clientWidth) boxes.push([n, n.scrollTop, n.scrollLeft]);
+  return () => {
+    for (const [n, t, l] of boxes) {
+      if (n.scrollTop !== t) n.scrollTop = t;
+      if (n.scrollLeft !== l) n.scrollLeft = l;
+    }
+    if (view.scrollX !== x || view.scrollY !== y) view.scrollTo({ left: x, top: y, behavior: "instant" as ScrollBehavior });
+  };
+}
+
+/** An ancestor that is faded and animating its opacity (a card that fades in when scrolled to). */
+function isFadingIn(el: Element, view: Window): boolean {
+  for (let a: Element | null = el; a && a !== el.ownerDocument.body; a = a.parentElement) {
+    const cs = view.getComputedStyle(a);
+    if (readOpacity(cs) < 0.999 && (/opacity|all/.test(cs.transitionProperty) && parseFloat(cs.transitionDuration) > 0 || cs.animationName !== "none")) return true;
   }
   return false;
 }
@@ -328,6 +757,15 @@ function docOf(root: Document | Element): Document {
 // Text contrast
 // ---------------------------------------------------------------------------
 
+/** The nearest box around a <slot> (slots themselves are `display: contents`). */
+function slotBox(slot: Element): Element | null {
+  for (let n: Element | null = slot; n; n = n.parentElement) {
+    if (n.getClientRects().length > 0) return n;
+  }
+  const root = slot.getRootNode();
+  return root instanceof ShadowRoot ? root.host : slot.parentElement;
+}
+
 interface TextGroup {
   element: Element;
   nodes: Text[];
@@ -350,7 +788,9 @@ async function collectTextGroups(ctx: RuleContext): Promise<TextGroup[]> {
     try {
       const text = node as Text;
       if (!text.data || !/\S/.test(text.data)) continue;
-      const el = text.parentElement;
+      // Text slotted into a web component is drawn where its <slot> is and takes its colour
+      // from there, not from the host (Open University's <ou-link>: white in the shadow <a>).
+      const el = text.assignedSlot ? slotBox(text.assignedSlot) : text.parentElement;
       if (!el) continue;
       const existing = groups.get(el);
       if (existing) {
@@ -395,6 +835,87 @@ interface MediaBox {
   rect: Rect;
 }
 
+/**
+ * The part of a media element that can be behind `text`: its rect cut down by
+ * each ancestor that hides overflow (`overflow: hidden` or `clip`) and does
+ * not also hold the text. A carousel strip inside an `overflow: hidden` window
+ * reaches far beyond what is shown, and only the shown part can be behind text
+ * outside the window. A window holding both the text and the image (a slide
+ * waiting outside it) clips both alike, so it is not applied: the two still
+ * overlap when the slide is shown. Scroll containers are not applied either:
+ * text and image scroll together. Null when nothing is left. Clipping by a
+ * `position: fixed` ancestor's containing block is not modelled.
+ */
+function mediaRectBehind(media: MediaBox, text: Element): Rect | null {
+  return clippedRectFrom(media.rect, parentOf(media.element), (node) => node.contains(text));
+}
+
+function hides(overflow: string): boolean {
+  return overflow === "hidden" || overflow === "clip";
+}
+
+/** `rect` cut down by `box`'s border box on each axis where `box` hides overflow; null when nothing is left. */
+function clipToBox(rect: Rect, box: Element): Rect | null {
+  const cs = (box.ownerDocument.defaultView ?? window).getComputedStyle(box);
+  const clipX = hides(cs.overflowX);
+  const clipY = hides(cs.overflowY);
+  if (!clipX && !clipY) return rect;
+  const b = box.getBoundingClientRect();
+  const out: Rect = {
+    left: clipX ? Math.max(rect.left, b.left) : rect.left,
+    right: clipX ? Math.min(rect.right, b.right) : rect.right,
+    top: clipY ? Math.max(rect.top, b.top) : rect.top,
+    bottom: clipY ? Math.min(rect.bottom, b.bottom) : rect.bottom,
+  };
+  return out.right <= out.left || out.bottom <= out.top ? null : out;
+}
+
+/**
+ * Text that is in the DOM but never seen:
+ *  - pushed out of its own element, which hides overflow (image replacement:
+ *    `text-indent: -5000px; overflow: hidden` on an icon button);
+ *  - placed wholly above or left of the page (`left: -9999px`), where nobody
+ *    can scroll to it, unless a clipping ancestor holds it, which is how
+ *    carousels park their other slides; those are shown later and still count.
+ */
+function isTextOutOfSight(rect: Rect, el: Element, view: Window): boolean {
+  if (!clipToBox(rect, el)) return true;
+  // Inside a collapsed box that hides its overflow (UCLA's 0-height footer section): never shown.
+  for (let n = parentOf(el); n && n !== el.ownerDocument.body; n = parentOf(n)) {
+    const cs = view.getComputedStyle(n);
+    const b = n.getBoundingClientRect();
+    if ((hides(cs.overflowY) && b.height < 1) || (hides(cs.overflowX) && b.width < 1)) return true;
+  }
+  // Parked far off the page (`left: -9999px`, Cornell's label at -9464,-10000): screen-reader-only
+  // text, never shown. Carousels park slides one width beside the window, not this far.
+  if (rect.right + view.scrollX <= -FAR_OFF_PAGE || rect.bottom + view.scrollY <= -FAR_OFF_PAGE) return true;
+  const beforePage = rect.right + view.scrollX <= 0 || rect.bottom + view.scrollY <= 0;
+  return beforePage && clippedRectFrom(rect, parentOf(el)) !== null;
+}
+
+/** Below this contrast the text is practically invisible against the measured background. */
+const INVISIBLE_RATIO = 1.25;
+
+/** Distance (px) before the page's start beyond which text is screen-reader-only. */
+const FAR_OFF_PAGE = 1000;
+
+/** True when the element's box is wholly cut away by ancestors that hide overflow. */
+export function isClippedAway(el: Element): boolean {
+  const r = el.getBoundingClientRect();
+  return clippedRectFrom({ left: r.left, top: r.top, right: r.right, bottom: r.bottom }, parentOf(el)) === null;
+}
+
+/** `start` cut down by `from` and each of its ancestors that hides overflow, up to (not including) the first one `stop` accepts. */
+function clippedRectFrom(start: Rect, from: Element | null, stop?: (node: Element) => boolean): Rect | null {
+  let rect: Rect | null = start;
+  const doc = from?.ownerDocument;
+  for (let node = from; rect && node && doc && node !== doc.documentElement && node !== doc.body; node = parentOf(node)) {
+    if (stop?.(node)) break;
+    rect = clipToBox(rect, node);
+  }
+  return rect;
+}
+
 /** Rendered media elements that could sit behind text (img/video/canvas/picture/object/embed); aria-hidden media still paints. */
 function collectMedia(ctx: RuleContext): MediaBox[] {
   const out: MediaBox[] = [];
@@ -415,14 +936,349 @@ function collectMedia(ctx: RuleContext): MediaBox[] {
 }
 
 /** True when a media element that is neither ancestor nor descendant overlaps most of the text box. */
+/**
+ * The nearest box at or above `el` that paints an opaque background colour
+ * (the text's own button, chip or card). Null when only the page itself is
+ * opaque. Anything not inside this box is painted under it, so it is not
+ * behind the text.
+ */
+function nearestOpaqueBox(el: Element): Element | null {
+  const doc = el.ownerDocument;
+  const view = doc.defaultView ?? window;
+  for (let node: Element | null = el; node && node !== doc.body && node !== doc.documentElement; node = parentOf(node)) {
+    const cs = view.getComputedStyle(node);
+    const bg = parseColor(cs.backgroundColor);
+    if (readOpacity(cs) >= 0.999 && ((bg && bg[3] >= 0.999) || solidTopLayer(cs))) return node;
+  }
+  return null;
+}
+
+/** The colour of a top background layer that is one solid opaque gradient colour, or null. */
+function solidTopLayer(cs: CSSStyleDeclaration): RGB | null {
+  const top = splitTopLevel(cs.backgroundImage)[0] ?? "";
+  if (!/gradient\(/i.test(top)) return null;
+  const stops = gradientStops(top);
+  const first = stops[0];
+  if (!first || !stops.every((s) => s[3] >= 0.999 && s[0] === first[0] && s[1] === first[1] && s[2] === first[2])) return null;
+  return [first[0], first[1], first[2]];
+}
+
+/** `outer` contains `inner`, also across shadow roots. */
+function containsDeep(outer: Element, inner: Element): boolean {
+  for (let node: Element | null = inner; node; node = parentOf(node)) if (node === outer) return true;
+  return false;
+}
+
+/**
+ * An image the text is laid over that has not loaded yet (a lazy image below
+ * the fold): it has no size at scan time, so the text would be measured
+ * against the page colour although a photo will be behind it. Recognised when
+ * the text, or an ancestor up to three levels, is positioned (absolute/fixed)
+ * and one of the three boxes around it holds an image that is not loaded. The text is then reported for review as text over an image.
+ */
+function unloadedImageUnder(el: Element): Element | null {
+  const view = el.ownerDocument.defaultView ?? window;
+  let node: Element | null = el;
+  for (let level = 0; node && level < 4; level++, node = node.parentElement) {
+    const pos = view.getComputedStyle(node).position;
+    if (pos !== "absolute" && pos !== "fixed") continue;
+    // The image may sit a few levels above the positioned box (caption > wrap > card). Text on
+    // its own opaque box (a white card) is not over an image outside that box.
+    const opaque = nearestOpaqueBox(el);
+    let container: Element | null = node.parentElement;
+    for (let up = 0; container && up < 3; up++, container = container.parentElement) {
+      for (const img of Array.from(container.querySelectorAll("img"))) {
+        if (node.contains(img)) continue;
+        const image = img as HTMLImageElement;
+        if (image.complete && image.naturalWidth > 0 && image.getBoundingClientRect().height > 0) continue;
+        if (!opaque || containsDeep(opaque, img)) return img;
+      }
+    }
+    return null;
+  }
+  return null;
+}
+
 function overlapsMedia(group: TextGroup, rect: Rect, media: MediaBox[]): Element | null {
   const area = (rect.right - rect.left) * (rect.bottom - rect.top);
   if (area <= 0) return null;
+  let opaque: Element | null | undefined;
   for (const m of media) {
     if (m.element === group.element || m.element.contains(group.element) || group.element.contains(m.element)) continue;
-    if (intersectionArea(rect, m.rect) >= area * 0.25) return m.element;
+    if (intersectionArea(rect, m.rect) < area * 0.25) continue;
+    const shown = mediaRectBehind(m, group.element);
+    if (!shown || intersectionArea(rect, shown) < area * 0.25) continue;
+    // An opaque box holding the text (its own button, a white card) hides media outside it.
+    if (opaque === undefined) opaque = nearestOpaqueBox(group.element);
+    if (opaque && !containsDeep(opaque, m.element)) continue;
+    return m.element;
   }
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// Background images that can be judged after all
+// ---------------------------------------------------------------------------
+
+/** Split a computed comma-separated list on top-level commas (not those inside rgb(...) or url(...)). */
+function splitTopLevel(value: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < value.length; i++) {
+    const ch = value[i];
+    if (ch === "(") depth++;
+    else if (ch === ")") depth = Math.max(0, depth - 1);
+    else if (ch === "," && depth === 0) {
+      parts.push(value.slice(start, i).trim());
+      start = i + 1;
+    }
+  }
+  parts.push(value.slice(start).trim());
+  return parts.filter(Boolean);
+}
+
+/** Colour stops of a computed gradient, e.g. "linear-gradient(rgb(55, 118, 171) 10%, rgb(43, 91, 132) 90%)". */
+export function gradientStops(layer: string): RGBA[] {
+  const stops: RGBA[] = [];
+  for (const m of layer.matchAll(/rgba?\([^)]*\)|#[0-9a-f]{3,8}\b|\btransparent\b/gi)) {
+    const c = parseColor(m[0]);
+    if (c) stops.push(c);
+  }
+  return stops;
+}
+
+const imageSizes = new Map<string, Promise<{ width: number; height: number } | null>>();
+
+/** Natural size of an image the page has (normally) already loaded; null when it cannot be read quickly. */
+function naturalSize(url: string, doc: Document): Promise<{ width: number; height: number } | null> {
+  let pending = imageSizes.get(url);
+  if (!pending) {
+    pending = new Promise((resolve) => {
+      try {
+        const img = new (doc.defaultView ?? window).Image();
+        const done = (): void => resolve(img.naturalWidth > 0 ? { width: img.naturalWidth, height: img.naturalHeight } : null);
+        img.onload = done;
+        img.onerror = () => resolve(null);
+        setTimeout(() => resolve(null), 400);
+        img.src = url;
+        if (img.complete) done();
+      } catch {
+        resolve(null);
+      }
+    });
+    imageSizes.set(url, pending);
+  }
+  return pending;
+}
+
+const imageColourCache = new Map<string, Promise<RGBA[] | null>>();
+/** Image pixels read per side (the image is scaled down to at most this). */
+const SAMPLE_SIDE = 48;
+
+/**
+ * The distinct colours of an image (scaled down, quantised to 4 bits per
+ * channel), or null when it cannot be read: not loaded quickly, or from
+ * another origin without CORS (the canvas is then tainted). Used to measure
+ * text against every colour of a background image, like a gradient.
+ */
+function imageColours(url: string, doc: Document): Promise<RGBA[] | null> {
+  let pending = imageColourCache.get(url);
+  if (!pending) {
+    pending = new Promise((resolve) => {
+      try {
+        const view = doc.defaultView ?? window;
+        const img = new view.Image();
+        const timer = setTimeout(() => resolve(null), 600);
+        img.onerror = () => resolve(null);
+        img.onload = () => {
+          clearTimeout(timer);
+          try {
+            const scale = Math.min(1, SAMPLE_SIDE / Math.max(img.naturalWidth, img.naturalHeight));
+            const w = Math.max(1, Math.round(img.naturalWidth * scale));
+            const h = Math.max(1, Math.round(img.naturalHeight * scale));
+            const canvas = doc.createElement("canvas");
+            canvas.width = w;
+            canvas.height = h;
+            const g = canvas.getContext("2d");
+            if (!g) return resolve(null);
+            g.drawImage(img, 0, 0, w, h);
+            const data = g.getImageData(0, 0, w, h).data; // throws when cross-origin
+            const seen = new Map<string, RGBA>();
+            for (let i = 0; i < data.length; i += 4) {
+              const q = (v: number): number => Math.round((v ?? 0) / 17) * 17;
+              const c: RGBA = [q(data[i] as number), q(data[i + 1] as number), q(data[i + 2] as number), Math.round(((data[i + 3] as number) / 255) * 10) / 10];
+              seen.set(c.join(","), c);
+            }
+            resolve([...seen.values()]);
+          } catch {
+            resolve(null);
+          }
+        };
+        img.src = url;
+      } catch {
+        resolve(null);
+      }
+    });
+    imageColourCache.set(url, pending);
+  }
+  return pending;
+}
+
+/** A px or % length against `full`; null for anything else (calc(), keywords). */
+function lengthIn(value: string, full: number): number | null {
+  const m = /^(-?[\d.]+)(px|%)$/.exec(value.trim());
+  if (!m) return null;
+  const n = parseFloat(m[1] ?? "");
+  if (!Number.isFinite(n)) return null;
+  return m[2] === "%" ? (full * n) / 100 : n;
+}
+
+/**
+ * True unless a no-repeat image layer on `layerEl` is shown to stay clear of
+ * every line of the text (Wikipedia's external-link icon, drawn in the link's
+ * right padding). Anything that cannot be worked out counts as overlapping.
+ */
+async function imageCoversText(layerEl: Element, index: number, image: string, lines: Rect[]): Promise<boolean> {
+  // A gradient has no natural size: "auto" fills the background area.
+  const gradient = /gradient\(/i.test(image);
+  const url = gradient ? "" : /^url\(\s*["']?(.*?)["']?\s*\)$/.exec(image)?.[1];
+  if (!gradient && !url) return true;
+  const view = layerEl.ownerDocument.defaultView ?? window;
+  const cs = view.getComputedStyle(layerEl);
+  const pick = (list: string): string => {
+    const items = splitTopLevel(list);
+    return items.length ? (items[index % items.length] ?? "") : "";
+  };
+  if (gradient && /(transparent|rgba\(\s*\d+,\s*\d+,\s*\d+,\s*0\s*\))\s+calc\(\s*100%\s*-\s*[0-3](\.\d+)?px\s*\)/i.test(image)) {
+    return false; // transparent except a line of at most 3px at the end: an underline
+  }
+  if (gradient) {
+    // A gradient sized to nothing, or to a strip much thinner than a line (a hover underline,
+    // also on text wrapped over several lines), is decoration, not the background.
+    const [gw = "auto", gh = "auto"] = pick(cs.backgroundSize).split(/\s+/);
+    const lineHeight = Math.min(...lines.map((l) => l.bottom - l.top));
+    if (/^0(px|%)?$/.test(gw) || /^0(px|%)?$/.test(gh)) return false;
+    const strip = /^[\d.]+px$/.test(gh) ? parseFloat(gh) : null;
+    if (strip !== null && strip < lineHeight * 0.4) return false;
+  }
+  if (layerEl.getClientRects().length !== 1) return true; // an inline box split over lines
+  const repeat = pick(cs.backgroundRepeat).split(/\s+/);
+  const repeatX = repeat[0] ?? "repeat";
+  const repeatY = repeat[1] ?? (repeatX === "repeat-x" ? "no-repeat" : repeatX === "repeat-y" ? "repeat" : repeatX);
+  const box = layerEl.getBoundingClientRect();
+  const bl = parseFloat(cs.borderLeftWidth) || 0;
+  const bt = parseFloat(cs.borderTopWidth) || 0;
+  const area = {
+    left: box.left + bl,
+    top: box.top + bt,
+    width: box.width - bl - (parseFloat(cs.borderRightWidth) || 0),
+    height: box.height - bt - (parseFloat(cs.borderBottomWidth) || 0),
+  };
+  // Painted only inside the glyphs (gradient text): not a background behind the text.
+  if (pick((cs as unknown as { backgroundClip?: string }).backgroundClip ?? "") === "text" || pick(cs.webkitBackgroundClip ?? "") === "text") return false;
+  const sizeValue = pick(cs.backgroundSize);
+  if (/cover|contain/.test(sizeValue)) return true;
+  const [sw = "auto", sh = "auto"] = sizeValue.split(/\s+/);
+  let width = sw === "auto" ? null : lengthIn(sw, area.width);
+  let height = sh === "auto" ? null : lengthIn(sh, area.height);
+  if ((sw !== "auto" && width === null) || (sh !== "auto" && height === null)) return true;
+  if (gradient) {
+    width ??= area.width;
+    height ??= area.height;
+  }
+  if (width === null || height === null) {
+    const natural = await naturalSize(url ?? "", layerEl.ownerDocument);
+    if (natural) {
+      if (width === null && height === null) {
+        width = natural.width;
+        height = natural.height;
+      } else if (width === null) width = ((height as number) * natural.width) / natural.height;
+      else height = (width * natural.height) / natural.width;
+    } else if (width !== null || height !== null) {
+      width ??= height;
+      height ??= width; // unknown ratio: assume a square icon
+    } else return true;
+  }
+  const [px = "0%", py = "0%"] = pick(cs.backgroundPosition).split(/\s+/);
+  const x = lengthIn(px, area.width - (width as number));
+  const y = lengthIn(py, area.height - (height as number));
+  if (x === null || y === null) return true;
+  const icon: Rect = {
+    left: repeatX === "no-repeat" ? area.left + x : area.left,
+    right: repeatX === "no-repeat" ? area.left + x + (width as number) : area.left + area.width,
+    top: repeatY === "no-repeat" ? area.top + y : area.top,
+    bottom: repeatY === "no-repeat" ? area.top + y + (height as number) : area.top + area.height,
+  };
+  // A strip much thinner than the text (a hover underline grown with background-size) is
+  // decoration under the text, not the background behind it.
+  return lines.some((line) => intersectionArea(line, icon) > 0 && Math.min(icon.bottom, line.bottom) - Math.max(icon.top, line.top) >= (line.bottom - line.top) * 0.4);
+}
+
+/** Line boxes of the group's text (viewport coordinates). */
+function textLines(group: TextGroup): Rect[] {
+  const lines: Rect[] = [];
+  for (const node of group.nodes) {
+    try {
+      const range = node.ownerDocument.createRange();
+      range.selectNodeContents(node);
+      for (const r of Array.from(range.getClientRects())) {
+        if (r.width > 0 && r.height > 0) lines.push({ left: r.left, top: r.top, right: r.right, bottom: r.bottom });
+      }
+      range.detach();
+    } catch {
+      // ignore
+    }
+  }
+  return lines;
+}
+
+/**
+ * What the background images behind a text group leave to measure:
+ *  - null: an image is behind the text, its colours are unknown (CLR-03);
+ *  - []: no image is behind the text (only icons beside it), measure as usual;
+ *  - colours: the backdrop colours of the gradients behind the text; the text
+ *    is measured against each of them.
+ */
+async function judgeBackgroundImages(group: TextGroup, bg: BackgroundResolution, cache: BackgroundCache): Promise<RGB[] | null> {
+  const layers = bg.imageLayers ?? [];
+  if (layers.length === 0) return null;
+  const lines = textLines(group);
+  if (lines.length === 0) return null;
+  const backdrops: RGB[] = [];
+  for (const layerEl of layers) {
+    const view = layerEl.ownerDocument.defaultView ?? window;
+    const images = splitTopLevel(view.getComputedStyle(layerEl).backgroundImage);
+    // Gradients paint over the element's own background colour.
+    const under = resolveBackground(layerEl, cache).color;
+    for (let i = 0; i < images.length; i++) {
+      const image = images[i] ?? "";
+      if (/gradient\(/i.test(image)) {
+        // Underline strips, zero-size and text-clipped gradients are not behind the text.
+        if (!(await imageCoversText(layerEl, i, image, lines))) continue;
+        if (bg.cumulativeOpacity < 1) return null; // faded groups are not modelled for gradients
+        const stops = gradientStops(image);
+        if (stops.length === 0) return null;
+        // One solid opaque colour (`linear-gradient(#181d20, #181d20)` as the top layer): it hides
+        // every layer and image under it, so it alone is the background.
+        const first = stops[0] as RGBA;
+        if (stops.every((s) => s[3] >= 0.999 && s[0] === first[0] && s[1] === first[1] && s[2] === first[2])) {
+          return [...backdrops, [first[0], first[1], first[2]]];
+        }
+        for (const stop of stops) backdrops.push(stop[3] >= 0.999 ? [stop[0], stop[1], stop[2]] : blend(stop, under));
+      } else if (await imageCoversText(layerEl, i, image, lines)) {
+        // A same-origin image can be read: measure the text against its colours like a gradient.
+        const url = /^url\(\s*["']?(.*?)["']?\s*\)$/.exec(image)?.[1];
+        const colours = url && bg.cumulativeOpacity >= 1 ? await imageColours(url, layerEl.ownerDocument) : null;
+        if (!colours) return null;
+        for (const c of colours) backdrops.push(c[3] >= 0.999 ? [c[0], c[1], c[2]] : blend(c, under));
+        // A non-repeating image covers only part of the box: the colour around it is behind the text too.
+        const repeat = splitTopLevel(view.getComputedStyle(layerEl).backgroundRepeat)[i % Math.max(1, splitTopLevel(view.getComputedStyle(layerEl).backgroundRepeat).length)] ?? "repeat";
+        if (/no-repeat|space|round/.test(repeat) || /repeat-x|repeat-y/.test(repeat)) backdrops.push(under);
+      }
+    }
+  }
+  return backdrops;
 }
 
 /**
@@ -439,6 +1295,8 @@ function inferredCanvasNote(bg: BackgroundResolution): string {
 
 async function checkText(ctx: RuleContext, findings: RuleFinding[], cache: BackgroundCache): Promise<void> {
   const groups = await collectTextGroups(ctx);
+  // Text shown outside aria-hidden content, to tell a hidden duplicate of real text from decoration.
+  const shownElsewhere = new Set(groups.filter((g) => !g.element.closest("[aria-hidden='true']")).map((g) => truncate(g.nodes.map((n) => n.data).join(" "))));
   const media = collectMedia(ctx);
   const total = groups.length;
   for (let i = 0; i < total; i++) {
@@ -468,13 +1326,31 @@ async function checkText(ctx: RuleContext, findings: RuleFinding[], cache: Backg
       if (textAlpha <= 0.01) continue; // invisible text (hidden on purpose)
 
       const snippet = truncate(group.nodes.map((n) => n.data).join(" "));
+      // Only symbols ("+", "$", a quotation mark): an icon, an ornament, or part of a value such as
+      // "10M+". Whether it must be read is for the tester (axe-core leaves short text for review).
+      const symbolsOnly = !/[\p{L}\p{N}]/u.test(group.nodes.map((n) => n.data).join(""));
       const large = isLargeText(fontSize, fontWeight);
       const required = large ? 3 : 4.5;
 
       const clipText = cs.webkitBackgroundClip === "text" || (cs as unknown as { backgroundClip?: string }).backgroundClip === "text";
       const rect = textRect(group);
-      const mediaBehind = rect ? overlapsMedia(group, rect, media) : null;
-      if (bg.hasImage || clipText || mediaBehind) {
+      // No layout box at all: the text is not drawn (light-DOM text a web component does not
+      // show, Open University's <ou-link> renders its own copy in its shadow root).
+      if (!rect) continue;
+      if (isTextOutOfSight(rect, el, view)) continue;
+      // A fill drawn by ::before/::after behind the text is the background (it covers any image).
+      const pseudoFill = pseudoBackdrop(el, rect, bg.color);
+      const pseudoBg = pseudoFill && pseudoFill.length === 1 ? (pseudoFill[0] as RGB) : null;
+      const pseudoGradient = pseudoFill && pseudoFill.length > 1 ? pseudoFill : null;
+      const mediaBehind = pseudoFill ? null : (overlapsMedia(group, rect, media) ?? unloadedImageUnder(el) ?? imageSiblingUnder(el, rect));
+      // Background images that turn out to be judgeable: icons beside the text, or gradients
+      // whose colour stops can each be measured. null = an image really is behind the text.
+      const gradient = pseudoGradient ?? (bg.hasImage && !clipText && !mediaBehind && !pseudoFill ? await judgeBackgroundImages(group, bg, cache) : null);
+      if (!clipText && (mediaBehind || (bg.hasImage && gradient === null && !pseudoFill))) {
+        // A translucent overlay between text and image can make the image irrelevant.
+        if (readableOverAnyImage(el, mediaBehind ?? bg.imageLayers?.[0] ?? null, fg, required, rect)) continue;
+      }
+      if ((bg.hasImage && gradient === null && !pseudoFill) || clipText || mediaBehind) {
         const reason = mediaBehind
           ? `sits over a <${mediaBehind.tagName.toLowerCase()}> element`
           : clipText
@@ -504,22 +1380,103 @@ async function checkText(ctx: RuleContext, findings: RuleFinding[], cache: Backg
         continue;
       }
 
-      const fgOpaque = paintOver(bg, fg);
-      const ratio = contrastRatio(fgOpaque, bg.color);
-      if (contrastRatioExact(fgOpaque, bg.color) >= required) continue;
+      const siblingBg = pseudoFill ? null : siblingBackdrop(el, rect);
+      let fgOpaque = pseudoBg ? blend(fg, pseudoBg) : siblingBg ? blend(fg, siblingBg) : paintOver(bg, fg);
+      let backdrop = pseudoBg ?? siblingBg ?? bg.color;
+      let gradientNote = "";
+      let suggestAgainst = backdrop;
+      if (gradient && gradient.length > 0) {
+        // A gradient behind the text: measure against each of its colours.
+        const measured = gradient.map((b) => {
+          const text = blend(fg, b);
+          return { b, text, ratio: contrastRatioExact(text, b) };
+        });
+        const worst = measured.reduce((a, m) => (m.ratio < a.ratio ? m : a));
+        const best = measured.reduce((a, m) => (m.ratio > a.ratio ? m : a));
+        if (worst.ratio >= required) continue; // readable on every part of the gradient
+        const range = `${toHex(worst.b)} to ${toHex(best.b)}`;
+        if (best.ratio >= required) {
+          // Readable on part of the gradient only: where the text sits decides.
+          findings.push({
+            element: el,
+            type: IMAGE.type,
+            severity: IMAGE.severity ?? PRIMARY.severity ?? "Moderate",
+            description: `Text "${snippet}" sits on a gradient (${range}): its contrast ranges from ${contrastRatio(worst.text, worst.b)}:1 to ${contrastRatio(best.text, best.b)}:1 across the gradient's colours; ${required}:1 is required for ${large ? "large" : "normal"} text (${Math.round(fontSize * 100) / 100}px, weight ${fontWeight}). Check the part of the gradient behind the text.`,
+            data: { ruleId: IMAGE.id, foreground: toHex(worst.text), background: toHex(worst.b), ratio: contrastRatio(worst.text, worst.b), required, fontSize, fontWeight, reason: "gradient", text: snippet },
+            fix: {
+              summary: `Change the text colour to ${toHex(suggestPassingColor(worst.text, worst.b, required))} so it passes on the whole gradient, or narrow the gradient.`,
+              suggestedValue: `color: ${toHex(suggestPassingColor(worst.text, worst.b, required))}`,
+              docsUrl: "https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html",
+            },
+          });
+          continue;
+        }
+        // Too low on every part of the gradient: report the most favourable colour.
+        fgOpaque = best.text;
+        backdrop = best.b;
+        suggestAgainst = worst.b;
+        gradientNote = ` The background is a gradient (${range}); this is its most favourable colour.`;
+      }
+      // Report a definite failure only when the measured background is certainly what is behind
+      // the text; a background that had to be assumed sends the finding to Needs review.
+      let doubt = "";
+      // Only for text that fails on the first measurement: the stack check scrolls and hit-tests.
+      if (!pseudoFill && !siblingBg && !gradientNote && contrastRatioExact(fgOpaque, backdrop) < required) {
+        const restore = saveScroll(el);
+        let seen: RGB | null = null;
+        try {
+          const first = textLines(group)[0];
+          const found = stackBackground(el, first ? { x: (first.left + first.right) / 2, y: (first.top + first.bottom) / 2 } : null, bg.reachedOpaque);
+          doubt = found.doubt;
+          seen = found.color;
+        } finally {
+          restore();
+        }
+        // The browser's stack shows a different solid background (a box that is not a parent of
+        // the text): measure against that, as axe-core does.
+        if (!doubt && seen && Math.max(...seen.map((v, i) => Math.abs(v - (backdrop[i] as number)))) > 2) {
+          const text = blend([fg[0], fg[1], fg[2], fg[3] * bg.cumulativeOpacity], seen);
+          if (contrastRatioExact(text, seen) >= required) continue;
+          fgOpaque = text;
+          backdrop = seen;
+          suggestAgainst = seen;
+        }
+      }
+      const ratio = contrastRatio(fgOpaque, backdrop);
+      if (contrastRatioExact(fgOpaque, backdrop) >= required) continue;
 
-      const suggested = suggestPassingColor(fgOpaque, bg.color, required);
+      const suggested = suggestPassingColor(fgOpaque, suggestAgainst, required);
       const def = large ? LARGE : PRIMARY;
       const fgHex = toHex(fgOpaque);
-      const bgHex = toHex(bg.color);
-      const inferredCanvas = inferredCanvasNote(bg);
+      const bgHex = toHex(backdrop);
+      const inferredCanvas = pseudoFill || siblingBg ? "" : inferredCanvasNote(bg);
+      // Hidden from assistive technology: usually decoration (text in a product screenshot or
+      // mock-up), which 1.4.3 exempts. The tester decides.
+      // Measured as practically invisible (white on white): on a real page that almost always
+      // means a background the check cannot see (a video, a scroll animation that has not run,
+      // a closed web component), not text nobody can read. Seen on France24, The Verge, PayPal, Census.
+      if (!doubt && contrastRatioExact(fgOpaque, backdrop) < INVISIBLE_RATIO) {
+        doubt = " The text measures as almost the same colour as its background, which usually means the real background (a video, an animation, a component) could not be seen by the check.";
+      }
+      if (!doubt && symbolsOnly) {
+        doubt = " The text is only symbols, which may be an icon or decoration rather than text to read.";
+      }
+      // An aria-hidden copy of text that is also shown normally (a scrolling ticker's duplicate) is content.
+      if (!doubt && el.closest("[aria-hidden='true']") && !shownElsewhere.has(snippet)) {
+        doubt = " The text is hidden from screen readers (aria-hidden), which usually means it is decoration such as a product screenshot; decorative text is exempt from 1.4.3.";
+      }
+      // A faded card that is animating its opacity is measured mid-fade (scroll-reveal):
+      // off screen, it has not reached its final colour yet.
+      const midFade = bg.cumulativeOpacity < 0.999 && !!rect && (rect.bottom < 0 || rect.top > view.innerHeight) && isFadingIn(el, view);
+      const fadeNote = midFade ? " The text is in a section that fades in when scrolled to and was measured part-way; scroll to it and check again." : "";
       findings.push({
         element: el,
-        type: inferredCanvas ? "Semi" : def.type,
+        type: inferredCanvas || midFade || doubt ? "Semi" : def.type,
         severity: def.severity ?? "Serious",
-        description: `Text "${snippet}" has a contrast ratio of ${ratio}:1 (${fgHex} on ${bgHex}); ${required}:1 is required for ${large ? "large" : "normal"} text (${Math.round(fontSize * 100) / 100}px, weight ${fontWeight}).${inferredCanvas}`,
+        description: `Text "${snippet}" has a contrast ratio of ${ratio}:1 (${fgHex} on ${bgHex}); ${required}:1 is required for ${large ? "large" : "normal"} text (${Math.round(fontSize * 100) / 100}px, weight ${fontWeight}).${gradientNote}${inferredCanvas}${fadeNote}${doubt}${doubt ? " Check the contrast by eye." : ""}`,
         data: {
           ruleId: def.id,
+          backgroundUncertain: doubt ? true : undefined,
           foreground: fgHex,
           background: bgHex,
           ratio,
@@ -532,7 +1489,7 @@ async function checkText(ctx: RuleContext, findings: RuleFinding[], cache: Backg
           canvas: bg.canvas,
         },
         fix: {
-          summary: `Change the text colour to ${toHex(suggested)} (${contrastRatio(suggested, bg.color)}:1 against ${bgHex}) or adjust the background so the ratio reaches ${required}:1.`,
+          summary: `Change the text colour to ${toHex(suggested)} (${contrastRatio(suggested, suggestAgainst)}:1 against ${toHex(suggestAgainst)}) or adjust the background so the ratio reaches ${required}:1.`,
           suggestedValue: `color: ${toHex(suggested)}`,
           docsUrl: "https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html",
         },
@@ -547,7 +1504,14 @@ async function checkText(ctx: RuleContext, findings: RuleFinding[], cache: Backg
 // CLR-04: control boundaries
 // ---------------------------------------------------------------------------
 
-const CONTROL_SELECTOR = "input, select, textarea, button, [role='checkbox'], [role='radio'], [role='switch'], [role='slider']";
+/**
+ * Controls whose boundary identifies them. Buttons are left out: WCAG 1.4.11
+ * does not require a visible boundary on a button that its text or icon
+ * identifies, so a borderless "quiet" button, or one whose border matches the
+ * page, is not a failure (its text and icon contrast are checked elsewhere).
+ */
+const CONTROL_SELECTOR = "input, select, textarea, [role='checkbox'], [role='radio'], [role='switch'], [role='slider']";
+const BUTTON_INPUT_TYPES = new Set(["submit", "button", "reset", "image"]);
 
 interface BorderInfo {
   color: RGBA;
@@ -555,7 +1519,7 @@ interface BorderInfo {
   side: string;
 }
 
-/** First painted border side (width > 0, style not none/hidden) with a parseable colour. */
+/** First painted border side (width > 0, style not none/hidden, not transparent) with a parseable colour. */
 function paintedBorder(cs: CSSStyleDeclaration): BorderInfo | null {
   const sides: Array<[string, string, string, string]> = [
     ["top", cs.borderTopWidth, cs.borderTopStyle, cs.borderTopColor],
@@ -568,7 +1532,7 @@ function paintedBorder(cs: CSSStyleDeclaration): BorderInfo | null {
     if (!Number.isFinite(width) || width <= 0) continue;
     if (style === "none" || style === "hidden") continue;
     const parsed = parseColor(color);
-    if (!parsed) continue;
+    if (!parsed || parsed[3] <= 0.01) continue; // a transparent border is not drawn
     return { color: parsed, width, side };
   }
   return null;
@@ -592,7 +1556,7 @@ async function checkControls(ctx: RuleContext, findings: RuleFinding[], cache: B
     try {
       // Rendered-only check: an aria-hidden control is still painted and its boundary must still be perceivable.
       if (isExtensionElement(el, ctx) || !isRendered(el)) continue;
-      if (el instanceof HTMLInputElement && (el.type === "hidden")) continue;
+      if (el instanceof HTMLInputElement && (el.type === "hidden" || BUTTON_INPUT_TYPES.has(el.type))) continue;
       if (el.matches(":disabled, [aria-disabled='true']")) continue; // inactive controls are exempt
       const view = el.ownerDocument.defaultView ?? window;
       const cs = view.getComputedStyle(el);

@@ -37,6 +37,65 @@
     /* KBD-05: nothing visible changes. Chrome still changes outline-offset on a focused link,
        which must not count as an indicator when no outline is drawn. */
     #nothing:focus { outline: none; }
+
+    /* Not CLR-05: indicators made of several parts, one of which stands out.
+       Stack Overflow: a white ring inside a blue one (the white is invisible on white). */
+    #two-rings:focus { outline: 2px solid transparent; box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px #1b75d0; }
+    /* gov.uk: a yellow highlight with a black underline drawn as an offset shadow. */
+    #highlight-underline:focus { outline: 3px solid transparent; background-color: #ffdd00; color: #0b0c0c; box-shadow: 0 -2px #ffdd00, 0 4px #0b0c0c; }
+    /* WordPress: a white ring inset on a blue button (measured against the button's fill). */
+    #inset-ring { background: #3858e9; color: #ffffff; }
+    #inset-ring:focus { outline: 1px solid #3858e9; box-shadow: inset 0 0 0 3px #ffffff; }
+    /* Not CLR-05 (W3C WAI): the search form shows a white button border while anything in it
+       has focus. The field before the button is focused first, which must not leak into the
+       button's unfocused state. */
+    .search { display: inline-block; background: #003366; padding: 8px; }
+    .search input { width: 120px; }
+    .search button { border: 2px solid transparent; background: transparent; color: #ffffff; outline: none; }
+    .search:focus-within button { border-color: #ffffff; }
+    .search button:focus { outline: 2px solid #003366; outline-offset: 2px; }
+    /* Not CLR-05 (Microsoft): a white dotted outline drawn inside a blue button (negative offset). */
+    #inside-outline { background: #0078d4; color: #ffffff; }
+    #inside-outline:focus { outline: 3px dotted #ffffff; outline-offset: -6px; }
+    /* Not KBD-05: indicators drawn on another element (Apple, GitHub, Microsoft).
+       On a pseudo-element that fades in: */
+    #pseudo-ring { position: relative; }
+    #pseudo-ring::after { content: ""; position: absolute; inset: -4px; border: 2px solid #0b4f9c; opacity: 0; transition: opacity 0.3s; }
+    #pseudo-ring:focus::after { opacity: 1; }
+    /* On the parent, through :focus-within: */
+    .ring-parent:focus-within { outline: 2px solid #0b4f9c; outline-offset: 2px; }
+    /* On a child: */
+    #child-ring:focus .label { text-decoration: underline; }
+    /* Round 2. Not CLR-05 (Shopify): outline:auto in a dark author colour on a dark band; Chrome adds a white outer ring. */
+    .darkband { background: #02090a; padding: 8px; }
+    #auto-color { color: #ffffff; }
+    #auto-color:focus { outline: auto 1px #751be9; }
+    /* Not CLR-05 (Mozilla): a faint shadow plus the field turning white on a dark footer. */
+    #bg-plus-ring { background: #414141; color: #ffffff; border: 0; }
+    #bg-plus-ring:focus { background: #ffffff; color: #000000; outline: none; box-shadow: 0 0 0 2px rgba(0, 144, 237, 0.5); }
+    /* Not KBD-05 (Harvard): an underline grown with background-size on a child. */
+    #grow-underline { text-decoration: none; }
+    #grow-underline .u { background: linear-gradient(currentColor, currentColor) no-repeat 0 100% / 0 2px; }
+    #grow-underline:focus { outline: none; }
+    #grow-underline:focus .u { background-size: 100% 2px; }
+    /* Not KBD-05 (Stripe): the ring is drawn on a sibling button in the same card. */
+    #card-link { outline: none; }
+    .card:has(#card-link:focus) .cta { outline: 2px solid #0b4f9c; }
+    /* Not KBD-05 (WebAIM): a skip link that slides into view on focus. */
+    #slide-skip { position: absolute; top: -40px; left: 0; outline: none; }
+    #slide-skip:focus { top: 0; }
+    /* Not KBD-05 (Spotify): rings are switched off until the user presses a key. */
+    html.no-focus-outline #after-key:focus { outline: none; }
+    #after-key:focus { outline: 2px solid #0b4f9c; }
+    /* Not KBD-05 (Atlassian): the ring class is added a moment after focus by script. */
+    #late-ring { outline: none; }
+    #late-ring.has-ring { outline: 2px solid #0b4f9c; }
+    /* Not KBD-05 / CLR-05 (WebAIM "flying focus"): in keyboard mode the element's own outline is
+       removed and a separate overlay ring is moved onto it; the element also gets a faint fill. */
+    .flying-target { outline: none !important; background: #ffffcc; }
+    #flying-ring { position: absolute; left: -100px; top: -100px; width: 0; height: 0; outline: 3px solid #0b4f9c; pointer-events: none; }
+    /* CLR-05: two parts, both too faint. */
+    #two-faint:focus { outline: 2px solid transparent; box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px #dddddd; }
   </style>
 </head>
 <body>
@@ -53,7 +112,53 @@
       <li><a id="fv-faint" href="#g">Faint background on :focus-visible only</a></li>
       <li><a id="transparent-only" href="#d">Transparent border only</a></li>
       <li><a id="nothing" href="#e">No change</a></li>
+      <li><a id="two-rings" href="#h">White ring inside a blue ring</a></li>
+      <li><a id="highlight-underline" href="#i">Yellow highlight with a black underline</a></li>
+      <li><a id="inset-ring" href="#j">White ring inset on a blue button</a></li>
+      <li><a id="inside-outline" href="#l">White outline inside a blue button</a></li>
+      <li><a id="pseudo-ring" href="#m">Ring on a pseudo-element</a></li>
+      <li class="ring-parent"><a id="parent-ring" href="#n">Ring on the parent</a></li>
+      <li><a id="child-ring" href="#o"><span class="label">Underline on a child</span></a></li>
+      <li><x-ring id="shadow-ring" tabindex="0">Ring inside a web component</x-ring></li>
+      <li class="darkband"><a id="auto-color" href="#p">Coloured auto outline on a dark band</a></li>
+      <li class="darkband"><input id="bg-plus-ring" aria-label="Email"></li>
+      <li><a id="grow-underline" href="#q"><span class="u">Underline grows in</span></a></li>
+      <li class="card"><a id="card-link" href="#r">Card</a> <span class="cta">Read the story</span></li>
+      <li><a id="slide-skip" href="#main">Skip to content</a></li>
+      <li><a id="after-key" href="#s">Ring shown after a key press</a></li>
+      <li><a id="late-ring" href="#t">Ring added just after focus</a></li>
+      <li><a id="flying" href="#u">Ring drawn by a moving overlay</a></li>
+      <li><a id="two-faint" href="#k">White ring inside a pale grey ring</a></li>
+      <li><form class="search" role="search" action="#"><input id="fw-input" type="search" aria-label="Search"><button id="fw-button" type="button">Go</button></form></li>
     </ul>
   </main>
+  <script>
+    // WebAIM's flying focus: a page-level overlay is moved onto the focused element.
+    const ring = document.createElement("div");
+    ring.id = "flying-ring";
+    document.body.appendChild(ring);
+    const flying = document.getElementById("flying");
+    flying.addEventListener("focus", () => {
+      flying.classList.add("flying-target");
+      const r = flying.getBoundingClientRect();
+      Object.assign(ring.style, { left: `${r.left + scrollX - 2}px`, top: `${r.top + scrollY - 2}px`, width: `${r.width + 4}px`, height: `${r.height + 4}px` });
+    });
+    flying.addEventListener("blur", () => { flying.classList.remove("flying-target"); Object.assign(ring.style, { left: "-100px", top: "-100px", width: "0", height: "0" }); });
+    // Atlassian's pattern: the ring class arrives one frame after focus.
+    const late = document.getElementById("late-ring");
+    late.addEventListener("focus", () => requestAnimationFrame(() => late.classList.add("has-ring")));
+    late.addEventListener("blur", () => late.classList.remove("has-ring"));
+    // Spotify's pattern: no focus rings until a key is pressed.
+    document.documentElement.classList.add("no-focus-outline");
+    document.addEventListener("keydown", () => document.documentElement.classList.remove("no-focus-outline"));
+    // A web component that draws its focus ring inside its shadow root.
+    customElements.define("x-ring", class extends HTMLElement {
+      constructor() {
+        super();
+        this.attachShadow({ mode: "open" }).innerHTML =
+          "<style>:host { outline: none; } :host(:focus) .ring { outline: 2px solid #0b4f9c; }</style><span class=\"ring\"><slot></slot></span>";
+      }
+    });
+  </script>
 </body>
 </html>

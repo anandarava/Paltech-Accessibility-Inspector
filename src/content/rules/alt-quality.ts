@@ -97,7 +97,51 @@ export const GENERIC_WORDS = new Set([
   "default",
   "temp",
   "test",
+  // Decorative pieces described by their shape (W3C BAD demo): they should have alt="".
+  "bullet",
+  "arrow",
+  "dot",
+  "line",
+  "border",
+  "divider",
+  "separator",
+  "corner",
 ]);
+
+/**
+ * A box showing a background image as content, with no text, whose only
+ * description is a generic title ("image", "photo"): screen readers get the
+ * generic word at best (W3C BAD demo).
+ */
+function titledBackgroundImages(ctx: RuleContext): RuleFinding[] {
+  const out: RuleFinding[] = [];
+  const doc = ctx.root.ownerDocument ?? (ctx.root as Document);
+  const view = doc.defaultView ?? window;
+  for (const el of Array.from(ctx.root.querySelectorAll("[title]"))) {
+    try {
+      if (el.matches("img, svg, input, a, button, iframe, abbr") || /\S/.test(el.textContent ?? "")) continue;
+      const title = el.getAttribute("title") ?? "";
+      if (classifyAlt(title) !== "generic" || !ctx.isVisible(el)) continue;
+      const cs = view.getComputedStyle(el);
+      const r = el.getBoundingClientRect();
+      if (!/url\(/.test(cs.backgroundImage) || r.width < 16 || r.height < 16) continue;
+      out.push({
+        element: el,
+        type: "Semi",
+        severity: GENERIC.severity ?? "Moderate",
+        description: `This ${el.localName} shows a background image whose only description is the generic title "${title}". If the image conveys information, screen reader users do not get it.`,
+        data: { ruleId: GENERIC.id, alt: title, source: "title", kind: "background-image" },
+        fix: { summary: 'If the image is content, use an <img> with alt text describing it (or role="img" with an aria-label). If it is decoration, remove the title.', docsUrl: "https://www.w3.org/WAI/tutorials/images/" },
+      });
+    } catch {
+      // next element
+    }
+  }
+  return out;
+}
+
+/** Alt text longer than this is a description, not a short alternative (review). */
+export const LONG_ALT = 300;
 
 /** Normalise alt text for word matching: lower-case, collapse spaces, strip surrounding punctuation. */
 function normalise(text: string): string {
@@ -240,6 +284,16 @@ export const rule: CustomRule = {
         if (!(el instanceof HTMLAreaElement) && !ctx.isVisible(el)) continue;
         const kind = classifyAlt(text);
         if (kind) findings.push(altFinding(el, text.trim(), kind, source));
+        else if (text.trim().length > LONG_ALT) {
+          findings.push({
+            element: el,
+            type: "Semi",
+            severity: "Minor",
+            description: `The ${source} is ${text.trim().length} characters long. A text alternative should be short and say what the image conveys; a long visual description belongs in the page text or a linked description.`,
+            data: { ruleId: GENERIC.id, alt: `${text.trim().slice(0, 120)}…`, source, kind: "long", length: text.trim().length },
+            fix: { summary: "Shorten the alt text to what the image means in context (usually a sentence or two). Put a longer description in nearby text or link to it, and reference it with aria-describedby if needed.", docsUrl: "https://www.w3.org/WAI/tutorials/images/" },
+          });
+        }
       } catch {
         // next
       }
@@ -307,6 +361,11 @@ export const rule: CustomRule = {
       }
     }
 
+    try {
+      findings.push(...titledBackgroundImages(ctx));
+    } catch {
+      // ignore
+    }
     ctx.progress?.(100);
     return findings;
   },
