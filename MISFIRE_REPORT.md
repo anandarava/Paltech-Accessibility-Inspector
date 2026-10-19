@@ -809,3 +809,22 @@ Verified real failures that stayed definite:
 | Guardian | CLR-05 | 60 of 61 |
 
 **Cost:** K8s CLR-05 10 → review. Those rings do fail, but they were measured against the wrong (white) background, so review is the honest result.
+
+## Contrast background from the element stack (2026-10-19)
+
+**Problem found by the user:** on the Ministry of Testing club page, axe DevTools reported 31 definite contrast failures. We had the same elements with the same colours and ratios, but 28 of them were in Needs review with "Another element (<div>) is drawn behind it".
+
+**Cause:**
+- The page has a fixed background box with `background-image: url("")`. The URL is empty, so it draws nothing.
+- Our "definite only when sure" check doubted any non-parent element behind the text, instead of working out what it paints.
+
+**Fix (axe-core's approach):**
+- The background is worked out from the browser's stack of elements at the text: every box behind it that fully covers it with a plain colour counts, whether it is a parent or not.
+- Doubt remains only for another element's image, gradient or media, a box covering the text only partly, web components, and unchecked points.
+- An empty `url("")` is no image.
+- The stack check runs only for text that fails the first measurement.
+
+**Result on that page:**
+- CLR-01: 33 definite, same colours and ratios as axe's 31.
+- **The 2 extra are the digit "6"** in the post stats (#4ab234 on white, 2.72:1). axe leaves single characters in review ("too short to determine if it is actual text content"), but the "17" and "79.3k" beside them are reported by axe.
+- **The 28 CLR-05 reviews** are background-only focus changes. WCAG AA does not require the focused and unfocused states to contrast (that is 2.4.13, AAA), so they stay as review by design.

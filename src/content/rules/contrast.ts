@@ -219,7 +219,7 @@ export function resolveBackground(el: Element | null, cache: BackgroundCache = n
     const ownRaw = Math.min(1, Math.max(0, own[3]));
     const inner: RGB = ownRaw > 0 ? blend([own[0], own[1], own[2], ownRaw], innerBase) : innerBase;
     const alpha = Math.min(1, Math.max(0, own[3])) * cumulativeOpacity;
-    const ownImage = cs.backgroundImage !== "none" && cs.backgroundImage !== "";
+    const ownImage = hasRealImage(cs.backgroundImage);
     if (alpha >= 0.999) {
       result = { color: [own[0], own[1], own[2]], hasImage: ownImage, imageLayers: ownImage ? [el] : [], cumulativeOpacity, inner, reachedOpaque: true, canvas: parent.canvas };
     } else {
@@ -252,6 +252,12 @@ export function paintOver(bg: BackgroundResolution, fg: RGBA): RGB {
   const k = Math.min(1, Math.max(0, fg[3])) * bg.cumulativeOpacity;
   const ch = (i: 0 | 1 | 2): number => Math.min(255, Math.max(0, Math.round(bg.color[i] + k * (fg[i] - bg.inner[i]))));
   return [ch(0), ch(1), ch(2)];
+}
+
+/** True when a computed background-image draws something: not "none" and not only empty url("") layers. */
+export function hasRealImage(value: string): boolean {
+  if (!value || value === "none") return false;
+  return splitTopLevel(value).some((layer) => layer !== "none" && !/^url\(\s*(""|''|)\s*\)$/.test(layer));
 }
 
 /** Parse a computed font-weight ("400", "bold", "normal", "bolder"). */
@@ -453,8 +459,25 @@ function siblingBackdrop(el: Element, text: Rect): RGB | null {
  * element is scrolled into view for the check (the caller restores scroll).
  */
 export function backgroundDoubt(el: Element, point: { x: number; y: number } | null, reachedOpaque: boolean): string {
+  return stackBackground(el, point, reachedOpaque).doubt;
+}
+
+/**
+ * The background drawn behind `el` at `point`, worked out from the browser's
+ * own stack of elements there (as axe-core does), and why it cannot be
+ * trusted ("" when it can). Every box below the element that fully covers it
+ * with a plain colour is part of the background, ancestor or not: their
+ * colours are blended down to the first opaque one (the canvas is white).
+ * Doubt: text in a web component; another element's image, gradient or media
+ * behind it; a coloured box that covers it only partly; an unchecked point
+ * with no opaque background found. Images on the element's own ancestors
+ * were already judged by the caller (an icon beside the text) and are not
+ * doubted here. `color` is null when it could not be worked out.
+ */
+export function stackBackground(el: Element, point: { x: number; y: number } | null, reachedOpaque: boolean): { doubt: string; color: RGB | null } {
+  const result = (doubt: string, color: RGB | null = null): { doubt: string; color: RGB | null } => ({ doubt, color });
   for (let n: Element | null = el; n; n = parentOf(n)) {
-    if ((n as Element & { assignedSlot?: Element | null }).assignedSlot) return " The element is placed inside a web component that may draw its own background, so the background could not be confirmed.";
+    if ((n as Element & { assignedSlot?: Element | null }).assignedSlot) return result(" The element is placed inside a web component that may draw its own background, so the background could not be confirmed.");
   }
   const doc = el.ownerDocument;
   const view = doc.defaultView ?? window;
@@ -470,24 +493,35 @@ export function backgroundDoubt(el: Element, point: { x: number; y: number } | n
     }
   }
   if (!p || p.x < 0 || p.y < 0 || p.x >= view.innerWidth || p.y >= view.innerHeight) {
-    return reachedOpaque ? "" : " No solid background was found behind it and the area could not be checked on screen, so the background is assumed.";
+    return result(reachedOpaque ? "" : " No solid background was found behind it and the area could not be checked on screen, so the background is assumed.");
   }
   const stack = doc.elementsFromPoint(p.x, p.y);
   const at = stack.findIndex((s) => s === el || el.contains(s));
-  if (at < 0) return reachedOpaque ? "" : " Another element covers this point, so the background could not be confirmed.";
+  if (at < 0) return result(reachedOpaque ? "" : " Another element covers this point, so the background could not be confirmed.");
+  const box = el.getBoundingClientRect();
+  const layers: RGBA[] = []; // top to bottom
   for (const s of stack.slice(at + 1)) {
     if (s === el || el.contains(s)) continue;
     const cs = view.getComputedStyle(s);
-    const own = parseColor(cs.backgroundColor);
+    const opacity = readOpacity(cs);
+    if (opacity <= 0.01) continue;
     const isAncestor = s.contains(el) || s === doc.documentElement;
-    if (isAncestor) {
-      if (own && own[3] >= 0.999) return ""; // the ancestor whose colour was measured
-      continue;
+    if (!isAncestor && (hasRealImage(cs.backgroundImage) || /^(img|video|canvas|svg|picture|iframe|object|embed)$/.test(s.localName))) {
+      return result(` Another element (<${s.localName}>) draws an image or gradient behind it, so the background could not be confirmed.`);
     }
-    const paints = (own && own[3] > 0.01) || cs.backgroundImage !== "none" || /^(img|video|canvas|svg|picture|iframe|object|embed)$/.test(s.localName);
-    if (paints && readOpacity(cs) > 0.01) return ` Another element (<${s.localName}>) is drawn behind it, so the measured background may not be what is seen.`;
+    const own = parseColor(cs.backgroundColor);
+    if (!own || own[3] <= 0.01) continue;
+    if (!isAncestor) {
+      const b = s.getBoundingClientRect();
+      const covers = b.left <= box.left + 1 && b.top <= box.top + 1 && b.right >= box.right - 1 && b.bottom >= box.bottom - 1;
+      if (!covers) return result(` Another element (<${s.localName}>) covers it only partly, so the background could not be confirmed.`);
+    }
+    layers.push([own[0], own[1], own[2], Math.min(1, own[3] * opacity)]);
+    if (own[3] * opacity >= 0.999) break;
   }
-  return "";
+  let color: RGB = WHITE;
+  for (let i = layers.length - 1; i >= 0; i--) color = blend(layers[i] as RGBA, color);
+  return result("", color);
 }
 
 /** Scroll positions of the window and every scrollable ancestor of `el`, to restore later. */
@@ -1165,6 +1199,31 @@ async function checkText(ctx: RuleContext, findings: RuleFinding[], cache: Backg
         suggestAgainst = worst.b;
         gradientNote = ` The background is a gradient (${range}); this is its most favourable colour.`;
       }
+      // Report a definite failure only when the measured background is certainly what is behind
+      // the text; a background that had to be assumed sends the finding to Needs review.
+      let doubt = "";
+      // Only for text that fails on the first measurement: the stack check scrolls and hit-tests.
+      if (!pseudoBg && !siblingBg && !gradientNote && contrastRatioExact(fgOpaque, backdrop) < required) {
+        const restore = saveScroll(el);
+        let seen: RGB | null = null;
+        try {
+          const first = textLines(group)[0];
+          const found = stackBackground(el, first ? { x: (first.left + first.right) / 2, y: (first.top + first.bottom) / 2 } : null, bg.reachedOpaque);
+          doubt = found.doubt;
+          seen = found.color;
+        } finally {
+          restore();
+        }
+        // The browser's stack shows a different solid background (a box that is not a parent of
+        // the text): measure against that, as axe-core does.
+        if (!doubt && seen && Math.max(...seen.map((v, i) => Math.abs(v - (backdrop[i] as number)))) > 2) {
+          const text = blend([fg[0], fg[1], fg[2], fg[3] * bg.cumulativeOpacity], seen);
+          if (contrastRatioExact(text, seen) >= required) continue;
+          fgOpaque = text;
+          backdrop = seen;
+          suggestAgainst = seen;
+        }
+      }
       const ratio = contrastRatio(fgOpaque, backdrop);
       if (contrastRatioExact(fgOpaque, backdrop) >= required) continue;
 
@@ -1177,18 +1236,6 @@ async function checkText(ctx: RuleContext, findings: RuleFinding[], cache: Backg
       // off screen, it has not reached its final colour yet.
       const midFade = bg.cumulativeOpacity < 0.999 && !!rect && (rect.bottom < 0 || rect.top > view.innerHeight) && isFadingIn(el, view);
       const fadeNote = midFade ? " The text is in a section that fades in when scrolled to and was measured part-way; scroll to it and check again." : "";
-      // Report a definite failure only when the measured background is certainly what is behind
-      // the text; a background that had to be assumed sends the finding to Needs review.
-      let doubt = "";
-      if (!pseudoBg && !siblingBg && !gradientNote) {
-        const restore = saveScroll(el);
-        try {
-          const first = textLines(group)[0];
-          doubt = backgroundDoubt(el, first ? { x: (first.left + first.right) / 2, y: (first.top + first.bottom) / 2 } : null, bg.reachedOpaque);
-        } finally {
-          restore();
-        }
-      }
       findings.push({
         element: el,
         type: inferredCanvas || midFade || doubt ? "Semi" : def.type,
