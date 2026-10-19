@@ -599,6 +599,11 @@ test.describe("PalTech A11y Inspector extension", () => {
       expect(rulesOn("lazy-caption").filter((r) => r.startsWith("CLR"))).toEqual(["CLR-03"]);
       // A solid top layer hides the image; a 90% band keeps text readable; a sibling pill is the background.
       expect(rulesOn("solid-chip").filter((r) => r.startsWith("CLR"))).toEqual([]);
+      // Definite only when sure: an unknown background (sibling gradient, web component) is Needs review.
+      const clrTypes = (id: string) => result.issues.filter((i) => idOf(i) === id && /^CLR-0[12]$/.test(i.ruleId)).map((i) => i.type);
+      expect(clrTypes("on-grad-sibling")).toEqual(["Semi"]);
+      expect(clrTypes("in-component")).toEqual(["Semi"]);
+      expect(clrTypes("plain-fail")).toEqual(["Auto"]);
       expect(rulesOn("over-light-image").filter((r) => r.startsWith("CLR"))).toEqual([]);
       expect(rulesOn("over-band").filter((r) => r.startsWith("CLR"))).toEqual([]);
       expect(rulesOn("on-pill").filter((r) => r.startsWith("CLR"))).toEqual([]);
@@ -668,6 +673,18 @@ test.describe("PalTech A11y Inspector extension", () => {
       // Background picture described only by "image".
       expect(rulesOn("bg-generic")).toContain("IMG-03");
       expect(rulesOn("bg-named")).not.toContain("IMG-03");
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("bot-check page: one warning and every other finding moved to Needs review", async () => {
+    const { page, tabId } = await openFixture("bot-check");
+    try {
+      const result = await scan(tabId);
+      expect(result.issues.some((i) => i.ruleId === "OTH-04")).toBe(true);
+      expect(result.issues.filter((i) => i.type !== "Semi").map((i) => i.ruleId)).toEqual([]);
+      expect(result.issues.some((i) => i.ruleId === "IMG-01")).toBe(true);
     } finally {
       await page.close();
     }

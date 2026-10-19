@@ -65,6 +65,10 @@
  *    slides, icon-font glyphs) is still painted. Only rendering (display,
  *    visibility, opacity, box) decides whether text is measured here, not
  *    assistive-technology exposure.
+ *  - A failure is definite only when the measured background is certainly
+ *    what is drawn behind the text (see backgroundDoubt): text in a web
+ *    component, another element drawn behind it, or an assumed background
+ *    sends the finding to Needs review instead.
  *  - When no opaque layer is reached and the canvas colour had to be inferred
  *    from a dark colour scheme, findings are downgraded to Semi
  *    (`data.reachedOpaque === false`, `data.canvas === "dark"`).
@@ -431,6 +435,75 @@ function siblingBackdrop(el: Element, text: Rect): RGB | null {
     }
   }
   return null;
+}
+
+/**
+ * Why the background measured for `el` cannot be trusted, or "" when it can.
+ * A definite contrast failure is reported only when the measured background
+ * is certainly what is drawn behind the element; otherwise the finding goes
+ * to Needs review (axe-core's rule: never a definite result from a guess).
+ *  - text slotted into a web component: the component's shadow tree may paint
+ *    its own background, which the ancestor walk does not see;
+ *  - something other than the element's own ancestors is drawn behind it at
+ *    the measured point (a gradient or image box, a hero photo under a fixed
+ *    header, a layer with negative z-index), before an ancestor with an
+ *    opaque background is reached;
+ *  - no opaque background was found and the point could not be checked.
+ * `point` is in viewport coordinates; when it is outside the viewport the
+ * element is scrolled into view for the check (the caller restores scroll).
+ */
+export function backgroundDoubt(el: Element, point: { x: number; y: number } | null, reachedOpaque: boolean): string {
+  for (let n: Element | null = el; n; n = parentOf(n)) {
+    if ((n as Element & { assignedSlot?: Element | null }).assignedSlot) return " The element is placed inside a web component that may draw its own background, so the background could not be confirmed.";
+  }
+  const doc = el.ownerDocument;
+  const view = doc.defaultView ?? window;
+  let p = point;
+  if (p && (p.x < 0 || p.y < 0 || p.x >= view.innerWidth || p.y >= view.innerHeight)) {
+    try {
+      const before = el.getBoundingClientRect();
+      el.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" as ScrollBehavior });
+      const after = el.getBoundingClientRect();
+      p = { x: p.x + (after.left - before.left), y: p.y + (after.top - before.top) };
+    } catch {
+      p = null;
+    }
+  }
+  if (!p || p.x < 0 || p.y < 0 || p.x >= view.innerWidth || p.y >= view.innerHeight) {
+    return reachedOpaque ? "" : " No solid background was found behind it and the area could not be checked on screen, so the background is assumed.";
+  }
+  const stack = doc.elementsFromPoint(p.x, p.y);
+  const at = stack.findIndex((s) => s === el || el.contains(s));
+  if (at < 0) return reachedOpaque ? "" : " Another element covers this point, so the background could not be confirmed.";
+  for (const s of stack.slice(at + 1)) {
+    if (s === el || el.contains(s)) continue;
+    const cs = view.getComputedStyle(s);
+    const own = parseColor(cs.backgroundColor);
+    const isAncestor = s.contains(el) || s === doc.documentElement;
+    if (isAncestor) {
+      if (own && own[3] >= 0.999) return ""; // the ancestor whose colour was measured
+      continue;
+    }
+    const paints = (own && own[3] > 0.01) || cs.backgroundImage !== "none" || /^(img|video|canvas|svg|picture|iframe|object|embed)$/.test(s.localName);
+    if (paints && readOpacity(cs) > 0.01) return ` Another element (<${s.localName}>) is drawn behind it, so the measured background may not be what is seen.`;
+  }
+  return "";
+}
+
+/** Scroll positions of the window and every scrollable ancestor of `el`, to restore later. */
+export function saveScroll(el: Element): () => void {
+  const view = el.ownerDocument.defaultView ?? window;
+  const x = view.scrollX;
+  const y = view.scrollY;
+  const boxes: Array<[Element, number, number]> = [];
+  for (let n = el.parentElement; n; n = n.parentElement) if (n.scrollTop || n.scrollLeft || n.scrollHeight > n.clientHeight || n.scrollWidth > n.clientWidth) boxes.push([n, n.scrollTop, n.scrollLeft]);
+  return () => {
+    for (const [n, t, l] of boxes) {
+      if (n.scrollTop !== t) n.scrollTop = t;
+      if (n.scrollLeft !== l) n.scrollLeft = l;
+    }
+    if (view.scrollX !== x || view.scrollY !== y) view.scrollTo({ left: x, top: y, behavior: "instant" as ScrollBehavior });
+  };
 }
 
 /** An ancestor that is faded and animating its opacity (a card that fades in when scrolled to). */
@@ -1104,13 +1177,26 @@ async function checkText(ctx: RuleContext, findings: RuleFinding[], cache: Backg
       // off screen, it has not reached its final colour yet.
       const midFade = bg.cumulativeOpacity < 0.999 && !!rect && (rect.bottom < 0 || rect.top > view.innerHeight) && isFadingIn(el, view);
       const fadeNote = midFade ? " The text is in a section that fades in when scrolled to and was measured part-way; scroll to it and check again." : "";
+      // Report a definite failure only when the measured background is certainly what is behind
+      // the text; a background that had to be assumed sends the finding to Needs review.
+      let doubt = "";
+      if (!pseudoBg && !siblingBg && !gradientNote) {
+        const restore = saveScroll(el);
+        try {
+          const first = textLines(group)[0];
+          doubt = backgroundDoubt(el, first ? { x: (first.left + first.right) / 2, y: (first.top + first.bottom) / 2 } : null, bg.reachedOpaque);
+        } finally {
+          restore();
+        }
+      }
       findings.push({
         element: el,
-        type: inferredCanvas || midFade ? "Semi" : def.type,
+        type: inferredCanvas || midFade || doubt ? "Semi" : def.type,
         severity: def.severity ?? "Serious",
-        description: `Text "${snippet}" has a contrast ratio of ${ratio}:1 (${fgHex} on ${bgHex}); ${required}:1 is required for ${large ? "large" : "normal"} text (${Math.round(fontSize * 100) / 100}px, weight ${fontWeight}).${gradientNote}${inferredCanvas}${fadeNote}`,
+        description: `Text "${snippet}" has a contrast ratio of ${ratio}:1 (${fgHex} on ${bgHex}); ${required}:1 is required for ${large ? "large" : "normal"} text (${Math.round(fontSize * 100) / 100}px, weight ${fontWeight}).${gradientNote}${inferredCanvas}${fadeNote}${doubt}${doubt ? " Check the contrast by eye." : ""}`,
         data: {
           ruleId: def.id,
+          backgroundUncertain: doubt ? true : undefined,
           foreground: fgHex,
           background: bgHex,
           ratio,

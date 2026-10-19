@@ -59,6 +59,12 @@
     .lazy-card img { width: 100%; }
     .lazy-card .cap-wrap { position: absolute; right: 4px; bottom: 4px; }
     #lazy-caption { color: #ffffff; margin: 0; }
+    /* Salesforce: white text whose purple gradient is drawn by a positioned sibling box. */
+    .grad-card { position: relative; width: 260px; height: 70px; background: #ffffff; }
+    .grad-card .grad-bg { position: absolute; inset: 0; background: linear-gradient(140deg, #5a1ba9, #0b5cab); }
+    #on-grad-sibling { position: relative; color: #ffffff; margin: 0; padding: 10px; }
+    /* Still definite: grey text on a plain white page. */
+    #plain-fail { color: #aaaaaa; }
     /* WebAIM: dark text over a light background image the page can read: measured, passes. */
     #over-light-image { color: #333333; padding: 6px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Crect width='8' height='8' fill='%23f6f6f6'/%3E%3C/svg%3E") repeat; }
     /* Shopify: a chip whose top layer is one solid colour over a pattern image. */
@@ -194,6 +200,9 @@
       <div class="stage"><canvas width="360" height="120"></canvas><div class="white-card" id="on-card">Card text over a photo</div><button type="button" class="own-fill" id="on-button">Search</button><p class="bare" id="on-photo">Bare text</p></div>
       <div class="lazy-card"><img alt="" loading="lazy" data-src="later.jpg"><div><div class="cap-wrap"><p id="lazy-caption">i</p></div></div></div>
       <p><span id="solid-chip">Payments</span></p>
+      <div class="grad-card"><div class="grad-bg"></div><p id="on-grad-sibling">Financial Services</p></div>
+      <p id="plain-fail">Light grey text on white</p>
+      <pp-card><span id="in-component">Slotted text</span></pp-card>
       <p id="over-light-image">Dark text over a light picture</p>
       <div class="photo-band"><canvas width="300" height="60"></canvas><div class="band"></div><p id="over-band">Text on a 90% band over a photo</p></div>
       <div class="tabs"><span class="pill"></span><span id="on-pill">Teamwork</span></div>
@@ -221,5 +230,15 @@
     <!-- A frame placed above the page, as Facebook's messaging frames are. -->
     <iframe id="parked-frame" title="Messaging" src="real-site-parked-frame.html" style="position:absolute;top:-10000px;left:0" width="300" height="100"></iframe>
   </main>
+  <script>
+    // A web component that paints its own dark background; the text is slotted in from outside.
+    customElements.define("pp-card", class extends HTMLElement {
+      constructor() {
+        super();
+        this.attachShadow({ mode: "open" }).innerHTML = '<div style="background:#002991;padding:8px"><slot></slot></div>';
+      }
+    });
+    document.getElementById("in-component").style.color = "#ffffff";
+  </script>
 </body>
 </html>

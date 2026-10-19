@@ -423,6 +423,7 @@ custom).
 | OTH-01 | Timed refresh or redirect via &lt;meta http-equiv="refresh"&gt; | 2.2.1 Timing Adjustable (A) | Auto | Serious | axe: `meta-refresh`, `meta-refresh-no-exceptions` | yes |
 | OTH-02 | Blinking or scrolling content (&lt;blink&gt;, &lt;marquee&gt;) | 2.2.2 Pause, Stop, Hide (A) | Auto | Serious | axe: `blink`, `marquee` | yes |
 | OTH-03 | Orientation locked via CSS | 1.3.4 Orientation (AA) | Auto | Serious | axe: `css-orientation-lock` | yes |
+| OTH-04 | Scan landed on a bot check or access-denied page; all other findings from that page moved to Needs review | Best practice | Semi | Minor | custom | yes |
 
 Notes: results axe cannot decide (`aria-hidden-focus`, `duplicate-id-aria`,
 `th-has-data-cells`, `color-contrast` over images…) and the catalogue's

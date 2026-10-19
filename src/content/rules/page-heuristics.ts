@@ -48,6 +48,7 @@ const MOVING = ruleDef("OTH-02");
 const CAROUSEL_SELECTOR =
   "[aria-roledescription='carousel' i], [class*='carousel' i], [class*='slider' i], [class*='slideshow' i], [class*='swiper' i], [class*='slick' i], [class*='marquee' i], [class*='ticker' i]";
 const WATCH_MS = 2500;
+const WATCH_STEP_MS = 250;
 const MAX_CAROUSELS = 20;
 const PAUSE_RE = /pause|stop|play|anhalten|pausa/i;
 
@@ -179,10 +180,18 @@ async function movingCarousels(ctx: RuleContext, view: Window): Promise<RuleFind
   }
   if (candidates.length === 0) return [];
   const before = candidates.map((c) => carouselState(c, view));
-  await new Promise((resolve) => setTimeout(resolve, WATCH_MS));
+  // Compare every half second, not only at the end: a two-slide carousel can be back on
+  // its first slide when the watch ends.
+  const moved = candidates.map(() => false);
+  for (let waited = 0; waited < WATCH_MS; waited += WATCH_STEP_MS) {
+    await new Promise((resolve) => setTimeout(resolve, WATCH_STEP_MS));
+    candidates.forEach((c, i) => {
+      if (!moved[i] && c.isConnected && carouselState(c, view) !== before[i]) moved[i] = true;
+    });
+  }
   const out: RuleFinding[] = [];
   candidates.forEach((c, i) => {
-    if (!c.isConnected || carouselState(c, view) === before[i] || hasPauseControl(c)) return;
+    if (!moved[i] || hasPauseControl(c)) return;
     out.push({
       element: c,
       type: "Semi",

@@ -265,6 +265,70 @@ function frameHasText(doc: Document): boolean {
 }
 
 /** Drop page-level findings that do not apply inside a child frame. */
+const BOT_CHECK_RE =
+  /just a moment|access denied|attention required|are you (a )?(human|robot)|verify(ing)? (that )?you are (a )?human|checking (your browser|if the site connection is secure)|press (&|and) hold|pardon our interruption|request (could not be satisfied|rejected|blocked)|403 forbidden|bot or not|unusual traffic|security check|your access has been blocked/i;
+
+/**
+ * Why this document looks like a bot check, captcha or access-denied page
+ * rather than the site itself, or "" when it does not. Read from the title,
+ * from the visible text of a short page, and from a large visible captcha box.
+ */
+export function botCheckReason(doc: Document): string {
+  const title = doc.title ?? "";
+  if (BOT_CHECK_RE.test(title)) return `the page title is "${title.trim().slice(0, 60)}"`;
+  const body = doc.body;
+  if (!body) return "";
+  const text = (body.innerText ?? body.textContent ?? "").replace(/\s+/g, " ").trim();
+  if (text.length < 1500) {
+    const m = BOT_CHECK_RE.exec(text);
+    if (m) return `the page says "${m[0]}"`;
+  }
+  const view = doc.defaultView ?? window;
+  for (const el of Array.from(doc.querySelectorAll("[id*='captcha' i], [class*='captcha' i]")).slice(0, 20)) {
+    const r = el.getBoundingClientRect();
+    if (r.width >= 300 && r.height >= 150 && view.getComputedStyle(el).visibility !== "hidden") return "a large captcha is shown";
+  }
+  return "";
+}
+
+/**
+ * A scan of a bot check is not a scan of the site: every finding becomes
+ * Needs review, and the top frame adds one OTH-04 note saying so.
+ */
+export function markBotCheck(issues: Issue[], doc: Document, isTop: boolean, rulesFile: RulesFile): Issue[] {
+  let reason = "";
+  try {
+    reason = botCheckReason(doc);
+  } catch {
+    reason = "";
+  }
+  if (!reason) return issues;
+  const out = issues.map((i) => (i.type === "Semi" ? i : { ...i, type: "Semi" as const, description: `${i.description} (Found on a bot-check page; this may not apply to the real site.)` }));
+  if (isTop) {
+    const def = rulesFile.rules.find((r) => r.id === "OTH-04");
+    if (def) {
+      const body = doc.body ?? doc.documentElement;
+      out.unshift({
+        id: `bot-check-${Date.now().toString(36)}`,
+        ruleId: def.id,
+        source: "custom",
+        title: def.check,
+        description: `This scan probably did not see the real page: ${reason}. Sites show such pages to automated or unfamiliar browsers. Every other finding from this page has been moved to Needs review. Open the page normally, pass the check, and scan again.`,
+        wcag: { criterion: "", name: "Best practice", level: "BP" },
+        type: "Semi",
+        severity: "Minor",
+        category: "Other",
+        element: { selector: "body", xpath: "/html/body", html: `<${body.localName}>`, boundingBox: { x: 0, y: 0, width: 0, height: 0 } },
+        data: { ruleId: def.id, reason },
+        fix: { summary: "Complete the bot check or sign in, then scan again." },
+        fingerprint: "b07c8ec4",
+        status: "new",
+      } as Issue);
+    }
+  }
+  return out;
+}
+
 /** Region findings kept as examples when they are collapsed into one. */
 const REGION_SAMPLES = 10;
 
@@ -413,6 +477,7 @@ export async function scanFrame(options: ScanOptions, rulesFile: RulesFile, rule
     issues = dedupeIssues(issues).filter((issue) => (keepReview || issue.type !== "Semi") && criterionInVersion(issue.wcag.criterion, version));
     issues = filterFrameLevelIssues(issues, isTop, document);
     issues = collapseRegionFlood(issues, document);
+    issues = markBotCheck(issues, document, isTop, rulesFile);
     safeProgress(100, "Scan complete");
     return {
       issues,

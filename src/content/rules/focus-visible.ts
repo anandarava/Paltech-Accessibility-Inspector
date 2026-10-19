@@ -56,6 +56,10 @@
  *  - When nothing changes, the check waits one frame and looks again: some
  *    sites add the indicator just after focus. `<iframe>` elements are not
  *    checked (focus moves into the frame, which is scanned on its own).
+ *  - A CLR-05 failure is definite only when the colour next to the ring is
+ *    confirmed (see backgroundDoubt in contrast.ts) and nothing else changes
+ *    on focus that cannot be measured (filter, underline, text colour,
+ *    transform, background image); otherwise it is Needs review.
  *  - Pages that show focus rings only after a key press are put in keyboard
  *    mode with one simulated Tab keydown/keyup before measuring (it does not
  *    move focus). The page stays in keyboard mode after the scan, as it would
@@ -77,7 +81,7 @@ import type { RuleDefinition, RulesFile } from "@shared/types";
 import { contrastRatio, contrastRatioExact, hslToRgb, parseColor, rgbToHsl, suggestPassingColor, toHex, type RGB, type RGBA } from "@shared/color";
 import { EXT_MARKER_ATTR } from "@shared/constants";
 import { getFocusableElements } from "@src/content/dom-utils";
-import { isExtensionElement, paintOver, resolveBackground, type BackgroundCache, type BackgroundResolution } from "./contrast";
+import { backgroundDoubt, isExtensionElement, paintOver, resolveBackground, saveScroll, type BackgroundCache, type BackgroundResolution } from "./contrast";
 import type { CustomRule, RuleContext, RuleFinding } from "./types";
 
 const RULES: RuleDefinition[] = (rulesJson as unknown as RulesFile).rules;
@@ -291,6 +295,16 @@ function signalKeyboardUse(doc: Document): void {
     }
   }
 }
+
+/** Focus changes the check cannot measure as a 3:1 ring, by property, with a readable name. */
+const UNMEASURED_KEYS = new Map<keyof StyleSnapshot, string>([
+  ["filter", "a filter (such as a drop shadow)"],
+  ["backgroundImage", "its background image"],
+  ["textDecorationLine", "its underline"],
+  ["textDecorationColor", "its underline colour"],
+  ["color", "its text colour"],
+  ["transform", "its size or position"],
+]);
 
 function changedKeys(a: StyleSnapshot, b: StyleSnapshot): Array<keyof StyleSnapshot> {
   const keys = Object.keys(a) as Array<keyof StyleSnapshot>;
@@ -640,7 +654,26 @@ export const rule: CustomRule = {
               }
             }
             if (bestRatio < 3 && overlayIndicator(el, view)) continue; // the real ring is a moving overlay
-            if (bestRatio < 3) findings.push(contrastFinding(el, best.kind, best.indicator, best.adjacent, contrastRatio(best.indicator, best.adjacent)));
+            if (bestRatio < 3) {
+              const finding = contrastFinding(el, best.kind, best.indicator, best.adjacent, contrastRatio(best.indicator, best.adjacent));
+              // Definite only when sure: the colour next to the ring is confirmed, and nothing else
+              // changed on focus that cannot be measured (a filter drop-shadow, an underline, a
+              // colour change can be the visible indicator).
+              const unmeasured = diff.filter((k) => UNMEASURED_KEYS.has(k));
+              let doubt = unmeasured.length
+                ? ` The element also changes ${unmeasured.map((k) => UNMEASURED_KEYS.get(k)).join(", ")} on focus, which may make the focus visible; check it with the keyboard.`
+                : "";
+              if (!doubt) {
+                const restore = saveScroll(el);
+                try {
+                  const r = el.getBoundingClientRect();
+                  doubt = backgroundDoubt(el, { x: r.left + r.width / 2, y: r.top + r.height / 2 }, surrounding.reachedOpaque);
+                } finally {
+                  restore();
+                }
+              }
+              findings.push(doubt ? { ...finding, type: "Semi", description: `${finding.description}${doubt}`, data: { ...finding.data, uncertain: true } } : finding);
+            }
             continue;
           }
 
@@ -662,6 +695,9 @@ export const rule: CustomRule = {
           // but not measurable as a 3:1 boundary.
           const ringKeys = new Set<keyof StyleSnapshot>(["outlineStyle", "outlineWidth", "outlineColor", "outlineOffset", "boxShadow", "borderColor", "borderWidth", "borderStyle", "backgroundColor"]);
           if (rings.length === 0 || diff.some((k) => !ringKeys.has(k))) continue;
+          // The element's own ring is transparent, but the indicator may be drawn elsewhere
+          // (Tailwind `outline-none` with a ring on the parent through :has()).
+          if (indicatorElsewhere(el, view)) continue;
 
           const kinds = rings.map((r) => r.kind).join(" and ");
           findings.push({

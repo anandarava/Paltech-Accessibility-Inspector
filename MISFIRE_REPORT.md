@@ -758,3 +758,54 @@ OTH-02, FRM-12, IMG-03 background-title and KBD-05 focus-dropped were correct wh
 | Bon Appétit | 106 s | 17 s |
 
 Neither time budget was reached on these sites. The findings are otherwise unchanged: CNN 113 definite before and after. The UN now reports its embedded frames as well (139).
+
+## "Definite only when sure" (2026-10-19)
+
+**Rule:** a contrast or focus-ring failure is definite only when the check is certain. Otherwise it moves to Needs review, with a note saying why.
+
+**What counts as "not sure":**
+- the text is placed inside a web component;
+- another element (a gradient or image box, a hero photo, a layer behind the page) is drawn behind it at that point, as seen in the browser's own stack of elements;
+- no solid background was found and the point could not be checked;
+- for focus rings, the element also changes something that cannot be measured (a filter, an underline, the text colour, a transform, a background image).
+
+**Bot checks:** a page that looks like a bot check or access-denied page gets one OTH-04 note, and all its other findings move to Needs review.
+
+**Also:**
+- the transparent-ring branch now looks for the ring elsewhere (Tailwind parent rings);
+- the carousel watch samples every 250 ms, so two-slide carousels are not missed.
+
+**Re-scan of 21 sites, definite (review):**
+
+Wrong definite failures that moved to review:
+
+| Site | Before | After |
+|---|---|---|
+| Salesforce, CLR | 24 definite | 24 review |
+| Canva, CLR | 9 + 9 definite | all review |
+| Mayo, CLR | 3 + 7 definite | all review |
+| gov.scot, CLR-05 | 48 definite | 0 definite (51 review) |
+| PayPal, CLR-01 | 54 definite | 7 definite |
+| K8s, CLR-01 | 19 | 11 (the 11 real kept) |
+| Zoom, CLR-01 | 10 | 3 (the 3 real kept) |
+| CDC, CLR-05 | 5 | 0 |
+| Dropbox, CLR | 4 | 0 |
+| Amex, CLR | 3 | 0 |
+| Stanford, CLR | 6 | 0 |
+| CBC, CLR-05 | 4 | 1 |
+
+Verified real failures that stayed definite:
+
+| Site | Rule | Count |
+|---|---|---|
+| Duolingo | CLR-01/02 | 132 |
+| Duolingo | KBD-05 | 120 |
+| Python | CLR-01 | 56 |
+| W3Schools | CLR-01 | 54 |
+| W3Schools | CLR-05 | 22 |
+| Vue | CLR-01 | 13 |
+| WHO | CLR-05 | 11 |
+| Docker | CLR-01 | 9 |
+| Guardian | CLR-05 | 60 of 61 |
+
+**Cost:** K8s CLR-05 10 → review. Those rings do fail, but they were measured against the wrong (white) background, so review is the honest result.
