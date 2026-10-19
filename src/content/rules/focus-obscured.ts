@@ -62,6 +62,8 @@ function ruleDef(id: string): RuleDefinition {
 const PRIMARY = ruleDef("KBD-06");
 const MAX_FOCUSABLES = 400;
 const CHUNK = 25;
+/** Time budget for the whole check; past it the rest is left for manual review. */
+const TIME_BUDGET_MS = 20_000;
 const INSET = 2;
 /** Wait before re-checking a covered element, so the page's own scroll-on-focus can finish. */
 const SETTLE_MS = 350;
@@ -195,11 +197,17 @@ export const rule: CustomRule = {
       return visW > 0 && visH > 0 && visW * visH >= view.innerWidth * view.innerHeight * OVERLAY_SHARE;
     };
 
+    const started = Date.now();
+    let stoppedAt = -1;
     try {
       for (let i = 0; i < focusables.length; i++) {
         if (i > 0 && i % CHUNK === 0) {
           await ctx.yieldToMain();
           ctx.progress?.(Math.round((i / focusables.length) * 100));
+        }
+        if (Date.now() - started > TIME_BUDGET_MS) {
+          stoppedAt = i;
+          break;
         }
         const el = focusables[i];
         if (!el || reported.has(el)) continue;
@@ -319,6 +327,15 @@ export const rule: CustomRule = {
         description: `A full-screen ${view.getComputedStyle(overlay).position} overlay ${describe(overlay)} (for example a cookie consent dialog or modal backdrop) covered the page during the scan, so focus visibility behind it could not be judged element by element. If keyboard users can reach the page behind the overlay, the controls they focus are hidden; if focus is kept inside the overlay, that is correct. Dismiss the overlay and rescan to check the page itself.`,
         data: { ruleId: PRIMARY.id, overlay: true, obscuredBy: describe(overlay) },
         fix: { summary: "Keep focus inside a modal overlay while it is open (and make the page behind it inert), or let keyboard users dismiss it before they reach the page." },
+      });
+    }
+    if (stoppedAt >= 0) {
+      findings.push({
+        element: doc.body ?? doc.documentElement,
+        type: "Semi",
+        severity: PRIMARY.severity ?? "Serious",
+        description: `The check for focus hidden by sticky content stopped after ${Math.round(TIME_BUDGET_MS / 1000)} seconds, having checked ${stoppedAt} of ${focusables.length} focusable elements. Tab through the rest of the page and confirm focused controls are not hidden behind sticky headers, footers or banners.`,
+        data: { ruleId: PRIMARY.id, checked: stoppedAt, focusableCount: focusables.length, timeBudgetMs: TIME_BUDGET_MS, skipped: true },
       });
     }
     ctx.progress?.(100);

@@ -677,3 +677,84 @@ None of the fixed patterns misfired on these sites.
 | Elements Tab reaches inside `aria-hidden="true"` (iframes included) | ARIA-04 | Mars: the 2 Facebook frames now caught |
 | Carousel that moves by itself with no pause control (watched 2.5 s) | OTH-02 (review) | Stripe's scrolling logo strip (real). Mars' carousel did not move within 6 s in tests, so it is not caught. |
 | Background image described only by a generic `title` | IMG-03 (review) | W3C BAD: 3 |
+
+---
+
+# Round 4: 100-site validation (2026-10-19)
+
+**Build:** misfire-fixes @ f557511.
+
+**Coverage:** 100 new sites across 12 types:
+- government
+- news
+- shops
+- SaaS
+- education
+- health
+- finance
+- travel
+- developer docs
+- NGOs
+- entertainment
+- food
+
+**Usable scans:** 80.
+- **Web filter:** 13 blocked by this machine's web filter (certificate error).
+- **Bot checks:** 7 still showed a bot check after a retry with a normal browser identity.
+- **Bot-check pages scanned anyway:** 5 more, see the tool issues below.
+
+**Checked on the live pages:** 4,947 findings, split across 7 parallel verification agents.
+
+| Verdict | Findings | Share of decided findings |
+|---|---|---|
+| Correct | 3,247 | 78.5% |
+| New misfire | 530 | 12.8% |
+| Regression (a fixed pattern missed a variant) | 142 | 3.4% |
+| Noise | 216 | 5.2% |
+| Unverified (blocked live, or review groups not sampled) | 812 | — |
+
+## Problems by cause (largest first)
+| # | Cause | About | Where |
+|---|---|---|---|
+| 1 | Focus-indicator detection gaps: `filter: drop-shadow()` rings, transparent-ring branch skips the "elsewhere" check (Tailwind), ring on an ancestor's ::before/::after, keyboard mode lost after scrolling, outline:auto in child frames and inset forms, underline added on focus | 115 | govscot 51, oxford 28, coursera 10, canva 17, others |
+| 2 | Off-canvas drawer text kept by the carousel exception | 144 | udemy |
+| 3 | ARIA-04 under a captcha/modal (whole site aria-hidden), and custom ARIA-04 duplicating axe | 142 | target 104, udemy 36, yale 2 |
+| 4 | Background under text not found: non-ancestor gradient/image/static sibling, fixed header over a hero, z-index:-1 layer. Falls back to white and reports a definite 1:1 (reachedOpaque false). Also focus rings over media assumed white. | 83 | salesforce 24, canva 9, mayo 10, zoom 7, k8s 8, cdc 5, nswgov 5, dropbox 4, amex 3, oxford 3, stanford 2 |
+| 5 | Hidden ad and user-sync frames (0×0, display:none, Chrome image-viewer documents) still scanned | 75 | webmd 56, wise 9, hubspot 5, adidas 3, mailchimp 2 |
+| 6 | Shadow DOM: background walk does not follow slots/shadow hosts | 56 (+~380 suspected on Rotten Tomatoes) | paypal |
+| 7 | Noise: region flood when the only `<main>` is a tiny widget; duplicate ids whose copies are identical or hidden; FRM-08 review when the name starts with the visible text; KBD-06 not grouped per cover; LNK-03 on href="#"; STR-12 on statistics; 1×1 tracking pixels; KBD-08 on non-modal dialogs | 216 | un 61, wapo 21, bofa 22, mayo 26, others |
+| 8 | Smaller: TGT-01 buttons inside code lines (9); FRM-11 aria-hidden label text / aria-hidden="false" (13); KBD-01 nav labels and carousel slides with a button equivalent, "impressions" matching the data-click regex (19); FRM-05/06 banners taken as error messages (4); CLR-03 own translucent button fill dropped (9); SVG pixel sampling ignores background-size (2); no-repeat chevron read as a gradient (4); scroll-driven body colour (6); overflow:clip (2); icon-font ligatures as text (4); background read mid-transition (1); ZM-02 inside a widget iframe (1); page-level heuristic in child frames (6) | ~80 | various |
+
+## Tool issues
+- **Slow scans:** CNN 1,229 s, UN 386 s, Target 296 s, Mailchimp 254 s, SoundCloud 179 s, Stanford 163 s.
+  - **Cause:** the one-frame wait added in KBD-05 (`requestAnimationFrame` with no timeout). It hangs in throttled or off-screen frames until the 120 s frame timeout, and frames are scanned one after another.
+  - **Fix:** a timeout fallback (as `nextFrame()` in the content script already has), plus a time budget for the focus rule.
+- **Bot-check and captcha pages scanned as if real:** Emirates, Adidas, Wayfair, Expedia, Target. The scan should detect them and warn.
+
+## New checks from the last batches
+Quiet on real sites, apart from:
+- STR-12 on statistic numbers (5) and inside child frames (6);
+- ARIA-04 duplicates.
+
+OTH-02, FRM-12, IMG-03 background-title and KBD-05 focus-dropped were correct where they fired.
+
+## Slow-scan fix (2026-10-19)
+
+**Cause:** the one-frame wait added in the KBD-05 check (commit d4d4aef) used `requestAnimationFrame` with no time limit. In throttled frames, such as ad or video embeds below the fold or background tabs, it never fired. Each frame then waited until the 120 s frame timeout.
+
+**Fix:**
+- The frame wait gives up after 50 ms.
+- The focus-visibility check and the focus-hidden check each stop after 20 s. They then add one Needs-review note saying how far they got.
+
+**Re-timed (whole scan, wall clock):**
+
+| Site | Before | After |
+|---|---|---|
+| CNN | 1,229 s | 37 s |
+| UN | 386 s (3 frames timed out) | 17 s (all frames scanned) |
+| Mailchimp | 263 s | 14 s |
+| SoundCloud | 179 s | 18 s |
+| Stanford | 163 s | 10 s |
+| Bon Appétit | 106 s | 17 s |
+
+Neither time budget was reached on these sites. The findings are otherwise unchanged: CNN 113 definite before and after. The UN now reports its embedded frames as well (139).

@@ -64,7 +64,9 @@
  *    `:focus-within` style on a shared ancestor is not taken as part of the
  *    unfocused state.
  *  - Pages with more than 400 focusables are skipped (one Semi note) to keep
- *    the scan responsive.
+ *    the scan responsive, and the check stops after 20 seconds (one Semi
+ *    note naming how far it got). Waits for "the next frame" give up after
+ *    50 ms, since throttled frames may never paint.
  *  - A page without focus gets no focus styles at all. The service worker
  *    emulates a focused page during scans (background/focus-emulation.ts);
  *    when that fails the check is skipped with one Semi note rather than
@@ -92,6 +94,25 @@ const STATE_CHANGE = ruleDef("CLR-09");
 
 const MAX_FOCUSABLES = 400;
 const CHUNK = 25;
+/** Longest wait for "the next frame". Hidden, off-screen and background frames may never paint. */
+const FRAME_WAIT_MS = 50;
+/** Time budget for the whole check; past it the rest is left for manual review. */
+const TIME_BUDGET_MS = 20_000;
+
+/**
+ * Resolve after the next painted frame, or after FRAME_WAIT_MS at most. A bare
+ * requestAnimationFrame never fires in a throttled frame (an ad or video
+ * embed below the fold, a background tab), which hung scans for minutes.
+ */
+function nextFrame(view: Window): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, FRAME_WAIT_MS);
+    view.requestAnimationFrame(() => setTimeout(() => {
+      clearTimeout(timer);
+      resolve();
+    }, 0));
+  });
+}
 
 interface StyleSnapshot {
   outlineStyle: string;
@@ -450,12 +471,23 @@ export const rule: CustomRule = {
     // It does not move focus: a script-made key event has no default action.
     signalKeyboardUse(doc);
 
+    const started = Date.now();
     try {
       (doc.head ?? doc.documentElement).appendChild(pause);
       for (let i = 0; i < focusables.length; i++) {
         if (i > 0 && i % CHUNK === 0) {
           await ctx.yieldToMain();
           ctx.progress?.(Math.round((i / focusables.length) * 100));
+        }
+        if (Date.now() - started > TIME_BUDGET_MS) {
+          findings.push({
+            element: doc.body ?? doc.documentElement,
+            type: "Semi",
+            description: `The focus-indicator check stopped after ${Math.round(TIME_BUDGET_MS / 1000)} seconds, having checked ${i} of ${focusables.length} focusable elements, to keep the scan responsive. Tab through the rest of the page manually and confirm every control shows a visible focus indicator.`,
+            data: { ruleId: PRIMARY.id, checked: i, focusableCount: focusables.length, timeBudgetMs: TIME_BUDGET_MS, skipped: true },
+            fix: { summary: "Run the Keyboard Test or tab through the page manually to verify focus visibility." },
+          });
+          break;
         }
         const el = focusables[i];
         if (!el) continue;
@@ -524,7 +556,7 @@ export const rule: CustomRule = {
           if (diff.length === 0) {
             // Some sites add the indicator a frame after focus (React swapping a class, a script
             // setting a style): wait one frame, then look again on the element and around it.
-            await new Promise<void>((resolve) => view.requestAnimationFrame(() => setTimeout(resolve, 0)));
+            await nextFrame(view);
             if (doc.activeElement !== el) el.focus({ preventScroll: true, focusVisible: true } as FocusOptions);
             const later = snapshot(view.getComputedStyle(el));
             if (changedKeys(before, later).some((k) => showsOutline || outlineVisible(later) || !k.startsWith("outline"))) continue;
