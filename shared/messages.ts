@@ -23,6 +23,7 @@ import type {
   WcagLevel,
   WcagVersion,
 } from "./types";
+import type { SiteScanOptions, SiteScanState } from "./site-crawl";
 
 /** What the side panel sends for a manual contrast check; the service worker adds the rest. */
 export type ManualCheckInput = Omit<ManualCheck, "originalType" | "author" | "checkedAt">;
@@ -40,6 +41,8 @@ export interface ScanOptions {
   includeNeedsReview?: boolean;
   /** Run only axe-core's own rules; custom rules and the reflow check are skipped. */
   axeOnly?: boolean;
+  /** Rule ids to leave out of this scan only, as if disabled (a site scan's quick mode skips the slow focus and zoom checks). */
+  skipRules?: string[];
 }
 
 export type Message =
@@ -117,6 +120,21 @@ export type Message =
   | { type: "CS_COLOR_RESTORE"; tabId: number }
   /** UI -> CS: colours of the element the picker chose (PICKER_RESULT selector). */
   | { type: "CS_ELEMENT_COLORS"; tabId: number; selector: string }
+  // ---- Site scan (one at a time; the SW owns the state and broadcasts SITE_SCAN_STATE on every change) ----
+  | { type: "SITE_SCAN_GET" }
+  /** Find the pages of the site that `url` belongs to; ends in the "review" phase. */
+  | { type: "SITE_SCAN_DISCOVER"; url: string; options: SiteScanOptions }
+  /** Tick / untick listed pages and add addresses by hand (review phase, or between runs). */
+  | { type: "SITE_SCAN_SET_PAGES"; include?: Record<string, boolean>; add?: string[] }
+  /** Scan the ticked pages that are still pending (also resumes a paused run). */
+  | { type: "SITE_SCAN_START" }
+  | { type: "SITE_SCAN_PAUSE" }
+  | { type: "SITE_SCAN_STOP" }
+  /** The full result of one scanned page (index into `pages`). */
+  | { type: "SITE_SCAN_RESULT"; index: number }
+  | { type: "SITE_SCAN_EXPORT"; format: ExportFormat }
+  | { type: "SITE_SCAN_CLEAR" }
+  | { type: "SITE_SCAN_STATE"; state: SiteScanState | null }
   // ---- State queries ----
   | { type: "GET_LAST_RESULT"; tabId: number }
   | { type: "GET_SETTINGS" }

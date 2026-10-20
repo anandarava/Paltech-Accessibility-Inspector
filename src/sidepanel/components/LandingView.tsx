@@ -5,7 +5,7 @@ import { Button } from "./Button";
 import { useStartScan } from "./ScanButton";
 import { ScopeSelectorFields, useScopeSelector } from "./ScopeSelector";
 import { LandingIllustration } from "./EmptyState";
-import { KeyboardIcon, LightbulbIcon, MonitorIcon, PartOfPageIcon, PlayIcon, ClockIcon, DropperIcon } from "./icons";
+import { KeyboardIcon, LightbulbIcon, MonitorIcon, PartOfPageIcon, PlayIcon, ClockIcon, DropperIcon, GlobeIcon } from "./icons";
 import { SelectMenu, WCAG_LEVEL_OPTIONS, WCAG_VERSION_OPTIONS, type SelectOption } from "./SelectMenu";
 
 const SCAN_TYPE_OPTIONS: Array<SelectOption<"page" | "selector">> = [
@@ -184,6 +184,22 @@ export function LandingView({ getInspectedSelector }: { getInspectedSelector?():
             </p>
           )}
         </div>
+
+        {/* The whole application, not only this page: its own entry point, not a scan type. */}
+        <button
+          type="button"
+          onClick={() => setView("site")}
+          className="mt-3 flex w-full items-center gap-3 rounded-xl border border-blue-200 bg-blue-50 p-3 text-left hover:bg-blue-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
+        >
+          <span aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white">
+            <GlobeIcon size={18} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-bold text-slate-900">Scan whole site</span>
+            <span className="block text-xs text-slate-700">Find all the pages of an application and scan each one</span>
+          </span>
+          <span aria-hidden="true" className="text-lg text-blue-700">›</span>
+        </button>
 
         <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
           <Button variant="ghost" size="action" onClick={() => setView("keyboard")} disabled={noTab}>

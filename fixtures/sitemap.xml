@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Site-scan fixture: lists one page nothing links to. -->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>__ORIGIN__/site/hidden.html</loc></url>
+</urlset>

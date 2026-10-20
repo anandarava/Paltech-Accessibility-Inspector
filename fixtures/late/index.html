@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Late widget</title></head>
+<body>
+<!-- Site-scan fixture: like a dashboard widget fetched after load, one link appears 3.5 s late. -->
+<nav aria-label="Main"><a href="/late/index.html">Home</a> <a href="/late/menu.html">Menu page</a></nav>
+<main><h1>Dashboard</h1><div id="widget">Loading…</div></main>
+<script>
+  setTimeout(() => {
+    document.getElementById("widget").innerHTML = '<a href="/late/requests.html">96 requests</a>';
+  }, 3500);
+</script>
+</body>
+</html>

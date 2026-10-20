@@ -18,6 +18,7 @@ import { IssueDetail } from "./components/IssueDetail";
 import { KeyboardTest } from "./components/KeyboardTest";
 import { ContrastChecker } from "./components/ContrastChecker";
 import { SavedScans } from "./components/SavedScans";
+import { SiteScan } from "./components/SiteScan";
 import { CompareView } from "./components/CompareView";
 import { OverlayMenu, useOverlayModeSync } from "./components/OverlayMenu";
 import { ExportMenu } from "./components/ExportMenu";
@@ -26,7 +27,7 @@ import { SaveScanButton } from "./components/SaveScanButton";
 import { Toast } from "./components/Toast";
 import { PageChangedBanner } from "./components/PageChangedBanner";
 import { SelectMenu, WCAG_LEVEL_OPTIONS, WCAG_VERSION_OPTIONS } from "./components/SelectMenu";
-import { BookmarkIcon, DropperIcon, KeyboardIcon } from "./components/icons";
+import { BookmarkIcon, DropperIcon, GlobeIcon, KeyboardIcon } from "./components/icons";
 
 export interface AppProps {
   /** DevTools passes chrome.devtools.inspectedWindow.tabId; the side panel resolves the active tab itself. */
@@ -58,7 +59,10 @@ function useWidth<T extends HTMLElement>(): [RefObject<T | null>, number] {
 function SavedBanner() {
   const saved = useStore((s) => s.viewingSaved);
   const exitSaved = useStore((s) => s.exitSaved);
+  const setView = useStore((s) => s.setView);
   if (!saved) return null;
+  // A page opened from the Site scan list (its id is "<site scan id>:<page index>").
+  const fromSiteScan = saved.id.startsWith("site_");
   return (
     <div role="status" className="flex items-center gap-2 border-b border-indigo-700 bg-indigo-50 px-3 py-2 text-sm text-indigo-950">
       <div className="min-w-0 flex-1">
@@ -67,9 +71,22 @@ function SavedBanner() {
           {new Date(saved.timestamp).toLocaleString()} · read-only
         </span>
       </div>
-      <Button size="sm" variant="primary" onClick={exitSaved}>
-        Back to live results
-      </Button>
+      {fromSiteScan ? (
+        <Button
+          size="sm"
+          variant="primary"
+          onClick={() => {
+            exitSaved();
+            setView("site");
+          }}
+        >
+          Back to site scan
+        </Button>
+      ) : (
+        <Button size="sm" variant="primary" onClick={exitSaved}>
+          Back to live results
+        </Button>
+      )}
     </div>
   );
 }
@@ -233,6 +250,9 @@ export function App({ tabIdOverride, inspectable = false, onInspect, getInspecte
         <Button onClick={() => setView("saved")} aria-pressed={view === "saved" || view === "compare"} size="action" className="flex-1 basis-[5.5rem] whitespace-normal leading-tight">
           <BookmarkIcon /> Saved Scans
         </Button>
+        <Button onClick={() => setView("site")} aria-pressed={view === "site"} size="action" className="flex-1 basis-[5.5rem] whitespace-normal leading-tight">
+          <GlobeIcon /> Site scan
+        </Button>
         <OverlayMenu />
       </nav>
       )}
@@ -252,6 +272,7 @@ export function App({ tabIdOverride, inspectable = false, onInspect, getInspecte
         {view === "contrast" && <ContrastChecker key={checkerIssueId ?? "standalone"} onBack={backFromChecker} />}
         {view === "saved" && <SavedScans onBack={backToList} />}
         {view === "compare" && <CompareView onBack={() => setView("saved")} />}
+        {view === "site" && <SiteScan onBack={backToList} />}
       </main>
 
       {/* The single-column issue view has its own action bar; the scan bar returns with the list. */}

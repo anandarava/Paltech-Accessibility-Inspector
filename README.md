@@ -66,6 +66,11 @@ axe DevTools-style workflow:
 - **Saved scans**: name and save results, reopen them read-only, export,
   rename, delete, and compare two scans (or one with the current scan) as
   new / fixed / unchanged
+- **Site scan**: give an application's address; pages are found from the
+  sitemap, the rendered start page's menus and links (with the browser's
+  sign-in), similar pages are grouped, log-out/delete links skipped; review the
+  list, then the ticked pages are scanned one by one in a separate window
+  (pause / resume / stop) and exported as one multi-page report
 - **Copy issue** as plain text; two-pane list + detail layout when the panel is
   wide (typical in DevTools)
 

@@ -19,6 +19,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Issue, KeyboardTestResult, ScanResult } from "@shared/types";
 import type { Message, Response, ScanOptions } from "@shared/messages";
+import type { SiteScanState } from "@shared/site-crawl";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const DIST = path.resolve(ROOT, process.env.A11Y_E2E_DIST ?? "dist");
@@ -44,6 +45,7 @@ const MIME: Record<string, string> = {
   ".png": "image/png",
   ".gif": "image/gif",
   ".jpg": "image/jpeg",
+  ".xml": "application/xml; charset=utf-8",
 };
 
 function serveFixtures(req: IncomingMessage, res: ServerResponse): void {
@@ -56,7 +58,8 @@ function serveFixtures(req: IncomingMessage, res: ServerResponse): void {
       res.end("Not found");
       return;
     }
-    const body = readFileSync(file);
+    // Sitemaps need absolute addresses: __ORIGIN__ becomes this server's origin.
+    const body = path.extname(file) === ".xml" ? readFileSync(file, "utf8").split("__ORIGIN__").join(`http://${req.headers.host ?? "127.0.0.1"}`) : readFileSync(file);
     res.writeHead(200, { "content-type": MIME[path.extname(file).toLowerCase()] ?? "application/octet-stream", "cache-control": "no-store" });
     res.end(body);
   } catch (err) {
@@ -1038,6 +1041,141 @@ test.describe("PalTech A11y Inspector extension", () => {
     } finally {
       await page.close();
     }
+  });
+
+  test("site scan: finds pages from links, script and sitemap, skips log-out links and detail pages, and scans the ticked ones", async () => {
+    test.setTimeout(180_000);
+    const getState = async () => (await sendToBackground<SiteScanState | null>(panel, { type: "SITE_SCAN_GET" })).data ?? null;
+    const waitFor = async (phases: string[]) => {
+      await expect.poll(async () => (await getState())?.phase, { timeout: 150_000, intervals: [500] }).toMatch(new RegExp(`^(${phases.join("|")})$`));
+      return (await getState())!;
+    };
+    const found = await sendToBackground<SiteScanState>(panel, {
+      type: "SITE_SCAN_DISCOVER",
+      url: `${baseUrl}/site/index.html`,
+      // allLinks: the fixture's Contact link sits outside the menu, and this test is about the full crawl.
+      options: { maxPages: 5, maxDepth: 2, perTemplate: 2, useSitemap: true, exclude: ["logout"], within: "/site/", allLinks: true, quick: true },
+    });
+    expect(found.ok, found.error).toBe(true);
+    let state = await waitFor(["review"]);
+    const paths = (pages: SiteScanState["pages"]) => pages.map((p) => p.url.replace(baseUrl, ""));
+    const listed = paths(state.pages);
+    // Links, the script-built link (rendered page only) and the sitemap-only page are found; the
+    // log-out link, the PDF, the mailto: link and the product detail pages (/products/1 …) are not.
+    expect(listed.sort()).toEqual(["/site/about.html", "/site/contact.html", "/site/hidden.html", "/site/index.html"]);
+    expect(state.found.excluded).toBeGreaterThan(0);
+    expect(state.found.details).toBe(4);
+    // Ticked up to the page limit: start page, menu links, then the sitemap-only page.
+    expect(state.pages.filter((p) => p.include)).toHaveLength(4);
+
+    // Untick one, add a detail page by hand.
+    const changed = await sendToBackground<SiteScanState>(panel, {
+      type: "SITE_SCAN_SET_PAGES",
+      include: { [`${baseUrl}/site/hidden.html`]: false },
+      add: [`${baseUrl}/site/products/3.html`],
+    });
+    expect(changed.ok, changed.error).toBe(true);
+
+    expect((await sendToBackground(panel, { type: "SITE_SCAN_START" })).ok).toBe(true);
+    state = await waitFor(["done", "stopped", "paused"]);
+    expect(state.phase).toBe("done");
+    const done = state.pages.filter((p) => p.status === "done");
+    expect(paths(done).sort()).toEqual(["/site/about.html", "/site/contact.html", "/site/index.html", "/site/products/3.html"]);
+    expect(state.pages.find((p) => p.url.endsWith("/hidden.html"))?.status).toBe("pending");
+    const about = state.pages.findIndex((p) => p.url.endsWith("/site/about.html"));
+    const result = await sendToBackground<ScanResult>(panel, { type: "SITE_SCAN_RESULT", index: about });
+    expect(result.ok, result.error).toBe(true);
+    expect(result.data!.issues.some((i) => i.ruleId === "IMG-01" || i.data?.axeRuleId === "image-alt")).toBe(true);
+    // Quick mode left out the slow focus checks.
+    expect(result.data!.issues.some((i) => ["KBD-05", "KBD-06", "CLR-05", "ZM-03"].includes(i.ruleId))).toBe(false);
+
+    const cleared = await sendToBackground(panel, { type: "SITE_SCAN_CLEAR" });
+    expect(cleared.ok, cleared.error).toBe(true);
+    expect(await getState()).toBeNull();
+  });
+
+  test("site scan: a script-built app is read page by page in the scan window, and stays inside its folder", async () => {
+    test.setTimeout(120_000);
+    const found = await sendToBackground<SiteScanState>(panel, {
+      type: "SITE_SCAN_DISCOVER",
+      url: `${baseUrl}/app/home.html`,
+      options: { maxPages: 20, maxDepth: 3, perTemplate: 0, useSitemap: false, exclude: [], within: "/app/", quick: true },
+    });
+    expect(found.ok, found.error).toBe(true);
+    await expect
+      .poll(async () => (await sendToBackground<SiteScanState | null>(panel, { type: "SITE_SCAN_GET" })).data?.phase, { timeout: 100_000, intervals: [500] })
+      .toBe("review");
+    const state = (await sendToBackground<SiteScanState>(panel, { type: "SITE_SCAN_GET" })).data!;
+    const listed = state.pages.map((p) => p.url.replace(baseUrl, "")).sort();
+    // The HTML has no links at all: every page, including the sub-menus two levels down, was read rendered.
+    expect(listed).toEqual(["/app/home.html", "/app/me-leave.html", "/app/me-time.html", "/app/me.html", "/app/org-tree.html", "/app/org.html", "/app/team.html"]);
+    // A menu address that only redirects is left out; the page it lands on is listed once.
+    const team = state.pages.find((p) => p.url.endsWith("/app/team.html"))!;
+    expect(team.include).toBe(false);
+    expect(team.error).toBe("Redirects to /app/org-tree.html");
+    expect(state.found.excluded).toBeGreaterThan(0); // /site/about.html is outside /app/
+    expect((await sendToBackground(panel, { type: "SITE_SCAN_CLEAR" })).ok).toBe(true);
+  });
+
+  test("site scan: each #/route of a hash-routed app is its own page, found and scanned", async () => {
+    test.setTimeout(150_000);
+    const get = async () => (await sendToBackground<SiteScanState | null>(panel, { type: "SITE_SCAN_GET" })).data ?? null;
+    const found = await sendToBackground<SiteScanState>(panel, {
+      type: "SITE_SCAN_DISCOVER",
+      url: `${baseUrl}/hash/index.html#/dashboard`,
+      options: { maxPages: 10, maxDepth: 3, perTemplate: 0, useSitemap: false, exclude: ["logout"], within: "", quick: true },
+    });
+    expect(found.ok, found.error).toBe(true);
+    await expect.poll(async () => (await get())?.phase, { timeout: 100_000, intervals: [500] }).toBe("review");
+    let state = (await get())!;
+    const listed = state.pages.map((p) => p.url.replace(`${baseUrl}/hash/index.html`, "")).sort();
+    // The Leave sub-menu exists only on #/leave, so it was found by opening that route; #main and #/logout are not pages.
+    expect(listed).toEqual(["#/dashboard", "#/leave", "#/leave/history", "#/team"]);
+
+    expect((await sendToBackground(panel, { type: "SITE_SCAN_START" })).ok).toBe(true);
+    await expect.poll(async () => (await get())?.phase, { timeout: 120_000, intervals: [500] }).toBe("done");
+    state = (await get())!;
+    expect(state.pages.filter((p) => p.status === "done")).toHaveLength(4);
+    const leave = state.pages.findIndex((p) => p.url.endsWith("#/leave/history"));
+    const result = await sendToBackground<ScanResult>(panel, { type: "SITE_SCAN_RESULT", index: leave });
+    expect(result.data?.url).toMatch(/#\/leave\/history$/);
+    expect(result.data?.title).toBe("Hash-routed app: #/leave/history");
+    expect((await sendToBackground(panel, { type: "SITE_SCAN_CLEAR" })).ok).toBe(true);
+  });
+
+  test("site scan: follows the navigation, and content links add one example of each kind of page", async () => {
+    test.setTimeout(120_000);
+    const get = async () => (await sendToBackground<SiteScanState | null>(panel, { type: "SITE_SCAN_GET" })).data ?? null;
+    const found = await sendToBackground<SiteScanState>(panel, {
+      type: "SITE_SCAN_DISCOVER",
+      url: `${baseUrl}/shop/index.html`,
+      options: { maxPages: 25, maxDepth: 2, perTemplate: 3, useSitemap: false, exclude: [], within: "/shop/", quick: true },
+    });
+    expect(found.ok, found.error).toBe(true);
+    await expect.poll(async () => (await get())?.phase, { timeout: 100_000, intervals: [500] }).toBe("review");
+    const state = (await get())!;
+    const listed = state.pages.map((p) => p.url.replace(`${baseUrl}/shop/`, "")).sort();
+    // Menus (header, footer) are followed; the text link to help is its own page; the grid's id-style
+    // product detail pages are left out, and it adds three name-style items (the other 2 counted).
+    expect(listed).toEqual(["about.html", "help.html", "index.html", "items/anchor-bolt.html", "items/brass-hinge.html", "items/claw-hammer.html", "terms.html"]);
+    expect(state.found.details).toBe(6);
+    expect(state.pages.find((p) => p.url.endsWith("/items/anchor-bolt.html"))?.similar).toBe(2);
+    expect((await sendToBackground(panel, { type: "SITE_SCAN_CLEAR" })).ok).toBe(true);
+  });
+
+  test("site scan: links that a page adds seconds after loading (dashboard widgets) are found", async () => {
+    test.setTimeout(90_000);
+    const get = async () => (await sendToBackground<SiteScanState | null>(panel, { type: "SITE_SCAN_GET" })).data ?? null;
+    const found = await sendToBackground<SiteScanState>(panel, {
+      type: "SITE_SCAN_DISCOVER",
+      url: `${baseUrl}/late/index.html`,
+      options: { maxPages: 10, maxDepth: 1, perTemplate: 1, useSitemap: false, exclude: [], within: "/late/", quick: true },
+    });
+    expect(found.ok, found.error).toBe(true);
+    await expect.poll(async () => (await get())?.phase, { timeout: 60_000, intervals: [500] }).toBe("review");
+    const listed = (await get())!.pages.map((p) => p.url.replace(`${baseUrl}/late/`, "")).sort();
+    expect(listed).toEqual(["index.html", "menu.html", "requests.html"]);
+    expect((await sendToBackground(panel, { type: "SITE_SCAN_CLEAR" })).ok).toBe(true);
   });
 
   test("element picker: clicking an element broadcasts its selector", async () => {

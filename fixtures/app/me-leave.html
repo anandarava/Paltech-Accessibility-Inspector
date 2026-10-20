@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Script-built app: Me: leave</title></head>
+<body>
+<!-- Site-scan fixture: like a single-page app, the HTML has no links; the menu is built by script. -->
+<nav id="menu" aria-label="App"></nav>
+<main><h1>Me: leave</h1></main>
+<script>
+  for (const [href, text] of [["/app/home.html","Home"],["/app/me.html","Me"],["/app/org.html","Organization"]]) {
+    const a = document.createElement("a");
+    a.href = href;
+    a.textContent = text;
+    document.getElementById("menu").append(a, " ");
+  }
+</script>
+</body>
+</html>

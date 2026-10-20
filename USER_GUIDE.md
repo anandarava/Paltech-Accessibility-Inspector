@@ -12,7 +12,7 @@ A guide for testers and developers who use the extension day to day.
 6. [Scan options](#6-scan-options)
 7. [Overlay and colour-blindness simulation](#7-overlay-and-colour-blindness-simulation)
 8. [Keyboard test](#8-keyboard-test) (and the [Contrast checker](#contrast-checker))
-9. [Save, compare, rescan and reset](#9-save-compare-rescan-and-reset)
+9. [Save, compare, rescan and reset](#9-save-compare-rescan-and-reset) (and [Site scan](#site-scan))
 10. [Export reports](#10-export-reports)
 11. [Options page](#11-options-page)
 12. [Limits and troubleshooting](#12-limits-and-troubleshooting)
@@ -212,6 +212,25 @@ The result is kept for the site and applied again when you rescan. It shows on t
 **Rescan page** (the blue button at the left of the action row) runs the scan again with the current settings. When the page changes while the panel is open (a new route, a dialog, a large update), a banner offers to rescan.
 
 **Reset** (footer) clears the current tab's results, filters, keyboard test and on-page highlights so you can start again. Saved scans, baselines, ignore lists and settings are kept. It asks for confirmation first.
+
+### Site scan
+
+Scan many pages of one application from its address. Open it with **Scan whole site** on the start screen, or **Site scan** in the action row.
+
+1. **Set up.** Enter the application's address (it starts with the current tab's address) and **Pages to scan** (default 100). **More options** holds the rest:
+   - **Only pages under**: keeps the scan inside one application when several share the address. Filled in from a deep address (`https://apps.example.com/hrms/dashboard` gives `/hrms/`); empty scans the whole site.
+   - **Link depth**: how many clicks from the start page to follow (default 3).
+   - **Use the site's sitemap**: also read `robots.txt` and `sitemap.xml`.
+   - **Follow every link**: off by default; PalTech then follows the site's navigation (menus, header, footer, sidebars, tabs, breadcrumbs), and links in the page content add a page only when it is a new kind of page.
+   - **Skip addresses containing**: log-out, delete, unsubscribe, language-switch and similar links are never opened, since opening them changes data or the account's settings. Add your own (for example `/admin/*`).
+
+   The list keeps **one row per screen**. Detail pages, whose address carries an id (`/products/1`, `/Event/EventDetails/226492`), are left out so that the screen itself (`/products`) is scanned, and so are other views of a listed screen (`/report?status=3` when `/report` is listed). The summary says how many were left out; add any of them by hand.
+2. **Find pages.** PalTech reads the sitemap, opens the start page to read its menus (including ones built by script), and follows links. In an application built by script (Angular, React and similar), where the pages' HTML has no links, it opens each page in the scan window to read its menus and tabs. A menu address that only redirects to another page (for example `/me` to `/me/time-sheet`) is listed as "Redirects to …" and not scanned twice. In hash-routed apps (addresses like `app.example.com/#/leave`), each `#/route` is its own page and is loaded fresh before it is scanned; plain `#section` links are not pages. It uses your browser's sign-in, so sign in to the application first to reach pages behind a login.
+3. **Review the list.** The start page and its menu pages come first; the rest are ticked up to the page limit. Unticked pages say why ("Similar to 3 pages already listed", "Over the page limit"). Tick or untick pages, or type an address or path (`/checkout/step-2`) in **Add a page** for pages no link reaches.
+4. **Scan.** Pages open one at a time in a separate window. Leave it open; it can sit behind other windows but must not be minimised. Links the rendered pages show are added to the list as the scan goes. **Pause** and **Stop** act between pages; **Resume** continues. If the window is closed or the browser restarts, the run pauses and can be resumed.
+5. **Results.** Each page shows its score, issues, items to review and scan time. **View** opens that page's results read-only in the panel (**Back to site scan** returns). **Export report** downloads one HTML report for all scanned pages (or **JSON**). **New site scan** clears the run.
+
+Pages reached only by filling in forms, opening dialogs or following e-mailed links are not found automatically: add them by hand.
 
 ## 10. Export reports
 
