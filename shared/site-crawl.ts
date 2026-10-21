@@ -78,6 +78,8 @@ export interface SitePage {
   userSet?: boolean;
   /** Content links to more pages like this one that were counted instead of listed. */
   similar?: number;
+  /** The previous scan's figures, kept when the page is rescanned, to show what changed. */
+  previous?: { score?: number; definite?: number; review?: number };
   status: SitePageStatus;
   error?: string;
   title?: string;
@@ -139,9 +141,33 @@ export const DEFAULT_SITE_SCAN_OPTIONS: SiteScanOptions = {
   quick: false,
 };
 
-/** Files that are not web pages. */
+/**
+ * Files that are not web pages, by the extension of the address's last part. The extension may be
+ * followed by junk a download page uses to test tools ("shell.txt jpg", "shell.txt::$DATA").
+ */
 const FILE_EXT_RE =
-  /\.(pdf|zip|gz|tgz|rar|7z|dmg|exe|msi|apk|iso|jpe?g|png|gif|webp|avif|svg|ico|bmp|tiff?|mp3|wav|ogg|m4a|mp4|m4v|mov|avi|webm|mkv|docx?|xlsx?|pptx?|odt|ods|csv|txt|xml|json|rss|atom|ics|woff2?|ttf|eot|css|js)$/i;
+  /\.(pdf|zip|gz|tgz|tar|bz2|xz|rar|7z|dmg|exe|msi|apk|deb|rpm|jar|war|iso|bin|dat|tmp|log|jpe?g|png|gif|webp|avif|heic|svg|ico|bmp|tiff?|mp3|wav|ogg|m4a|mp4|m4v|mov|avi|wmv|flv|swf|webm|mkv|docx?|xlsx?|pptx?|odt|ods|odp|rtf|epub|md|csv|txt|xml|json|ya?ml|rss|atom|ics|vcf|eml|pfx|p12|cer|crt|pem|wsdl|wadl|woff2?|ttf|eot|css|js|sh|bat)([\s:].*)?$/i;
+
+/** The address's last part, decoded ("Hello%20World!.rtf" → "Hello World!.rtf"). */
+function lastSegment(pathname: string): string {
+  const last = pathname.slice(pathname.lastIndexOf("/") + 1);
+  try {
+    return decodeURIComponent(last);
+  } catch {
+    return last;
+  }
+}
+
+/** News feeds (RSS / Atom), not pages: /feed, /feeds/posts/default, /rss, /comments/feed, ?feed=rss2. */
+const FEED_PATH_RE = /(^|\/)(feeds?|rss|atom)(\/|$)/i;
+const FEED_QUERY_RE = /(^|&)(feed|alt)=(rss2?|atom|json)(&|$)/i;
+
+/** Web-service descriptions (SOAP ?wsdl, REST ?_wadl), which are XML, not pages. */
+const SERVICE_QUERY_RE = /^_?(wsdl|wadl|disco|singlewsdl)$/i;
+/** Machine addresses, not pages: JSON APIs under /api/… and Cloudflare's /cdn-cgi/ (e-mail protection, challenges). */
+const MACHINE_PATH_RE = /^\/(?:[^/]+\/)?(api|cdn-cgi)\/./i;
+/** Session ids some servers put in the path (Java ;jsessionid=, PHP ;PHPSESSID=): the same page. */
+const PATH_SESSION_RE = /;(jsessionid|phpsessid|sid|sessionid)=[^/?#]*/gi;
 
 /** Query parameters that only track where a visit came from. */
 const TRACKING_PARAM_RE = /^(utm_[a-z]+|gclid|gbraid|wbraid|fbclid|msclkid|mc_cid|mc_eid|_ga|_gl|_hsenc|_hsmi|igshid|yclid|ref_src|spm)$/i;
@@ -173,7 +199,11 @@ export function normalizeUrl(href: string, base?: string): string | null {
     return null;
   }
   if (u.protocol !== "http:" && u.protocol !== "https:") return null;
-  if (FILE_EXT_RE.test(u.pathname)) return null;
+  u.pathname = u.pathname.replace(PATH_SESSION_RE, "");
+  if (FILE_EXT_RE.test(lastSegment(u.pathname))) return null;
+  if (MACHINE_PATH_RE.test(u.pathname)) return null;
+  if ([...u.searchParams.keys()].some((k) => SERVICE_QUERY_RE.test(k))) return null;
+  if (FEED_PATH_RE.test(u.pathname) || FEED_QUERY_RE.test(u.search.slice(1))) return null;
   let route = HASH_ROUTE_RE.test(u.hash) ? u.hash.replace(/\/+$/, "").replace(/\/+(\?)/, "$1") : "";
   // "#/" and "#!/" are the app's root route: the same page as no hash
   if (route === "#" || route === "#!") route = "";
@@ -241,7 +271,12 @@ export function isExcluded(url: string, patterns: string[]): boolean {
 }
 
 const LOCALE_SEGMENT_RE = /^[a-z]{2}([-_][a-z]{2,4})?$/i;
-const ID_SEGMENT_RE = /^(\d+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{12,}|[a-z0-9_-]*\d[a-z0-9_-]{5,})$/i;
+/**
+ * An id in a path segment: a number, UUID or hash; a code with digits (ab12cd34); a slug ending in
+ * an id (a-light-in-the-attic_1000, travel_2, blue-shirt-48213); or a page of a list (page-2).
+ * A short number after a hyphen (step-2, level-1) is a name, not an id.
+ */
+const ID_SEGMENT_RE = /^(\d+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{12,}|[a-z0-9_-]*\d[a-z0-9_-]{5,}|[a-z0-9-]*_\d+|[a-z0-9_-]+-\d{3,}|page[-_]?\d+)$/i;
 
 /**
  * Template of a page from its address alone: ids (numbers, UUIDs, hashes, codes with digits)
@@ -275,9 +310,17 @@ export function templateKey(url: string): string {
   return `${base}#/${generic(routePath).join("/")}`.toLowerCase();
 }
 
-/** The same page, ignoring the case of the address (servers such as IIS treat /SAML and /Saml alike). */
+/**
+ * The same page, ignoring the case of the address (servers such as IIS treat /SAML and /Saml alike)
+ * and a folder's index file (/shop/index.html is /shop/).
+ */
 export function samePage(a: string | undefined, b: string): boolean {
-  return !!a && a.toLowerCase() === b.toLowerCase();
+  const key = (u: string) =>
+    u
+      .toLowerCase()
+      .replace(/\/(index|default)\.(html?|php|aspx?|jsp)(?=$|[?#])/, "/")
+      .replace(/\/+(?=$|[?#])/, "");
+  return !!a && key(a) === key(b);
 }
 
 /** A folder with at least this many listed pages is treated as one template (a blog, a product catalogue). */

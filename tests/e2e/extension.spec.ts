@@ -20,6 +20,7 @@ import { fileURLToPath } from "node:url";
 import type { Issue, KeyboardTestResult, ScanResult } from "@shared/types";
 import type { Message, Response, ScanOptions } from "@shared/messages";
 import type { SiteScanState } from "@shared/site-crawl";
+import type { AssessmentState, Instance } from "@shared/assessment";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const DIST = path.resolve(ROOT, process.env.A11Y_E2E_DIST ?? "dist");
@@ -226,6 +227,8 @@ test.describe("PalTech A11y Inspector extension", () => {
     // Bound to a tab that does not exist: the harness page is only a chrome.* messaging
     // endpoint and must not act as an open panel for the fixture tabs.
     await panel.goto(`chrome-extension://${extensionId}/src/sidepanel/index.html?tabId=2147483000`, { waitUntil: "load" });
+    // These tests drive the automated panel: answer the first-run "Automated or Manual" choice once.
+    await panel.evaluate(() => chrome.storage.local.set({ testingMode: "automated" }));
     // Collect broadcast events (PAGE_CHANGED etc.) for the SPA test.
     await panel.evaluate(() => {
       const w = window as unknown as { __a11yEvents: unknown[] };
@@ -1089,6 +1092,32 @@ test.describe("PalTech A11y Inspector extension", () => {
     // Quick mode left out the slow focus checks.
     expect(result.data!.issues.some((i) => ["KBD-05", "KBD-06", "CLR-05", "ZM-03"].includes(i.ruleId))).toBe(false);
 
+    // Rescan one scanned page: only it runs again, and its last figures are kept to compare.
+    const before = state.pages[about];
+    expect((await sendToBackground(panel, { type: "SITE_SCAN_RESCAN", indexes: [about] })).ok).toBe(true);
+    state = await waitFor(["done"]);
+    expect(state.pages[about].status).toBe("done");
+    expect(state.pages[about].previous).toEqual({ score: before.score, definite: before.definite, review: before.review });
+    expect(state.pages.find((p) => p.url.endsWith("/hidden.html"))?.status).toBe("pending");
+    // Rescan all: every scanned page again.
+    expect((await sendToBackground(panel, { type: "SITE_SCAN_RESCAN" })).ok).toBe(true);
+    state = await waitFor(["done"]);
+    expect(state.pages.filter((p) => p.status === "done" && p.previous)).toHaveLength(4);
+
+    // Search box: finds a page by part of its address, and says when nothing matches.
+    await panel.reload({ waitUntil: "load" });
+    await panel.getByRole("button", { name: /Scan whole site/ }).click();
+    const list = panel.getByRole("list", { name: "Pages" });
+    const search = panel.getByRole("searchbox", { name: "Search pages" });
+    await search.fill("ABOUT");
+    await expect(list.getByRole("listitem")).toHaveCount(1);
+    await expect(list).toContainText("about.html");
+    await expect(panel.getByText("1 of 5 pages match")).toBeVisible();
+    await search.fill("no-such-page");
+    await expect(list).toContainText("No page matches “no-such-page”. It was not found; you can add it above.");
+    await search.fill("");
+    await expect(list.getByRole("listitem")).toHaveCount(5);
+
     const cleared = await sendToBackground(panel, { type: "SITE_SCAN_CLEAR" });
     expect(cleared.ok, cleared.error).toBe(true);
     expect(await getState()).toBeNull();
@@ -1176,6 +1205,113 @@ test.describe("PalTech A11y Inspector extension", () => {
     const listed = (await get())!.pages.map((p) => p.url.replace(`${baseUrl}/late/`, "")).sort();
     expect(listed).toEqual(["index.html", "menu.html", "requests.html"]);
     expect((await sendToBackground(panel, { type: "SITE_SCAN_CLEAR" })).ok).toBe(true);
+  });
+
+  test("quick assess: lists the page's instances, opens in its own tab, and keeps results per page", async () => {
+    test.setTimeout(120_000);
+    const { page, tabId, url } = await openFixture("assess");
+    const key = `assessment:quick:${url}`;
+    try {
+      const list = async (kind: string) => (await sendToBackground<Instance[]>(panel, { type: "ASSESS_LIST", tabId, kind } as Message)).data ?? [];
+      expect((await list("links")).map((l) => `${l.text} -> ${l.detail}`)).toEqual(["Return to cart -> /cart", "Shipping policy -> /help/shipping", "Click here -> /terms"]);
+      expect((await list("images")).map((i) => i.detail)).toEqual(["Example Store home", 'alt="" (decorative)', "No text alternative"]);
+      expect((await list("headings")).map((h) => `${h.detail}: ${h.text}`)).toEqual(["Level 1: Checkout", "Level 2: Delivery", "Level 4: Payment"]);
+      const fields = await list("fields");
+      expect(fields.map((f) => f.text)).toContain("Full name");
+      expect(fields[0].detail).toMatch(/required/);
+      expect((await list("controls")).map((c) => c.text)).toContain("Pay now");
+
+      // Open the assessment in a tab of its own.
+      const opened = context.waitForEvent("page");
+      expect((await sendToBackground(panel, { type: "ASSESS_OPEN", tabId })).ok).toBe(true);
+      const tab = await opened;
+      await tab.waitForLoadState("load");
+      await expect(tab.getByRole("heading", { level: 1, name: "Assessment fixture: checkout" })).toBeVisible();
+      await expect(tab.getByRole("link", { name: /Start: 1\. Keyboard navigation/ })).toBeVisible();
+
+      // Assisted: mark one link failed, pass the rest.
+      await tab.locator('nav[aria-label="Quick Assess"]').getByRole("link", { name: /Link purpose/ }).click();
+      await expect(tab.getByRole("heading", { level: 2, name: "Instances (3)" })).toBeVisible();
+      await tab.getByRole("radio", { name: "Fail: Click here" }).check();
+      await tab.getByLabel("Why it fails: Click here").fill("The terms are not named");
+      await tab.getByRole("button", { name: "Pass unmarked instances" }).click();
+      await expect(tab.getByText("3 marked · 0 left")).toBeVisible();
+
+      // Manual: record a pass.
+      await tab.evaluate(() => (location.hash = "#req/keyboard-navigation"));
+      await tab.getByRole("radio", { name: "Pass", exact: true }).check();
+
+      // Saved per page, and counted on the overview.
+      await expect.poll(async () => {
+        const saved = (await panel.evaluate(async (k) => (await chrome.storage.local.get(k))[k], key)) as AssessmentState | undefined;
+        const lp = saved?.results["link-purpose"];
+        return saved ? [saved.results["keyboard-navigation"]?.verdict, Object.values(lp?.marks ?? {}).sort().join(","), Object.values(lp?.notes ?? {})] : null;
+      }).toEqual(["pass", "fail,pass,pass", ["The terms are not named"]]);
+      await tab.evaluate(() => (location.hash = "#overview"));
+      await expect(tab.getByRole("main").getByRole("link", { name: /Link purpose.*Failed/ })).toBeVisible();
+      await expect(tab.getByRole("main").getByRole("link", { name: /Keyboard navigation.*Passed/ })).toBeVisible();
+
+      // Opening it again brings the same tab forward.
+      const pagesBefore = context.pages().length;
+      expect((await sendToBackground(panel, { type: "ASSESS_OPEN", tabId })).ok).toBe(true);
+      expect(context.pages().length).toBe(pagesBefore);
+
+      // The side panel's Manual view shows the progress for this page.
+      await panel.evaluate(() => chrome.storage.local.set({ testingMode: "manual" }));
+      const ui = await context.newPage();
+      try {
+        await ui.goto(`chrome-extension://${extensionId}/src/sidepanel/index.html?tabId=${tabId}`, { waitUntil: "load" });
+        await expect(ui.getByText("Quick Assess in progress")).toBeVisible();
+        await expect(ui.getByText(/2 \/ 10 · 1 failed/)).toBeVisible();
+      } finally {
+        await ui.close();
+        await panel.evaluate(() => chrome.storage.local.set({ testingMode: "automated" }));
+      }
+      await tab.close();
+    } finally {
+      await panel.evaluate((k) => chrome.storage.local.remove(k), key);
+      await page.close();
+    }
+  });
+
+  test("full assessment: tests open as dropdowns, results save per page, and Quick Assess results move across", async () => {
+    test.setTimeout(120_000);
+    const { page, tabId, url } = await openFixture("assess");
+    const quickKey = `assessment:quick:${url}`;
+    const fullKey = `assessment:full:${url}`;
+    try {
+      // Quick Assess result to carry over.
+      await panel.evaluate(
+        ([k, u]) => chrome.storage.local.set({ [k]: { version: 1, kind: "quick", target: { url: u, title: "Checkout" }, startedAt: "", updatedAt: "", results: { reflow: { verdict: "pass", failures: [], marks: {} } } } }),
+        [quickKey, url],
+      );
+      const opened = context.waitForEvent("page");
+      expect((await sendToBackground(panel, { type: "ASSESS_OPEN", tabId })).ok).toBe(true);
+      const tab = await opened;
+      await tab.waitForLoadState("load");
+      await tab.getByRole("button", { name: "Move to Full Assessment" }).click();
+      await tab.waitForURL(/kind=full/);
+      await expect(tab.getByText("FULL ASSESSMENT · WCAG 2.2 AA")).toBeVisible();
+      await expect(tab.getByRole("main").getByRole("listitem")).toHaveCount(23);
+      // The Quick Assess reflow result is in the Full Assessment.
+      await expect(tab.getByRole("link", { name: /Adaptable content.*1 of 4 done/ })).toBeVisible();
+
+      // A test opens as a dropdown: Getting started and its numbered checks.
+      const nav = tab.locator('nav[aria-label="Full Assessment"]');
+      await nav.getByRole("link", { name: "Keyboard", exact: true }).click();
+      await expect(tab.getByRole("heading", { level: 1, name: "1. Keyboard" })).toBeVisible();
+      await expect(nav.getByRole("link", { name: "Getting started" })).toHaveAttribute("aria-current", "page");
+      await nav.getByRole("link", { name: /1\.2 No keyboard traps/ }).click();
+      await expect(tab.getByRole("heading", { level: 1, name: "1.2 No keyboard traps" })).toBeVisible();
+      await tab.getByRole("radio", { name: "Pass", exact: true }).check();
+      await expect.poll(async () => ((await panel.evaluate(async (k) => (await chrome.storage.local.get(k))[k], fullKey)) as AssessmentState | undefined)?.results["no-keyboard-traps"]?.verdict).toBe("pass");
+      await expect(nav.getByRole("link", { name: /No keyboard traps.*Passed/ })).toBeVisible();
+
+      await tab.close();
+    } finally {
+      await panel.evaluate((ks) => chrome.storage.local.remove(ks), [quickKey, fullKey]);
+      await page.close();
+    }
   });
 
   test("element picker: clicking an element broadcasts its selector", async () => {

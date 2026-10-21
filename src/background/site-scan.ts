@@ -28,6 +28,7 @@ import {
   robotsSitemaps,
   sameOrigin,
   samePage,
+  hashRoute,
   similarKey,
   templateKey,
   NAV_SELECTOR,
@@ -74,6 +75,8 @@ let workerWindowId: number | null = null;
 let workerTabId: number | null = null;
 /** Named content pages listed per folder before further ones are only counted. */
 const NAMED_PER_FOLDER = 3;
+/** A rescan's pages: the run scans only these, not other pages still waiting. */
+let onlyIndexes: Set<number> | null = null;
 /** Detail pages and repeat views left out of the list, each address once. */
 let leftOut = new Set<string>();
 /** Content links already counted towards an example page (navigation-only discovery). */
@@ -164,10 +167,23 @@ async function sitemapPages(origin: string): Promise<string[]> {
   return pages;
 }
 
+/**
+ * A link's page address. A "#/…" link counts as a page of a hash-routed app only on the app's own
+ * page (the start page's address without its hash); elsewhere it is a section of one page (an API
+ * reference's #/Account), so the page itself is listed.
+ */
+function pageAddress(url: string): string | null {
+  const n = normalizeUrl(url);
+  if (!n || !state || !hashRoute(n)) return n;
+  const base = (u: string | undefined) => (u ?? "").split("#")[0].toLowerCase();
+  const apps = [state.startUrl, state.pages[0]?.finalUrl].map(base);
+  return apps.includes(base(n)) ? n : n.split("#")[0];
+}
+
 /** List a page; returns its address when it was newly listed (or upgraded to a linked page), else null. */
 function addPage(url: string, depth: number, source: SitePage["source"]): string | null {
   if (!state) return null;
-  const n = normalizeUrl(url);
+  const n = source === "start" || source === "manual" ? normalizeUrl(url) : pageAddress(url);
   if (!n || !sameOrigin(n, state.origin)) return null;
   const existing = state.pages.findIndex((p) => samePage(p.url, n) || samePage(p.finalUrl, n));
   if (existing >= 0) {
@@ -210,7 +226,7 @@ function addPage(url: string, depth: number, source: SitePage["source"]): string
 function addLink(link: LinkInfo, depth: number): string | null {
   if (!state) return null;
   if (link.nav || state.options.allLinks) return addPage(link.url, depth, "link");
-  const n = normalizeUrl(link.url);
+  const n = pageAddress(link.url);
   if (!n || !sameOrigin(n, state.origin)) return null;
   if (state.pages.some((p) => samePage(p.url, n) || samePage(p.finalUrl, n))) return null;
   // Addresses that differ only by an id (/product/123) are copies: one example. Named pages in a
@@ -535,11 +551,13 @@ async function scanPages(): Promise<void> {
     const options: ScanOptions = { ...base, scope: "page", skipRules: s.options.quick ? SLOW_RULE_IDS : undefined };
     for (;;) {
       if (control !== "run" || !state || state.id !== s.id) break;
-      const index = state.pages.findIndex((p) => p.include && p.status === "pending");
+      const only = onlyIndexes;
+      const index = state.pages.findIndex((p, i) => p.include && p.status === "pending" && (!only || only.has(i)));
       if (index < 0) break;
       const page = state.pages[index];
-      const total = state.pages.filter((p) => p.include).length;
-      const doneCount = state.pages.filter((p) => p.include && p.status !== "pending").length;
+      const inRun = (p: SitePage, i: number) => p.include && (!only || only.has(i));
+      const total = state.pages.filter(inRun).length;
+      const doneCount = state.pages.filter((p, i) => inRun(p, i) && p.status !== "pending").length;
       state.pages[index] = { ...page, status: "scanning" };
       await update({ message: `Scanning page ${doneCount + 1} of ${total}: ${page.url}` });
       const started = Date.now();
@@ -605,6 +623,7 @@ async function scanPages(): Promise<void> {
   } finally {
     running = false;
     control = "run";
+    onlyIndexes = null;
     stopKeepAlive();
   }
 }
@@ -666,6 +685,33 @@ export async function handleSiteScanMessage(msg: Message): Promise<unknown> {
         await update({ phase: "paused", message: e instanceof Error ? e.message : String(e) });
       });
       return state;
+
+    case "SITE_SCAN_RESCAN": {
+      if (!state) throw new Error("No site scan.");
+      if (running) throw new Error("Wait for the current run to finish, or pause it.");
+      const wanted = msg.indexes ? new Set(msg.indexes) : null;
+      let count = 0;
+      const chosen = new Set<number>();
+      state.pages = state.pages.map((p, i) => {
+        if (wanted ? !wanted.has(i) : !(p.status === "done" || p.status === "failed")) return p;
+        if (p.status !== "done" && p.status !== "failed") return p;
+        count++;
+        chosen.add(i);
+        // Keep the last figures to show what changed; the new result replaces the stored one.
+        const previous = p.status === "done" ? { score: p.score, definite: p.definite, review: p.review } : p.previous;
+        return { ...p, status: "pending", include: true, userSet: true, error: undefined, previous };
+      });
+      if (count === 0) throw new Error("No scanned pages to rescan.");
+      onlyIndexes = chosen;
+      // Scanning from this moment, so nobody reads the finished state of the last run meanwhile.
+      state.phase = "scanning";
+      state.finishedAt = undefined;
+      await save();
+      void scanPages().catch(async (e) => {
+        await update({ phase: "paused", message: e instanceof Error ? e.message : String(e) });
+      });
+      return state;
+    }
 
     case "SITE_SCAN_PAUSE":
       if (running) control = "pause";

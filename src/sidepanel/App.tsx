@@ -19,6 +19,7 @@ import { KeyboardTest } from "./components/KeyboardTest";
 import { ContrastChecker } from "./components/ContrastChecker";
 import { SavedScans } from "./components/SavedScans";
 import { SiteScan } from "./components/SiteScan";
+import { ManualView, ModeChoice, ModeSwitch, useTestingMode } from "./components/ManualView";
 import { CompareView } from "./components/CompareView";
 import { OverlayMenu, useOverlayModeSync } from "./components/OverlayMenu";
 import { ExportMenu } from "./components/ExportMenu";
@@ -116,6 +117,9 @@ export function App({ tabIdOverride, inspectable = false, onInspect, getInspecte
   const startScan = useStartScan();
   const [rootRef, width] = useWidth<HTMLDivElement>();
   const wide = width >= TWO_PANE_MIN_WIDTH;
+  // Automated (scans, in this panel) or Manual (guided assessments, in a tab of their own).
+  const [mode, chooseMode] = useTestingMode();
+  const automated = mode === "automated";
 
   useEffect(() => {
     setInspectable(inspectable);
@@ -179,7 +183,7 @@ export function App({ tabIdOverride, inspectable = false, onInspect, getInspecte
       <header className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-3 py-2">
         <h1 className="text-base font-bold">PalTech A11y Inspector</h1>
         {/* The landing view has the same settings in its card; the header shows them with the results. */}
-        {!landing && (
+        {automated && !landing && (
           <div className="flex flex-wrap items-center gap-x-1 gap-y-1">
             <span id={`${id}-version-lbl`} className="text-xs text-slate-700">
               WCAG
@@ -224,65 +228,77 @@ export function App({ tabIdOverride, inspectable = false, onInspect, getInspecte
             </label>
           </div>
         )}
-      </header>
-
-      <SavedBanner />
-      <PageChangedBanner onRescan={() => void startScan()} />
-
-      {tabId === null && !landing && (
-        <p role="status" className="border-b border-slate-300 bg-slate-50 px-3 py-2 text-xs text-slate-700">
-          No active tab detected. Open a regular web page in this window to scan it.
-        </p>
-      )}
-
-      {/* Every control keeps its label on one line and grows to fill its row, so the
-          row stays even at any width and wraps into full rows instead of ragged ones. */}
-      {!landing && (
-      <nav aria-label="Actions" className="flex flex-wrap gap-1.5 border-b border-slate-200 px-3 py-2">
-        <ScanButton />
-        <ScopeControl getInspectedSelector={getInspectedSelector} />
-        <Button onClick={() => setView("keyboard")} disabled={tabId === null} aria-pressed={view === "keyboard"} size="action" className="flex-1 basis-[5.5rem] whitespace-normal leading-tight">
-          <KeyboardIcon /> Keyboard test
-        </Button>
-        <Button onClick={() => openChecker(null)} aria-pressed={view === "contrast"} size="action" className="flex-1 basis-[5.5rem] whitespace-normal leading-tight">
-          <DropperIcon /> Contrast checker
-        </Button>
-        <Button onClick={() => setView("saved")} aria-pressed={view === "saved" || view === "compare"} size="action" className="flex-1 basis-[5.5rem] whitespace-normal leading-tight">
-          <BookmarkIcon /> Saved Scans
-        </Button>
-        <Button onClick={() => setView("site")} aria-pressed={view === "site"} size="action" className="flex-1 basis-[5.5rem] whitespace-normal leading-tight">
-          <GlobeIcon /> Site scan
-        </Button>
-        <OverlayMenu />
-      </nav>
-      )}
-
-      <ScanProgressBar />
-
-      <main className="flex min-h-0 flex-1 flex-col">
-        {landing && <LandingView getInspectedSelector={getInspectedSelector} />}
-        {!landing && resultsView && wide && (
-          <div className="flex min-h-0 flex-1">
-            <div className="flex min-h-0 w-[45%] min-w-80 flex-col border-r border-slate-300">{listPane}</div>
-            <div className="flex min-h-0 flex-1 flex-col">{detailPane}</div>
+        {mode && (
+          <div className="basis-full">
+            <ModeSwitch mode={mode} onChange={(m) => chooseMode(m, true)} />
           </div>
         )}
-        {!landing && resultsView && !wide && (view === "list" ? listPane : detailPane)}
-        {view === "keyboard" && <KeyboardTest onBack={backToList} />}
-        {view === "contrast" && <ContrastChecker key={checkerIssueId ?? "standalone"} onBack={backFromChecker} />}
-        {view === "saved" && <SavedScans onBack={backToList} />}
-        {view === "compare" && <CompareView onBack={() => setView("saved")} />}
-        {view === "site" && <SiteScan onBack={backToList} />}
-      </main>
+      </header>
 
-      {/* The single-column issue view has its own action bar; the scan bar returns with the list. */}
-      {!landing && resultsView && (wide || view === "list") && (
-        <footer className="sticky bottom-0 flex shrink-0 flex-wrap items-center gap-1.5 border-t border-slate-200 bg-white px-3 py-2">
-          {!readOnly && <SaveScanButton />}
-          <ResetButton />
-          <span className="flex-1" />
-          <ExportMenu />
-        </footer>
+      {mode === null && <ModeChoice onChoose={chooseMode} />}
+      {mode === "manual" && <ManualView />}
+      {automated && (
+        <>
+        <SavedBanner />
+        <PageChangedBanner onRescan={() => void startScan()} />
+
+        {tabId === null && !landing && (
+          <p role="status" className="border-b border-slate-300 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+            No active tab detected. Open a regular web page in this window to scan it.
+          </p>
+        )}
+
+        {/* Every control keeps its label on one line and grows to fill its row, so the
+            row stays even at any width and wraps into full rows instead of ragged ones. */}
+        {!landing && (
+        <nav aria-label="Actions" className="flex flex-wrap gap-1.5 border-b border-slate-200 px-3 py-2">
+          <ScanButton />
+          <ScopeControl getInspectedSelector={getInspectedSelector} />
+          <Button onClick={() => setView("keyboard")} disabled={tabId === null} aria-pressed={view === "keyboard"} size="action" className="flex-1 basis-[5.5rem] whitespace-normal leading-tight">
+            <KeyboardIcon /> Keyboard test
+          </Button>
+          <Button onClick={() => openChecker(null)} aria-pressed={view === "contrast"} size="action" className="flex-1 basis-[5.5rem] whitespace-normal leading-tight">
+            <DropperIcon /> Contrast checker
+          </Button>
+          <Button onClick={() => setView("saved")} aria-pressed={view === "saved" || view === "compare"} size="action" className="flex-1 basis-[5.5rem] whitespace-normal leading-tight">
+            <BookmarkIcon /> Saved Scans
+          </Button>
+          <Button onClick={() => setView("site")} aria-pressed={view === "site"} size="action" className="flex-1 basis-[5.5rem] whitespace-normal leading-tight">
+            <GlobeIcon /> Site scan
+          </Button>
+          <OverlayMenu />
+        </nav>
+        )}
+
+        <ScanProgressBar />
+
+        <main className="flex min-h-0 flex-1 flex-col">
+          {landing && <LandingView getInspectedSelector={getInspectedSelector} />}
+          {!landing && resultsView && wide && (
+            <div className="flex min-h-0 flex-1">
+              <div className="flex min-h-0 w-[45%] min-w-80 flex-col border-r border-slate-300">{listPane}</div>
+              <div className="flex min-h-0 flex-1 flex-col">{detailPane}</div>
+            </div>
+          )}
+          {!landing && resultsView && !wide && (view === "list" ? listPane : detailPane)}
+          {view === "keyboard" && <KeyboardTest onBack={backToList} />}
+          {view === "contrast" && <ContrastChecker key={checkerIssueId ?? "standalone"} onBack={backFromChecker} />}
+          {view === "saved" && <SavedScans onBack={backToList} />}
+          {view === "compare" && <CompareView onBack={() => setView("saved")} />}
+          {view === "site" && <SiteScan onBack={backToList} />}
+        </main>
+
+        {/* The single-column issue view has its own action bar; the scan bar returns with the list. */}
+        {!landing && resultsView && (wide || view === "list") && (
+          <footer className="sticky bottom-0 flex shrink-0 flex-wrap items-center gap-1.5 border-t border-slate-200 bg-white px-3 py-2">
+            {!readOnly && <SaveScanButton />}
+            <ResetButton />
+            <span className="flex-1" />
+            <ExportMenu />
+          </footer>
+        )}
+
+        </>
       )}
 
       <Toast />

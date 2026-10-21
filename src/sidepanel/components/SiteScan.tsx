@@ -202,7 +202,29 @@ const STATUS_TEXT: Record<SitePage["status"], string> = {
   skipped: "Skipped",
 };
 
-function PageRow({ page, index, origin, editable, onToggle, onView }: { page: SitePage; index: number; origin: string; editable: boolean; onToggle(include: boolean): void; onView(index: number): void }) {
+/** "91 (was 88)" when a rescan changed the figure. */
+function withPrevious(now: number | undefined, before: number | undefined): string {
+  const n = now ?? "–";
+  return before !== undefined && before !== now ? `${n} (was ${before})` : `${n}`;
+}
+
+function PageRow({
+  page,
+  index,
+  origin,
+  editable,
+  onToggle,
+  onView,
+  onRescan,
+}: {
+  page: SitePage;
+  index: number;
+  origin: string;
+  editable: boolean;
+  onToggle(include: boolean): void;
+  onView(index: number): void;
+  onRescan?(index: number): void;
+}) {
   const id = useId();
   const path = pathOf(page.finalUrl ?? page.url, origin);
   const canTick = editable && page.status === "pending";
@@ -224,7 +246,7 @@ function PageRow({ page, index, origin, editable, onToggle, onView }: { page: Si
         {page.title && page.status === "done" && <span className="block truncate text-[11px] text-slate-700">{path}</span>}
         <span id={`${id}-st`} className="block text-[11px] text-slate-700">
           {page.status === "done"
-            ? `Score ${page.score ?? "–"} · ${page.definite ?? 0} issues · ${page.review ?? 0} to review${page.durationMs ? ` · ${Math.round(page.durationMs / 1000)} s` : ""}`
+            ? `Score ${withPrevious(page.score, page.previous?.score)} · ${withPrevious(page.definite ?? 0, page.previous?.definite)} issues · ${withPrevious(page.review ?? 0, page.previous?.review)} to review${page.durationMs ? ` · ${Math.round(page.durationMs / 1000)} s` : ""}`
             : page.status === "pending"
               ? page.include
                 ? `To scan · ${page.source === "sitemap" ? "from sitemap" : page.source === "manual" ? "added by you" : page.source === "start" ? "start page" : `link depth ${page.depth}`}`
@@ -232,6 +254,11 @@ function PageRow({ page, index, origin, editable, onToggle, onView }: { page: Si
               : `${STATUS_TEXT[page.status]}${page.error ? `: ${page.error}` : ""}`}
         </span>
       </div>
+      {(page.status === "done" || page.status === "failed") && onRescan && (
+        <Button size="sm" variant="ghost" onClick={() => onRescan(index)} aria-label={`Rescan ${path}`}>
+          Rescan
+        </Button>
+      )}
       {page.status === "done" && (
         <Button size="sm" onClick={() => onView(index)} aria-label={`View results for ${path}`}>
           View
@@ -250,6 +277,8 @@ export function SiteScan({ onBack }: { onBack(): void }) {
   const [busy, setBusy] = useState(false);
   const [addUrl, setAddUrl] = useState("");
   const [filter, setFilter] = useState<"all" | "selected" | "done" | "problems">("all");
+  const [search, setSearch] = useState("");
+  const searchId = useId();
 
   const call = useCallback(
     async <T,>(msg: Parameters<typeof sendToBackground>[0], failure: string): Promise<T | undefined> => {
@@ -276,6 +305,7 @@ export function SiteScan({ onBack }: { onBack(): void }) {
       finished: selected.filter((p) => p.status !== "pending" && p.status !== "scanning").length,
       done: done.length,
       failed: pages.filter((p) => p.status === "failed" || p.status === "skipped").length,
+      failedOnly: pages.filter((p) => p.status === "failed").length,
       definite: done.reduce((n, p) => n + (p.definite ?? 0), 0),
       review: done.reduce((n, p) => n + (p.review ?? 0), 0),
       avgScore: done.length ? Math.round(done.reduce((n, p) => n + (p.score ?? 0), 0) / done.length) : null,
@@ -320,6 +350,11 @@ export function SiteScan({ onBack }: { onBack(): void }) {
     };
     openSaved(meta, r);
   };
+  /** Scan already-scanned pages again: one page, or every scanned (or failed) page. */
+  const rescan = async (index?: number) => {
+    const s = await call<SiteScanState>({ type: "SITE_SCAN_RESCAN", indexes: index === undefined ? undefined : [index] }, "Could not rescan");
+    if (s) setState(s);
+  };
   const exportAll = async (format: ExportFormat) => {
     showToast({ kind: "info", message: `Building one ${format.toUpperCase()} report for ${counts.done} pages…` });
     const r = await call<{ filename?: string }>({ type: "SITE_SCAN_EXPORT", format }, "Export failed");
@@ -332,8 +367,11 @@ export function SiteScan({ onBack }: { onBack(): void }) {
   const pages = (state?.pages ?? [])
     .map((p, i) => ({ p, i }))
     .filter(({ p }) =>
-      filter === "all" ? true : filter === "selected" ? p.include : filter === "done" ? p.status === "done" : p.status === "failed" || p.status === "skipped" || (p.definite ?? 0) > 0,
+      filter === "all" ? true : filter === "selected" ? p.include && (p.status === "pending" || p.status === "scanning") : filter === "done" ? p.status === "done" : p.status === "failed" || p.status === "skipped" || (p.definite ?? 0) > 0,
     );
+  // Search the address (as typed, decoded) and the page title.
+  const query = search.trim().toLowerCase();
+  const shown = query ? pages.filter(({ p }) => searchText(p).includes(query)) : pages;
   const progress = counts.selected ? Math.round((counts.finished / counts.selected) * 100) : 0;
 
   return (
@@ -432,6 +470,11 @@ export function SiteScan({ onBack }: { onBack(): void }) {
                   Scan {counts.remaining} more
                 </Button>
               )}
+              {(phase === "done" || phase === "stopped") && counts.done + counts.failedOnly > 0 && (
+                <Button size="md" disabled={busy} onClick={() => void rescan()}>
+                  Rescan {counts.done + counts.failedOnly === 1 ? "the page" : `all ${counts.done + counts.failedOnly}`}
+                </Button>
+              )}
               {counts.done > 0 && !running && (
                 <>
                   <Button variant={phase === "done" ? "primary" : "secondary"} size="md" disabled={busy} onClick={() => void exportAll("html")}>
@@ -475,7 +518,8 @@ export function SiteScan({ onBack }: { onBack(): void }) {
             {(
               [
                 ["all", `All ${counts.total}`],
-                ["selected", `Ticked ${counts.selected}`],
+                // Ticked = still to scan; scanned pages are under Scanned.
+                ["selected", `Ticked ${counts.remaining}`],
                 ["done", `Scanned ${counts.done}`],
                 ["problems", "With issues"],
               ] as const
@@ -501,14 +545,44 @@ export function SiteScan({ onBack }: { onBack(): void }) {
               </span>
             )}
           </div>
-          <ul aria-label="Pages" className="mx-3 mt-2 rounded-xl border border-slate-200 bg-white">
-            {pages.map(({ p, i }) => (
-              <PageRow key={p.url} page={p} index={i} origin={state.origin} editable={editable} onToggle={(v) => toggle(p.url, v)} onView={(n) => void view(n)} />
+          <div className="mx-3 mt-2">
+            <label htmlFor={searchId} className="sr-only">
+              Search pages
+            </label>
+            <input
+              id={searchId}
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search pages by address or title"
+              className="w-full rounded-lg border border-slate-400 bg-white px-2.5 py-1.5 text-sm text-slate-900 placeholder:text-slate-600"
+            />
+            <p className="mt-1 text-xs text-slate-700" aria-live="polite">
+              {query ? `${shown.length} of ${pages.length} ${pages.length === 1 ? "page matches" : "pages match"}` : ""}
+            </p>
+          </div>
+          <ul aria-label="Pages" className="mx-3 mt-1 rounded-xl border border-slate-200 bg-white">
+            {shown.map(({ p, i }) => (
+              <PageRow key={p.url} page={p} index={i} origin={state.origin} editable={editable} onToggle={(v) => toggle(p.url, v)} onView={(n) => void view(n)} onRescan={editable && phase !== "review" ? (n) => void rescan(n) : undefined} />
             ))}
-            {pages.length === 0 && <li className="px-2 py-2 text-sm text-slate-700">No pages here.</li>}
+            {shown.length === 0 && (
+              <li className="px-2 py-2 text-sm text-slate-700">
+                {query ? `No page matches “${search.trim()}”${filter !== "all" ? " in this tab. Try All." : `. It was not found${editable ? "; you can add it above" : ""}.`}` : "No pages here."}
+              </li>
+            )}
           </ul>
         </>
       )}
     </section>
   );
+}
+
+function searchText(p: { url: string; title?: string }): string {
+  let url = p.url;
+  try {
+    url += " " + decodeURI(p.url);
+  } catch {
+    // Badly encoded address: search it as it is.
+  }
+  return `${url} ${p.title ?? ""}`.toLowerCase();
 }

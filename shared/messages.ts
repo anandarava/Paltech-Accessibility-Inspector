@@ -24,6 +24,7 @@ import type {
   WcagVersion,
 } from "./types";
 import type { SiteScanOptions, SiteScanState } from "./site-crawl";
+import type { AssessmentKind, InstanceKind } from "./assessment";
 
 /** What the side panel sends for a manual contrast check; the service worker adds the rest. */
 export type ManualCheckInput = Omit<ManualCheck, "originalType" | "author" | "checkedAt">;
@@ -128,6 +129,8 @@ export type Message =
   | { type: "SITE_SCAN_SET_PAGES"; include?: Record<string, boolean>; add?: string[] }
   /** Scan the ticked pages that are still pending (also resumes a paused run). */
   | { type: "SITE_SCAN_START" }
+  /** Scan pages already scanned (or failed) again: the given indexes, or all of them. */
+  | { type: "SITE_SCAN_RESCAN"; indexes?: number[] }
   | { type: "SITE_SCAN_PAUSE" }
   | { type: "SITE_SCAN_STOP" }
   /** The full result of one scanned page (index into `pages`). */
@@ -135,6 +138,19 @@ export type Message =
   | { type: "SITE_SCAN_EXPORT"; format: ExportFormat }
   | { type: "SITE_SCAN_CLEAR" }
   | { type: "SITE_SCAN_STATE"; state: SiteScanState | null }
+  // ---- Manual assessment (Quick Assess, in a tab of its own) ----
+  /** Open (or bring forward) the assessment tab (Quick Assess by default) for the page in `tabId`. */
+  | { type: "ASSESS_OPEN"; tabId: number; kind?: AssessmentKind }
+  /** The elements an assisted requirement lists (answers Instance[]). */
+  | { type: "ASSESS_LIST"; tabId: number; kind: InstanceKind }
+  /**
+   * Bring the page forward, let the tester pick an element, optionally photograph it, then
+   * return to the tab `returnTabId`. Answers { selector, html, screenshot? } or null (cancelled).
+   */
+  | { type: "ASSESS_PICK"; tabId: number; screenshot: boolean; returnTabId?: number }
+  | { type: "CS_ASSESS_LIST"; kind: InstanceKind }
+  /** Scroll the element into view and answer its box (and redaction boxes) for a screenshot. */
+  | { type: "CS_ASSESS_SHOT_PREPARE"; selector: string }
   // ---- State queries ----
   | { type: "GET_LAST_RESULT"; tabId: number }
   | { type: "GET_SETTINGS" }

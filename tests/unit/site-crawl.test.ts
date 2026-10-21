@@ -12,6 +12,7 @@ import {
   isExcluded,
   makePage,
   normalizeUrl,
+  samePage,
   parseSitemap,
   rankPages,
   robotsSitemaps,
@@ -21,6 +22,36 @@ import {
 } from "@shared/site-crawl";
 
 describe("normalizeUrl", () => {
+  it("leaves out downloadable files, also with odd endings", () => {
+    for (const file of ["https://a.com/download/Hello%20World!.rtf", "https://a.com/download/notes.md", "https://a.com/download/tmpfkman1.tmp", "https://a.com/download/shell.txt%20jpg", "https://a.com/download/shell.txt::$DATA", "https://a.com/files/report.PDF"]) {
+      expect(normalizeUrl(file), file).toBeNull();
+    }
+    // An extension-like word inside a page name is not a file.
+    expect(normalizeUrl("https://a.com/learn/node.js-basics")).toBe("https://a.com/learn/node.js-basics");
+    expect(normalizeUrl("https://a.com/download/guide.html")).toBe("https://a.com/download/guide.html");
+  });
+
+  it("drops session ids in the path, and leaves out service descriptions, APIs and certificates", () => {
+    expect(normalizeUrl("https://a.com/bank/about.htm;jsessionid=4B706DBFC0A047C5")).toBe("https://a.com/bank/about.htm");
+    expect(normalizeUrl("https://a.com/bank/services/ParaBank;jsessionid=4B70?wsdl")).toBeNull();
+    expect(normalizeUrl("https://a.com/bank/services/bank?_type=xml&_wadl")).toBeNull();
+    expect(normalizeUrl("https://a.com/bank/soatest.pfx")).toBeNull();
+    expect(normalizeUrl("https://a.com/api/productsList")).toBeNull();
+    expect(normalizeUrl("https://a.com/app/api/users")).toBeNull();
+    expect(normalizeUrl("https://a.com/cdn-cgi/l/email-protection")).toBeNull();
+    // A page about the API is a page.
+    expect(normalizeUrl("https://a.com/api_list")).toBe("https://a.com/api_list");
+    expect(normalizeUrl("https://a.com/api")).toBe("https://a.com/api");
+  });
+
+  it("leaves out news feeds (RSS / Atom), which are not pages", () => {
+    for (const feed of ["https://a.blogspot.com/feeds/posts/default", "https://a.com/feed", "https://a.com/blog/feed/", "https://a.com/comments/feed", "https://a.com/rss", "https://a.com/?feed=rss2", "https://a.com/search?alt=rss"]) {
+      expect(normalizeUrl(feed), feed).toBeNull();
+    }
+    // Words that only contain "feed" or "rss" are pages.
+    expect(normalizeUrl("https://a.com/feedback")).toBe("https://a.com/feedback");
+    expect(normalizeUrl("https://a.com/news-feed-settings")).toBe("https://a.com/news-feed-settings");
+  });
   it("drops the fragment, tracking parameters and a trailing slash, and sorts the query", () => {
     expect(normalizeUrl("https://a.com/docs/?utm_source=x&b=2&a=1#intro")).toBe("https://a.com/docs?a=1&b=2");
     expect(normalizeUrl("https://a.com/")).toBe("https://a.com/");
@@ -37,6 +68,13 @@ describe("normalizeUrl", () => {
 });
 
 describe("templateKey", () => {
+  it("treats slugs ending in an id, and list pages, as ids; short step numbers as names", () => {
+    expect(templateKey("https://b.com/catalogue/a-light-in-the-attic_1000/index.html")).toBe("/catalogue/*/index.html");
+    expect(templateKey("https://b.com/catalogue/category/books/travel_2/index.html")).toBe("/catalogue/category/books/*/index.html");
+    expect(templateKey("https://b.com/catalogue/page-2.html")).toBe("/catalogue/*.html");
+    expect(templateKey("https://b.com/products/blue-shirt-48213")).toBe("/products/*");
+    expect(templateKey("https://b.com/checkout/step-2")).toBe("/checkout/step-2");
+  });
   it("groups pages that differ only by an id", () => {
     expect(templateKey("https://a.com/product/123")).toBe(templateKey("https://a.com/product/456"));
     expect(templateKey("https://a.com/product/123.html")).toBe("/product/*.html");
@@ -190,5 +228,14 @@ describe("navigation links", () => {
     expect(similarKey("https://s.com/hrms/leave", "/hrms/")).not.toBe(similarKey("https://s.com/hrms/attendance", "/hrms/"));
     expect(similarKey("https://s.com/about")).not.toBe(similarKey("https://s.com/contact"));
     expect(similarKey("https://s.com/app#/items/a")).toBe(similarKey("https://s.com/app#/items/b"));
+  });
+});
+
+describe("samePage", () => {
+  it("ignores case and a folder's index file", () => {
+    expect(samePage("https://b.com/", "https://b.com/index.html")).toBe(true);
+    expect(samePage("https://b.com/shop", "https://b.com/shop/Default.aspx")).toBe(true);
+    expect(samePage("https://b.com/SAML/x", "https://b.com/saml/x")).toBe(true);
+    expect(samePage("https://b.com/shop", "https://b.com/shop/cart.html")).toBe(false);
   });
 });

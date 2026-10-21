@@ -55,6 +55,7 @@ import { downloadText } from "./offscreen-client";
 import { captureIssueEvidence } from "./evidence";
 import { deleteSavedScan, getSavedScan, listSavedScans, renameSavedScan, saveScan } from "./storage";
 import { handleSiteScanMessage, initSiteScan, isSiteScanMessage, isSiteScanTab } from "./site-scan";
+import { listAssessInstances, notifyPicked, openAssessment, pickForAssessment } from "./assess";
 
 const RULES_FILE = rulesJson as RulesFile;
 /** Tabs where the Contrast checker turned on focus emulation (COLOR_PREPARE with focus). */
@@ -781,6 +782,7 @@ async function handleMessage(msg: Message, sender: Sender): Promise<unknown> {
     const withTab = { ...msg, tabId: senderTabId } as Message;
     broadcast(withTab);
     if (withTab.type === "PAGE_CHANGED") void maybeAutoRescan(senderTabId);
+    if (withTab.type === "PICKER_RESULT") notifyPicked(senderTabId, withTab.selector, withTab.html);
     if (withTab.type === "KEYBOARD_TEST_RESULT" && withTab.result?.trapDetected) {
       // Guided mode: the content script found the trap; record KBD-02 exactly like
       // (awaited so SCAN_RESULT follows the KEYBOARD_TEST_RESULT).
@@ -800,6 +802,20 @@ async function handleMessage(msg: Message, sender: Sender): Promise<unknown> {
       return startScan(msg.tabId, msg.options);
 
     case "SITE_SCAN_STATE":
+      return undefined;
+
+    case "ASSESS_OPEN":
+      return openAssessment(msg);
+
+    case "ASSESS_LIST":
+      return listAssessInstances(msg);
+
+    case "ASSESS_PICK":
+      return pickForAssessment(msg, await getSettings());
+
+    case "CS_ASSESS_LIST":
+    case "CS_ASSESS_SHOT_PREPARE":
+      // Content-script messages; the service worker sends them, never answers them.
       return undefined;
 
     case "SCAN_PROGRESS":

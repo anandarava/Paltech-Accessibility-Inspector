@@ -84,6 +84,7 @@ export default defineConfig({
         offscreen: r("./src/offscreen/index.html"),
         devtools: r("./src/devtools/index.html"),
         devtoolsPanel: r("./src/devtools/panel.html"),
+        assessment: r("./src/assessment/index.html"),
       },
     },
   },

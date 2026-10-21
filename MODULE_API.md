@@ -323,7 +323,8 @@ include that expected-results manifest.
   - A service-worker restart turns a running scan into "paused"; closing the window pauses it.
 - Messages (UI -> SW): `SITE_SCAN_GET`, `SITE_SCAN_DISCOVER {url, options}`,
   `SITE_SCAN_SET_PAGES {include?, add?}` (adding a listed page ticks it), `SITE_SCAN_START`
-  (also resumes), `SITE_SCAN_PAUSE`, `SITE_SCAN_STOP`, `SITE_SCAN_RESULT {index}`,
+  (also resumes), `SITE_SCAN_RESCAN {indexes?}` (scanned or failed pages again, only those, keeping
+  their last figures in `previous`), `SITE_SCAN_PAUSE`, `SITE_SCAN_STOP`, `SITE_SCAN_RESULT {index}`,
   `SITE_SCAN_EXPORT {format}` (multi-page report of the scanned pages), `SITE_SCAN_CLEAR`.
   Every change is broadcast as `SITE_SCAN_STATE {state}`.
 - One row per screen: `addPage` leaves out (and counts in `found.details`) any non-manual page whose
@@ -338,3 +339,37 @@ include that expected-results manifest.
 - `ScanOptions.skipRules`: rule ids treated as disabled for that scan only (`disabledRuleIds`).
 - Side panel: `SiteScan.tsx` (view `"site"`, opened from the start screen's **Scan whole site** or the action row); **View** opens a page's result through
   `openSaved` with id `<site id>:<index>`, and the banner then offers **Back to site scan**.
+
+## Manual assessment (Quick Assess and Full Assessment)
+
+- `shared/assessment-catalogue.ts`: every requirement once; `FULL_TESTS` (23 tests, the order of the
+  Full Assessment), `FULL_REQUIREMENTS`, `QUICK_REQUIREMENTS` (the same objects, so ids are shared)
+  and `locate(id)` (test and "1.3" number). A unit test checks every WCAG 2.2 A/AA criterion except
+  4.1.1 is covered.
+- `AssessmentState.kind` is "quick" or "full"; `storageKey(url, kind)` = `assessment:<kind>:<url>`;
+  `requirementsFor(kind)`, `moveToFull(quick, full?)` (shared requirements keep an existing Full
+  result). `ASSESS_OPEN {tabId, kind?}` opens `index.html?tabId=…&kind=full`; one tab per page and
+  kind. `src/assessment/FullAssessment.tsx`: `FullNav`, `FullOverview`, `TestView` (#test/<id>).
+
+- `shared/assessment.ts` (pure, unit-tested): `QUICK_ASSESS` (10 requirements: kind `manual` or
+  `assisted`, WCAG, steps, `helper`, `instances` kind, fix), `AssessmentState` (one page, saved in
+  `chrome.storage.local` under `storageKey(url)` = `assessment:quick:<url without #>`),
+  `requirementStatus` (manual: the verdict; assisted: any failed instance fails, all passed
+  passes; none on the page: the verdict), `summarize`, `failuresOf`, `parseAssessment` (loading a
+  file), `criteriaConformance(state)` (per success criterion: Supports / Partially supports /
+  Does not support / Not evaluated), `buildAssessmentHtml(state, ReportOptions)` (summary,
+  numbered issue cards with High / Medium filters and CSV copy, and with `criteriaTable` (default
+  true) an ACR / VPAT style appendix; `preparedBy` prints "Assessed by"), `buildAssessmentJson`
+  (with `byCriterion`).
+- `src/content/assess.ts`: `listInstances(kind)` for links, images, headings, fields and controls
+  (visible ones, selector, name, detail).
+- Messages: `ASSESS_OPEN {tabId}` opens (or brings forward) `src/assessment/index.html?tabId=…`;
+  `ASSESS_LIST {tabId, kind}` → `CS_ASSESS_LIST`; `ASSESS_PICK {tabId, screenshot, returnTabId}`
+  brings the page forward, runs the element picker, photographs the element
+  (`CS_ASSESS_SHOT_PREPARE`, captureVisibleTab, offscreen crop) and returns to the assessment tab.
+  Visual helpers reuse `KEYBOARD_TEST_START/STOP` with `TOGGLE_OVERLAY` "taborder" (the overlay
+  now numbers each stop live), "headings", "landmarks", and `HIGHLIGHT_SELECTORS`.
+- `src/assessment/AssessmentApp.tsx`: the tab (Overview, requirement pages, failure and export
+  dialogs); `src/background/assess.ts`: the service-worker side; side panel
+  `components/ManualView.tsx`: `useTestingMode` (`chrome.storage.local` `testingMode`),
+  `ModeChoice`, `ModeSwitch`, `ManualView`.
