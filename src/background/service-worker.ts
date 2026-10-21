@@ -54,6 +54,8 @@ import {
 import { downloadText } from "./offscreen-client";
 import { captureIssueEvidence } from "./evidence";
 import { deleteSavedScan, getSavedScan, listSavedScans, renameSavedScan, saveScan } from "./storage";
+import { handleSiteScanMessage, initSiteScan, isSiteScanMessage, isSiteScanTab } from "./site-scan";
+import { listAssessInstances, notifyPicked, openAssessment, pickForAssessment } from "./assess";
 
 const RULES_FILE = rulesJson as RulesFile;
 /** Tabs where the Contrast checker turned on focus emulation (COLOR_PREPARE with focus). */
@@ -505,7 +507,8 @@ function startScan(tabId: number, options: ScanOptions | undefined): Promise<Sca
 }
 
 async function maybeAutoRescan(tabId: number): Promise<void> {
-  if (scansInProgress.has(tabId)) return;
+  // The site scan drives its own tab's scans.
+  if (scansInProgress.has(tabId) || isSiteScanTab(tabId)) return;
   const [settings, last] = await Promise.all([getSettings(), getLastResult(tabId)]);
   if (!settings.autoRescan || !last) return;
   // Without host access (e.g. activeTab revoked by a cross-origin navigation) the
@@ -779,6 +782,7 @@ async function handleMessage(msg: Message, sender: Sender): Promise<unknown> {
     const withTab = { ...msg, tabId: senderTabId } as Message;
     broadcast(withTab);
     if (withTab.type === "PAGE_CHANGED") void maybeAutoRescan(senderTabId);
+    if (withTab.type === "PICKER_RESULT") notifyPicked(senderTabId, withTab.selector, withTab.html);
     if (withTab.type === "KEYBOARD_TEST_RESULT" && withTab.result?.trapDetected) {
       // Guided mode: the content script found the trap; record KBD-02 exactly like
       // (awaited so SCAN_RESULT follows the KEYBOARD_TEST_RESULT).
@@ -791,9 +795,28 @@ async function handleMessage(msg: Message, sender: Sender): Promise<unknown> {
     return undefined;
   }
 
+  if (isSiteScanMessage(msg)) return handleSiteScanMessage(msg);
+
   switch (msg.type) {
     case "SCAN_START":
       return startScan(msg.tabId, msg.options);
+
+    case "SITE_SCAN_STATE":
+      return undefined;
+
+    case "ASSESS_OPEN":
+      return openAssessment(msg);
+
+    case "ASSESS_LIST":
+      return listAssessInstances(msg);
+
+    case "ASSESS_PICK":
+      return pickForAssessment(msg, await getSettings());
+
+    case "CS_ASSESS_LIST":
+    case "CS_ASSESS_SHOT_PREPARE":
+      // Content-script messages; the service worker sends them, never answers them.
+      return undefined;
 
     case "SCAN_PROGRESS":
     case "SCAN_ERROR":
@@ -1161,6 +1184,18 @@ chrome.runtime.onStartup.addListener(() => {
   configureSidePanel();
 });
 configureSidePanel();
+
+initSiteScan({
+  scan: (tabId, options) => startScan(tabId, options),
+  scanOptions: async () => defaultScanOptions(await getSettings()),
+  exportResults: async (format, results) => {
+    const file = buildMultiPageReport(format, results, await reportMeta());
+    await downloadText(file.filename, file.mime, file.content);
+    return { filename: file.filename };
+  },
+  broadcast,
+  keepAlive,
+});
 
 chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse: (r: Response) => void) => {
   if (!isMessage(raw)) {

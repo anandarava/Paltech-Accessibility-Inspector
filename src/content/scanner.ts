@@ -69,10 +69,11 @@ export function resolveScanRoot(options: ScanOptions): Document | Element | null
   return document;
 }
 
-/** Rule ids (project ids, and raw axe ids) disabled by config or by the rules file. */
-export function disabledRuleIds(rulesFile: RulesFile, ruleConfig: RuleConfig): Set<string> {
+/** Rule ids (project ids, and raw axe ids) disabled by config, by the rules file, or skipped by this scan. */
+export function disabledRuleIds(rulesFile: RulesFile, ruleConfig: RuleConfig, options?: Pick<ScanOptions, "skipRules">): Set<string> {
   const disabled = new Set<string>(ruleConfig.disabled ?? []);
   for (const rule of rulesFile.rules) if (rule.enabled === false) disabled.add(rule.id);
+  for (const id of options?.skipRules ?? []) disabled.add(id);
   return disabled;
 }
 
@@ -232,7 +233,7 @@ export async function runCustomRule(
   extras: ScanContextExtras,
   progress: (p: number) => void = () => undefined,
 ): Promise<Issue[]> {
-  const disabled = disabledRuleIds(rulesFile, ruleConfig);
+  const disabled = disabledRuleIds(rulesFile, ruleConfig, options);
   const ctx = makeRuleContext(root, rule, ruleConfig, extras, progress, options.wcagLevel ?? "AA");
   const findings = await rule.run(ctx);
   const safeFindings = (Array.isArray(findings) ? findings : []).filter((f) => f && f.element instanceof Element && !extras.isExtensionNode(f.element));
@@ -433,7 +434,7 @@ export async function scanFrame(options: ScanOptions, rulesFile: RulesFile, rule
       }
       return { issues: [], passedRules: [], passedRuleSeverity: {}, inapplicableRules: [], frameUrl, isTop, durationMs: Math.round(performance.now() - started) };
     }
-    const disabled = disabledRuleIds(rulesFile, ruleConfig);
+    const disabled = disabledRuleIds(rulesFile, ruleConfig, options);
 
     // ---- axe-core -------------------------------------------------------
     safeProgress(5, "Running axe-core");

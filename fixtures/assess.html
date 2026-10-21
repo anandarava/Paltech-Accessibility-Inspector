@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Assessment fixture: checkout</title></head>
+<body>
+<!-- Quick Assess fixture: known links, images, headings, fields and controls for the assisted requirements. -->
+<header><nav aria-label="Main"><a href="/cart">Return to cart</a> <a href="/help/shipping">Shipping policy</a></nav></header>
+<main>
+  <h1>Checkout</h1>
+  <p>By paying you agree to our terms. <a href="/terms">Click here</a></p>
+  <img src="/img/logo.png" alt="Example Store home" width="40" height="40">
+  <img src="/img/divider.png" alt="" width="40" height="4">
+  <img src="/img/card-icons.png" width="40" height="20">
+  <h2>Delivery</h2>
+  <label for="name">Full name</label> <input id="name" required>
+  <input id="postcode" placeholder="Postcode">
+  <h4>Payment</h4>
+  <button type="button">Pay now</button>
+</main>
+<script>
+  // The images do not exist on the fixture server: give them a size so they count as rendered.
+  for (const img of document.images) img.style.background = "#ccc";
+</script>
+</body>
+</html>

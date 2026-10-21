@@ -18,6 +18,7 @@ import { fingerprint, textSnippet } from "./fingerprint";
 import { accessibleName, boundingBoxes, fingerprintSelector, getFocusableElements, isExtensionNode, resolveSelector, uniqueSelector } from "./dom-utils";
 import { cancelPicker, startPicker } from "./picker";
 import { elementColors } from "./color-pick";
+import { listInstances } from "./assess";
 
 declare global {
   interface Window {
@@ -65,6 +66,8 @@ const HANDLED_TYPES = new Set<string>([
   "CS_COLOR_PREPARE",
   "CS_COLOR_RESTORE",
   "CS_ELEMENT_COLORS",
+  "CS_ASSESS_LIST",
+  "CS_ASSESS_SHOT_PREPARE",
 ]);
 
 /** Overlay-related messages: child frames have no overlay and stay silent so the top frame answers. */
@@ -85,6 +88,8 @@ const TOP_ONLY_TYPES = new Set<string>([
   "CS_COLOR_PREPARE",
   "CS_COLOR_RESTORE",
   "CS_ELEMENT_COLORS",
+  "CS_ASSESS_LIST",
+  "CS_ASSESS_SHOT_PREPARE",
 ]);
 
 /**
@@ -642,6 +647,14 @@ function recordGuidedStep(session: GuidedSession, el: Element | null): void {
   const step = describeElement(el, session.path.length);
   session.path.push(step);
   sendEvent({ type: "KEYBOARD_TEST_PROGRESS", step: step.index, selector: step.selector });
+  // While the tab-order overlay is showing (the assessment's focus helper), number each stop as it happens.
+  if (overlay?.getMode() === "taborder") {
+    try {
+      overlay.drawTabOrder(session.path, session.trapElements);
+    } catch {
+      /* the overlay must not break the test */
+    }
+  }
 
   const start = session.path[0];
   if (session.path.length > 2 && start && step.selector === start.selector) {
@@ -1198,6 +1211,23 @@ async function handle(msg: Message): Promise<Handled> {
 
     case "CS_SET_ISSUE_STATUS":
       return handleSetIssueStatus(msg.issueId, msg.status, msg.reason);
+
+    case "CS_ASSESS_LIST":
+      return ok(listInstances(msg.kind));
+
+    case "CS_ASSESS_SHOT_PREPARE": {
+      const el = resolveSelector(msg.selector);
+      if (!el) return fail(ELEMENT_GONE);
+      saveScrollState(el);
+      try {
+        el.scrollIntoView({ block: "center", inline: "center", behavior: "instant" as ScrollBehavior });
+      } catch {
+        /* ignore */
+      }
+      await nextFrame();
+      await nextFrame();
+      return ok({ box: topViewportBox(el), redactBoxes: redactionBoxes(raw), devicePixelRatio: window.devicePixelRatio || 1 });
+    }
 
 
     case "KEYBOARD_TEST_START": {

@@ -293,3 +293,83 @@ include that expected-results manifest.
 - Storage and rescans: checks are stored per origin under `manualChecks:<origin>`, keyed by
   fingerprint, and reapplied after every scan (`applyManualChecks`). `IGNORE_REMOVE` also
   drops a "pass" check.
+
+## Site scan
+
+- `shared/site-crawl.ts` (pure, unit-tested): types (`SiteScanOptions`, `SitePage`, `SiteScanState`),
+  `normalizeUrl` (no tracking parameters, sorted query, no trailing slash; a `#/route` or
+  `#!/route` is kept as a page, any other fragment dropped; null for other protocols and files),
+  `hashRoute`, `isExcluded`, `templateKey` (ids become `*`, query ignored, lower case), `samePage`
+  (case-insensitive), `groupTemplates` (a folder with `SIBLING_THRESHOLD` or more sitemap pages
+  becomes one template; menu-found pages are never folded), `extractLinks`,
+  `parseSitemap`, `robotsSitemaps`, `rankPages` (start page, linked pages, deeper links, then
+  sitemap-only pages) and `choosePages` (ticks up to `maxPages`, `perTemplate` per template; keeps
+  pages the tester ticked or unticked, `userSet`).
+- `src/background/site-scan.ts`: one site scan at a time, state in `chrome.storage.local` under
+  `siteScan:state`, each page's `ScanResult` under `siteScan:result:<id>:<index>`.
+  - Discovery: sitemaps (robots.txt, /sitemap.xml, indexes; up to 5000 pages), the start page's
+    links rendered (in the scan window) and from its HTML, then breadth-first to `maxDepth`, with
+    the tester's cookies. When the rendered start page has over twice the links of its HTML
+    (a script-built app), deeper pages are read rendered too (up to 60), and an address that
+    redirects after loading is marked skipped with its landing page listed instead; otherwise
+    deeper pages are fetched. Only `perTemplate` pages of each template are read for links
+    (the rest of /product/* stays listed, unopened). Opening another `#/route` of the same document waits for the
+    route to commit and reloads the tab, so each route is scanned from a fresh load. `options.within` keeps discovery inside one folder. A sitemap page
+    that is also linked is ranked as linked.
+  - Scanning: a normal window of its own (background tabs are throttled), one page at a time:
+    load, wait for `complete` plus 2.5 s, add the rendered page's links, run the normal scan
+    (`startScan`; `options.quick`, no longer offered in the panel, passes `ScanOptions.skipRules = SLOW_RULE_IDS`). Off-site redirects
+    and redirects to an already-scanned page are skipped. Auto-rescan is off for that tab.
+  - A service-worker restart turns a running scan into "paused"; closing the window pauses it.
+- Messages (UI -> SW): `SITE_SCAN_GET`, `SITE_SCAN_DISCOVER {url, options}`,
+  `SITE_SCAN_SET_PAGES {include?, add?}` (adding a listed page ticks it), `SITE_SCAN_START`
+  (also resumes), `SITE_SCAN_RESCAN {indexes?}` (scanned or failed pages again, only those, keeping
+  their last figures in `previous`), `SITE_SCAN_PAUSE`, `SITE_SCAN_STOP`, `SITE_SCAN_RESULT {index}`,
+  `SITE_SCAN_EXPORT {format}` (multi-page report of the scanned pages), `SITE_SCAN_CLEAR`.
+  Every change is broadcast as `SITE_SCAN_STATE {state}`.
+- One row per screen: `addPage` leaves out (and counts in `found.details`) any non-manual page whose
+  `templateKey` has an id (`*`), and any whose template is already listed. `perTemplate` is fixed at 1
+  (no longer in the panel); `maxPages` defaults to 100.
+- Navigation-first discovery (`options.allLinks` off, the default): `renderedLinks` and
+  `extractLinkInfo` mark each link `nav` when it sits inside `NAV_SELECTOR` (nav, header, footer,
+  aside, navigation / tablist / menu roles, breadcrumbs). Navigation links are listed; a content
+  link is listed only as the first page of its kind (`templateKey` with an id: one page;
+  `similarKey` folder of named pages: up to 3), and further ones increment that page's `similar`.
+  A page without any navigation has all its links treated as navigation.
+- `ScanOptions.skipRules`: rule ids treated as disabled for that scan only (`disabledRuleIds`).
+- Side panel: `SiteScan.tsx` (view `"site"`, opened from the start screen's **Scan whole site** or the action row); **View** opens a page's result through
+  `openSaved` with id `<site id>:<index>`, and the banner then offers **Back to site scan**.
+
+## Manual assessment (Quick Assess and Full Assessment)
+
+- `shared/assessment-catalogue.ts`: every requirement once; `FULL_TESTS` (23 tests, the order of the
+  Full Assessment), `FULL_REQUIREMENTS`, `QUICK_REQUIREMENTS` (the same objects, so ids are shared)
+  and `locate(id)` (test and "1.3" number). A unit test checks every WCAG 2.2 A/AA criterion except
+  4.1.1 is covered.
+- `AssessmentState.kind` is "quick" or "full"; `storageKey(url, kind)` = `assessment:<kind>:<url>`;
+  `requirementsFor(kind)`, `moveToFull(quick, full?)` (shared requirements keep an existing Full
+  result). `ASSESS_OPEN {tabId, kind?}` opens `index.html?tabId=…&kind=full`; one tab per page and
+  kind. `src/assessment/FullAssessment.tsx`: `FullNav`, `FullOverview`, `TestView` (#test/<id>).
+
+- `shared/assessment.ts` (pure, unit-tested): `QUICK_ASSESS` (10 requirements: kind `manual` or
+  `assisted`, WCAG, steps, `helper`, `instances` kind, fix), `AssessmentState` (one page, saved in
+  `chrome.storage.local` under `storageKey(url)` = `assessment:quick:<url without #>`),
+  `requirementStatus` (manual: the verdict; assisted: any failed instance fails, all passed
+  passes; none on the page: the verdict), `summarize`, `failuresOf`, `parseAssessment` (loading a
+  file), `criteriaConformance(state)` (per success criterion: Supports / Partially supports /
+  Does not support / Not evaluated), `buildAssessmentHtml(state, ReportOptions)` (summary,
+  numbered issue cards with High / Medium filters and CSV copy, and with `criteriaTable` (default
+  true) an ACR / VPAT style appendix; `preparedBy` prints "Assessed by"), `buildAssessmentJson`
+  (with `byCriterion`).
+- `src/content/assess.ts`: `listInstances(kind)` for links, images, headings, fields and controls
+  (visible ones, selector, name, detail).
+- Messages: `ASSESS_OPEN {tabId}` opens (or brings forward) `src/assessment/index.html?tabId=…`;
+  `ASSESS_LIST {tabId, kind}` → `CS_ASSESS_LIST`; `ASSESS_PICK {tabId, screenshot, returnTabId}`
+  brings the page forward, runs the element picker, photographs the element
+  (`CS_ASSESS_SHOT_PREPARE`, captureVisibleTab, offscreen crop) and returns to the assessment tab.
+  Visual helpers reuse `KEYBOARD_TEST_START/STOP` with `TOGGLE_OVERLAY` "taborder" (the overlay
+  now numbers each stop live), "headings", "landmarks", and `HIGHLIGHT_SELECTORS`.
+- `src/assessment/AssessmentApp.tsx`: the tab (Overview, requirement pages, failure and export
+  dialogs); `src/background/assess.ts`: the service-worker side; side panel
+  `components/ManualView.tsx`: `useTestingMode` (`chrome.storage.local` `testingMode`),
+  `ModeChoice`, `ModeSwitch`, `ManualView`.

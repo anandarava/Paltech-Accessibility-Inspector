@@ -12,10 +12,11 @@ A guide for testers and developers who use the extension day to day.
 6. [Scan options](#6-scan-options)
 7. [Overlay and colour-blindness simulation](#7-overlay-and-colour-blindness-simulation)
 8. [Keyboard test](#8-keyboard-test) (and the [Contrast checker](#contrast-checker))
-9. [Save, compare, rescan and reset](#9-save-compare-rescan-and-reset)
+9. [Save, compare, rescan and reset](#9-save-compare-rescan-and-reset) (and [Site scan](#site-scan))
 10. [Export reports](#10-export-reports)
 11. [Options page](#11-options-page)
 12. [Limits and troubleshooting](#12-limits-and-troubleshooting)
+13. [Manual testing: Quick Assess and Full Assessment](#13-manual-testing-quick-assess-and-full-assessment)
 
 ---
 
@@ -213,6 +214,26 @@ The result is kept for the site and applied again when you rescan. It shows on t
 
 **Reset** (footer) clears the current tab's results, filters, keyboard test and on-page highlights so you can start again. Saved scans, baselines, ignore lists and settings are kept. It asks for confirmation first.
 
+### Site scan
+
+Scan many pages of one application from its address. Open it with **Scan whole site** on the start screen, or **Site scan** in the action row.
+
+1. **Set up.** Enter the application's address (it starts with the current tab's address) and **Pages to scan** (default 100). **More options** holds the rest:
+   - **Only pages under**: keeps the scan inside one application when several share the address. Filled in from a deep address (`https://apps.example.com/hrms/dashboard` gives `/hrms/`); empty scans the whole site.
+   - **Link depth**: how many clicks from the start page to follow (default 3).
+   - **Use the site's sitemap**: also read `robots.txt` and `sitemap.xml`.
+   - **Follow every link**: off by default; PalTech then follows the site's navigation (menus, header, footer, sidebars, tabs, breadcrumbs), and links in the page content add a page only when it is a new kind of page.
+   - **Skip addresses containing**: log-out, delete, unsubscribe, language-switch and similar links are never opened, since opening them changes data or the account's settings. Add your own (for example `/admin/*`).
+
+   The list keeps **one row per screen**. Detail pages, whose address carries an id (`/products/1`, `/Event/EventDetails/226492`), are left out so that the screen itself (`/products`) is scanned, and so are other views of a listed screen (`/report?status=3` when `/report` is listed). The summary says how many were left out; add any of them by hand.
+2. **Find pages.** PalTech reads the sitemap, opens the start page to read its menus (including ones built by script), and follows links. In an application built by script (Angular, React and similar), where the pages' HTML has no links, it opens each page in the scan window to read its menus and tabs. A menu address that only redirects to another page (for example `/me` to `/me/time-sheet`) is listed as "Redirects to …" and not scanned twice. In hash-routed apps (addresses like `app.example.com/#/leave`), each `#/route` is its own page and is loaded fresh before it is scanned; plain `#section` links are not pages. It uses your browser's sign-in, so sign in to the application first to reach pages behind a login.
+3. **Review the list.** The start page and its menu pages come first; the rest are ticked up to the page limit. Unticked pages say why ("Similar to 3 pages already listed", "Over the page limit"). Tick or untick pages, or type an address or path (`/checkout/step-2`) in **Add a page** for pages no link reaches. To check whether a page was found, type part of its address or title in **Search pages**; the list narrows as you type and shows how many pages match. If nothing matches, the page was not found and you can add it.
+4. **Scan.** Pages open one at a time in a separate window. Leave it open; it can sit behind other windows but must not be minimised. Links the rendered pages show are added to the list as the scan goes. **Pause** and **Stop** act between pages; **Resume** continues. If the window is closed or the browser restarts, the run pauses and can be resumed.
+5. **Results.** Each page shows its score, issues, items to review and scan time. **View** opens that page's results read-only in the panel (**Back to site scan** returns). **Export report** downloads one HTML report for all scanned pages (or **JSON**). **New site scan** clears the run.
+6. **Rescan after fixes.** **Rescan all** scans every scanned page again, and **Rescan** on a row scans just that page, with no need to find the pages again. Each page shows what changed since its last scan, for example *Score 91 (was 88) · 12 (was 18) issues*, and the report uses the new results.
+
+Pages reached only by filling in forms, opening dialogs or following e-mailed links are not found automatically: add them by hand.
+
 ## 10. Export reports
 
 Use **Export** in the footer to download the current scan.
@@ -275,3 +296,26 @@ Changes are saved with the **Save** button. Settings changed in the side panel a
 | A yellow bar says the extension "started debugging this browser" | This is expected during a scan. To check focus indicators, the extension makes the page behave as if it had keyboard focus (the side panel has it while you work), then switches this off. The bar closes when the scan ends. If you cancel it, focus indicators are not checked and one note appears under **Needs review**. |
 
 **Privacy.** Scanning runs entirely in your browser and the extension makes no network requests of its own. Screenshots are taken only when you ask for them, input values are masked and elements matching your redaction selectors (by default password fields and `.pii`) are blurred before an image is stored.
+
+## 13. Manual testing: Quick Assess and Full Assessment
+
+Automated checks find about a third of accessibility problems; the rest need a person. **Quick Assess** guides you through 10 key requirements by hand; **Full Assessment** covers every WCAG 2.2 A and AA success criterion that needs a person, in 23 tests and 85 requirements.
+
+**Choose the mode.** The first time the panel opens it asks **How do you want to test?**: **Automated** (the scans in this guide) or **Manual**. Tick **Remember my choice** to skip the question next time. Switch at any time with **Automated | Manual** at the top of the panel.
+
+**Start.** In Manual mode, open the page you want to test and click **Quick Assess** or **Full Assessment**. Each opens in a tab of its own next to the page, tied to that page. When an assessment of the page is in progress, the panel shows its progress and a **Continue** button.
+
+**The assessment tab.**
+
+- **Overview**: progress, the number of requirements passed, failed and still to do, and **Start** / **Up next**. The left side lists the 10 requirements with a ✓ or ✕ once they have a result.
+- **A requirement**: what it means, its WCAG criterion, **How to test** (steps), and a **Visual helper** that marks things on the page while it is on (the focus path numbered as you press Tab, headings, landmarks, or the elements listed).
+  - **Manual** requirements (Keyboard navigation, Focus order, Missing headings, Bypass blocks, Reflow): choose **Pass** or **Fail**. For a failure, **Add a failure instance**: describe it and, optionally, **Pick on page**: the page comes forward, you click the element, and you return with its selector and a screenshot.
+  - **Assisted** requirements (Link purpose, Image function, UI component contrast, Heading level, Instructions): PalTech lists the links, images, controls, headings or form fields on the page. Mark each **Pass** or **Fail** (add why it fails), use **Show** to find one on the page, and **Pass unmarked instances** to pass the rest. **Refresh list** reads the page again (for example after opening a menu).
+- **Top bar**: **Export result** (an HTML report or JSON by WCAG success criterion, with or without screenshots; see *The assessment report* below), **Download** (a .json file of the assessment), **Load** (a downloaded file), **Start over**. Quick Assess also has **Move to Full Assessment**: it opens the Full Assessment of the page with your Quick Assess results already in it (the 10 Quick Assess requirements are part of the Full Assessment).
+
+**The assessment report.** The HTML report has three parts. **Summary** (for team leads and clients): the verdict, passed / failed / not tested, results by WCAG principle, the top issues to fix first, what was tested and next steps. **Issues to fix**: one numbered card per failing instance (A11Y-001, …) with its screenshot, requirement, element, what was expected and how to fix it; filter by **High** (Level A) or **Medium** (Level AA), or **Copy all as CSV** to paste into a bug tracker. **Appendix** (optional, on by default): conformance by WCAG success criterion in ACR / VPAT style (Supports, Partially supports, Does not support, Not evaluated) with remarks. In the Export dialog, **Assessed by** puts your name on the report (it is remembered), and the appendix checkbox turns the appendix on or off.
+
+**Full Assessment.** The Overview shows the progress, **Continue** (the next requirement to do), filters (All, In progress, Failed, Not started) and a card per test with a bar for its requirements. On the left, the 23 tests: the one you are in opens as a dropdown with **Getting started** (what the test covers, its WCAG criteria and its checks) and its numbered checks (1.1, 1.2 …) with ✓, ✕ or an empty circle. Requirement pages work as in Quick Assess; **Next** carries on into the next test.
+
+Results are saved for the page as you go, so you can close the tab and continue later. **Load saved assessment** in the panel loads a downloaded file for the page that is open.
+
