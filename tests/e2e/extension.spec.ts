@@ -1064,12 +1064,13 @@ test.describe("PalTech A11y Inspector extension", () => {
     const paths = (pages: SiteScanState["pages"]) => pages.map((p) => p.url.replace(baseUrl, ""));
     const listed = paths(state.pages);
     // Links, the script-built link (rendered page only) and the sitemap-only page are found; the
-    // log-out link, the PDF, the mailto: link and the product detail pages (/products/1 …) are not.
-    expect(listed.sort()).toEqual(["/site/about.html", "/site/contact.html", "/site/hidden.html", "/site/index.html"]);
+    // log-out link, the PDF and the mailto: link are not. The product pages (/products/1 …) are in
+    // the menu: the first is listed as the example of that screen, the others are left out.
+    expect(listed.sort()).toEqual(["/site/about.html", "/site/contact.html", "/site/hidden.html", "/site/index.html", "/site/products/1.html"]);
     expect(state.found.excluded).toBeGreaterThan(0);
-    expect(state.found.details).toBe(4);
+    expect(state.found.details).toBe(3);
     // Ticked up to the page limit: start page, menu links, then the sitemap-only page.
-    expect(state.pages.filter((p) => p.include)).toHaveLength(4);
+    expect(state.pages.filter((p) => p.include)).toHaveLength(5);
 
     // Untick one, add a detail page by hand.
     const changed = await sendToBackground<SiteScanState>(panel, {
@@ -1083,7 +1084,7 @@ test.describe("PalTech A11y Inspector extension", () => {
     state = await waitFor(["done", "stopped", "paused"]);
     expect(state.phase).toBe("done");
     const done = state.pages.filter((p) => p.status === "done");
-    expect(paths(done).sort()).toEqual(["/site/about.html", "/site/contact.html", "/site/index.html", "/site/products/3.html"]);
+    expect(paths(done).sort()).toEqual(["/site/about.html", "/site/contact.html", "/site/index.html", "/site/products/1.html", "/site/products/3.html"]);
     expect(state.pages.find((p) => p.url.endsWith("/hidden.html"))?.status).toBe("pending");
     const about = state.pages.findIndex((p) => p.url.endsWith("/site/about.html"));
     const result = await sendToBackground<ScanResult>(panel, { type: "SITE_SCAN_RESULT", index: about });
@@ -1102,7 +1103,7 @@ test.describe("PalTech A11y Inspector extension", () => {
     // Rescan all: every scanned page again.
     expect((await sendToBackground(panel, { type: "SITE_SCAN_RESCAN" })).ok).toBe(true);
     state = await waitFor(["done"]);
-    expect(state.pages.filter((p) => p.status === "done" && p.previous)).toHaveLength(4);
+    expect(state.pages.filter((p) => p.status === "done" && p.previous)).toHaveLength(5);
 
     // Search box: finds a page by part of its address, and says when nothing matches.
     await panel.reload({ waitUntil: "load" });
@@ -1112,11 +1113,11 @@ test.describe("PalTech A11y Inspector extension", () => {
     await search.fill("ABOUT");
     await expect(list.getByRole("listitem")).toHaveCount(1);
     await expect(list).toContainText("about.html");
-    await expect(panel.getByText("1 of 5 pages match")).toBeVisible();
+    await expect(panel.getByText("1 of 6 pages match")).toBeVisible();
     await search.fill("no-such-page");
     await expect(list).toContainText("No page matches “no-such-page”. It was not found; you can add it above.");
     await search.fill("");
-    await expect(list.getByRole("listitem")).toHaveCount(5);
+    await expect(list.getByRole("listitem")).toHaveCount(6);
 
     const cleared = await sendToBackground(panel, { type: "SITE_SCAN_CLEAR" });
     expect(cleared.ok, cleared.error).toBe(true);
@@ -1144,6 +1145,89 @@ test.describe("PalTech A11y Inspector extension", () => {
     expect(team.error).toBe("Redirects to /app/org-tree.html");
     expect(state.found.excluded).toBeGreaterThan(0); // /site/about.html is outside /app/
     expect((await sendToBackground(panel, { type: "SITE_SCAN_CLEAR" })).ok).toBe(true);
+  });
+
+  test("site scan: pages of a script-built app are read in several windows at once, with the same result", async () => {
+    test.setTimeout(150_000);
+    const windows = () => panel.evaluate(async () => (await chrome.windows.getAll()).length);
+    const before = await windows();
+    const run = async (parallel: number) => {
+      const found = await sendToBackground<SiteScanState>(panel, {
+        type: "SITE_SCAN_DISCOVER",
+        url: `${baseUrl}/app/home.html`,
+        options: { maxPages: 20, maxDepth: 3, perTemplate: 0, useSitemap: false, exclude: [], within: "/app/", quick: true, parallel },
+      });
+      expect(found.ok, found.error).toBe(true);
+      let most = 0;
+      await expect
+        .poll(
+          async () => {
+            most = Math.max(most, (await windows()) - before);
+            return (await sendToBackground<SiteScanState | null>(panel, { type: "SITE_SCAN_GET" })).data?.phase;
+          },
+          { timeout: 120_000, intervals: [200] },
+        )
+        .toBe("review");
+      const state = (await sendToBackground<SiteScanState>(panel, { type: "SITE_SCAN_GET" })).data!;
+      expect((await sendToBackground(panel, { type: "SITE_SCAN_CLEAR" })).ok).toBe(true);
+      return { most, pages: state.pages.map((p) => `${p.url.replace(baseUrl, "")} ${p.include} ${p.error ?? ""}`) };
+    };
+    // Two windows: headless Chromium (used here) sometimes leaves a third window's page unloaded.
+    const two = await run(2);
+    const one = await run(1);
+    expect(two.most).toBe(2);
+    expect(one.most).toBe(1);
+    // Same pages, same order, same ticks and notes, however many windows read them.
+    expect(two.pages).toEqual(one.pages);
+    expect(two.pages).toHaveLength(7);
+    // Every scan window is closed afterwards.
+    expect(await windows()).toBe(before);
+  });
+
+  test("site scan: menus built from plain divs are followed, by their name or because they repeat on every page", async () => {
+    test.setTimeout(150_000);
+    const discover = async (start: string, within: string) => {
+      const found = await sendToBackground<SiteScanState>(panel, {
+        type: "SITE_SCAN_DISCOVER",
+        url: `${baseUrl}${start}`,
+        options: { maxPages: 50, maxDepth: 3, perTemplate: 1, useSitemap: false, exclude: [], within, quick: true },
+      });
+      expect(found.ok, found.error).toBe(true);
+      await expect
+        .poll(async () => (await sendToBackground<SiteScanState | null>(panel, { type: "SITE_SCAN_GET" })).data?.phase, { timeout: 120_000, intervals: [500] })
+        .toBe("review");
+      const state = (await sendToBackground<SiteScanState>(panel, { type: "SITE_SCAN_GET" })).data!;
+      expect((await sendToBackground(panel, { type: "SITE_SCAN_CLEAR" })).ok).toBe(true);
+      return state;
+    };
+
+    // <div class="side-nav">, hidden: every menu screen is listed, though five share a folder;
+    // the content links (news items) still add only three examples.
+    const side = await discover("/sidenav/index.html", "/sidenav/");
+    const sidePaths = side.pages.map((p) => p.url.replace(baseUrl, "")).sort();
+    expect(sidePaths).toEqual([
+      "/sidenav/index.html",
+      "/sidenav/news/alpha.html",
+      "/sidenav/news/beta.html",
+      "/sidenav/news/gamma.html",
+      "/sidenav/records/accounts.html",
+      "/sidenav/records/gifts.html",
+      "/sidenav/records/holdings.html",
+      "/sidenav/records/trades.html",
+      "/sidenav/records/transactions.html",
+      "/sidenav/reports/saved.html",
+      "/sidenav/reports/status.html",
+      // Menu links that differ only by an id: the first is the example, the others are left out.
+      "/sidenav/rules/1",
+    ]);
+    expect(side.found.details).toBeGreaterThanOrEqual(2);
+
+    // A menu with no <nav> and no menu-like name: its links repeat on every page, so all six are listed;
+    // a link found on one page only is not.
+    const plain = await discover("/plainmenu/index.html", "/plainmenu/");
+    const plainPaths = plain.pages.map((p) => p.url.replace(baseUrl, "")).sort();
+    for (const name of ["alpha", "beta", "gamma", "delta", "epsilon", "zeta"]) expect(plainPaths).toContain(`/plainmenu/app/${name}.html`);
+    expect(plainPaths.filter((p) => p.endsWith("-detail.html"))).toEqual([]);
   });
 
   test("site scan: each #/route of a hash-routed app is its own page, found and scanned", async () => {

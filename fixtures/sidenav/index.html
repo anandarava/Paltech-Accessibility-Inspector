@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Dashboard – side-nav app</title></head>
+<body>
+  <!-- A small header is the only <nav>-like element: the real menu below is a plain <div>. -->
+  <header><a href="/sidenav/index.html">Logo</a> <a href="/sidenav/news/page/2">Older news</a></header>
+  <!-- Menu built from divs and lists, collapsed off screen, as in many admin applications. -->
+  <div class="side-nav" style="left: -288px; display: none;">
+    <div class="side-nav__logo"><h4>Example Company</h4></div>
+    <ul class="side-nav__list">
+      <li class="side-nav__item active-no-child"><a href="/sidenav/index.html" title="Dashboard"><span class="text">Dashboard</span></a></li>
+      <li class="side-nav__item">
+        <span class="side-nav__item--main">Records <i class="fa fa-angle-down"></i></span>
+        <ul class="side-nav__item--mainlist">
+          <li class="side-nav__item--sub"><a href="/sidenav/records/accounts.html" class="side-nav__item--sublink"><span class="text">Accounts</span></a></li>
+          <li class="side-nav__item--sub"><a href="/sidenav/records/holdings.html" class="side-nav__item--sublink"><span class="text">Holdings</span></a></li>
+          <li class="side-nav__item--sub"><a href="/sidenav/records/transactions.html" class="side-nav__item--sublink"><span class="text">Transactions</span></a></li>
+          <li class="side-nav__item--sub"><a href="/sidenav/records/trades.html" class="side-nav__item--sublink"><span class="text">Trades</span></a></li>
+          <li class="side-nav__item--sub"><a href="/sidenav/records/gifts.html" class="side-nav__item--sublink"><span class="text">Gifts</span></a></li>
+        </ul>
+      </li>
+      <li class="side-nav__item"><a href="#" title="Add-ons"><span class="text">Add-ons</span></a></li>
+      <li class="side-nav__item">
+        <span class="side-nav__item--main">Rule types</span>
+        <!-- One screen reached with different ids: the first is listed as its example. -->
+        <ul class="side-nav__item--mainlist">
+          <li class="side-nav__item--sub"><a href="/sidenav/rules/1" class="side-nav__item--sublink"><span class="text">Gifts</span></a></li>
+          <li class="side-nav__item--sub"><a href="/sidenav/rules/5" class="side-nav__item--sublink"><span class="text">Affiliations</span></a></li>
+          <li class="side-nav__item--sub"><a href="/sidenav/rules/8" class="side-nav__item--sublink"><span class="text">IPO</span></a></li>
+        </ul>
+      </li>
+      <li class="side-nav__item">
+        <span class="side-nav__item--main">Reports</span>
+        <ul class="side-nav__item--mainlist">
+          <li class="side-nav__item--sub">
+            <a class="side-nav__item--sublink"><span>Saved <i class="fa fa-angle-down"></i></span></a>
+            <ul class="side-nav__item--sublist">
+              <li class="side-nav__item--child"><a href="/sidenav/reports/saved.html" class="side-nav__item--childlink"><span class="text">Saved reports</span></a></li>
+              <li class="side-nav__item--child"><a href="/sidenav/reports/status.html" class="side-nav__item--childlink"><span class="text">Feed status</span></a></li>
+            </ul>
+          </li>
+        </ul>
+      </li>
+    </ul>
+  </div>
+  <main>
+    <h1>Dashboard</h1>
+    <!-- Content links: one kind of page (news items), so only a few examples are listed. -->
+    <ul>
+      <li><a href="/sidenav/news/alpha.html">Alpha</a></li>
+      <li><a href="/sidenav/news/beta.html">Beta</a></li>
+      <li><a href="/sidenav/news/gamma.html">Gamma</a></li>
+      <li><a href="/sidenav/news/delta.html">Delta</a></li>
+      <li><a href="/sidenav/news/epsilon.html">Epsilon</a></li>
+    </ul>
+    <canvas class="canvas-chart" width="10" height="10"></canvas>
+  </main>
+</body>
+</html>

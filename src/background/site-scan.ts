@@ -30,8 +30,12 @@ import {
   samePage,
   hashRoute,
   similarKey,
+  parallelWindows,
+  runPool,
+  WorkerGone,
   templateKey,
   NAV_SELECTOR,
+  MENU_WORDS,
   extractLinkInfo,
   type LinkInfo,
   type SitePage,
@@ -73,19 +77,27 @@ const requested = (): "run" | "pause" | "stop" => control;
 let running = false;
 let workerWindowId: number | null = null;
 let workerTabId: number | null = null;
+/** Extra scan windows that read pages alongside the main one while finding pages (`parallel`). */
+let helpers: { windowId: number; tabId: number }[] = [];
 /** Named content pages listed per folder before further ones are only counted. */
 const NAMED_PER_FOLDER = 3;
 /** A rescan's pages: the run scans only these, not other pages still waiting. */
 let onlyIndexes: Set<number> | null = null;
 /** Detail pages and repeat views left out of the list, each address once. */
 let leftOut = new Set<string>();
-/** Content links already counted towards an example page (navigation-only discovery). */
-let countedContent = new Set<string>();
+/** Content links already counted towards an example page (navigation-only discovery), with that page. */
+let countedContent = new Map<string, string>();
+/** The pages each content link was seen on: a link repeated on several pages is part of the site's menu. */
+let seenOn = new Map<string, Set<string>>();
+/** A content link seen on this many different pages counts as a menu link, whatever its HTML. */
+const MENU_REPEAT_PAGES = 2;
 
 export function initSiteScan(d: SiteScanDeps): void {
   deps = d;
   void load();
   chrome.windows.onRemoved.addListener((id) => {
+    // A helper window closed by the tester: its worker leaves the pool, the others go on.
+    helpers = helpers.filter((h) => h.windowId !== id);
     if (id !== workerWindowId) return;
     workerWindowId = null;
     workerTabId = null;
@@ -181,7 +193,7 @@ function pageAddress(url: string): string | null {
 }
 
 /** List a page; returns its address when it was newly listed (or upgraded to a linked page), else null. */
-function addPage(url: string, depth: number, source: SitePage["source"]): string | null {
+function addPage(url: string, depth: number, source: SitePage["source"], inMenu = false): string | null {
   if (!state) return null;
   const n = source === "start" || source === "manual" ? normalizeUrl(url) : pageAddress(url);
   if (!n || !sameOrigin(n, state.origin)) return null;
@@ -205,12 +217,18 @@ function addPage(url: string, depth: number, source: SitePage["source"]): string
     // One row per screen. A detail page (an id in the address: /products/1, /Event/EventDetails/226492)
     // is left out, so the list keeps the screens themselves (/products); so is another view of a
     // listed screen (/Report/Status?status=3 when /Report/Status is listed). Both can be added by hand.
+    // A menu link with an id (/PreClear/RuleTypes/1, /p/download-files_25.html) is how the menu
+    // reaches that screen, so the first of its kind is listed as the example to scan.
     const template = templateKey(n);
-    if (template.includes("*") || state.pages.some((p) => templateKey(p.url) === template)) {
+    const kindListed = state.pages.some((p) => templateKey(p.url) === template);
+    // Pages of a list (/page/2, /catalogue/page-2.html) are not another screen, even from a <nav>.
+    const listPage = /\/page[-_/]?\d+(\.[a-z]+)?$/i.test(new URL(n).pathname);
+    if (kindListed || (template.includes("*") && (!inMenu || listPage))) {
       leftOut.add(n.toLowerCase());
       state.found.details = leftOut.size;
       return null;
     }
+    if (leftOut.delete(n.toLowerCase())) state.found.details = leftOut.size;
   }
   state.pages.push(makePage(n, depth, source));
   if (source === "sitemap") state.found.sitemap++;
@@ -223,12 +241,25 @@ function addPage(url: string, depth: number, source: SitePage["source"]): string
  * a content link is listed only when it is the first of its kind, otherwise it is counted on the
  * example page already listed. Returns true when a page was listed.
  */
-function addLink(link: LinkInfo, depth: number): string | null {
+function addLink(link: LinkInfo, depth: number, from: string): string | null {
   if (!state) return null;
-  if (link.nav || state.options.allLinks) return addPage(link.url, depth, "link");
+  // Only a link in a recognised menu (not one assumed to be) lists an example of an id-style page.
+  if (link.nav || state.options.allLinks) return addPage(link.url, depth, "link", link.nav && !link.assumed);
   const n = pageAddress(link.url);
   if (!n || !sameOrigin(n, state.origin)) return null;
   if (state.pages.some((p) => samePage(p.url, n) || samePage(p.finalUrl, n))) return null;
+  // A link on several pages is a menu link, however the menu is built (a <div class="x7k-panel">):
+  // list it, and take it off the example page it was counted on.
+  const pages = seenOn.get(n) ?? new Set<string>();
+  pages.add(from.toLowerCase());
+  seenOn.set(n, pages);
+  if (pages.size >= MENU_REPEAT_PAGES) {
+    const example = countedContent.get(n);
+    countedContent.delete(n);
+    const i = example ? state.pages.findIndex((p) => p.url === example) : -1;
+    if (i >= 0 && state.pages[i].similar) state.pages[i] = { ...state.pages[i], similar: state.pages[i].similar! - 1 || undefined };
+    return addPage(n, depth, "link");
+  }
   // Addresses that differ only by an id (/product/123) are copies: one example. Named pages in a
   // shared folder (/auth/login, /auth/register) are usually different screens: up to
   // NAMED_PER_FOLDER of them, which still stops a grid of name-style products (/products/blue-shirt).
@@ -242,7 +273,7 @@ function addLink(link: LinkInfo, depth: number): string | null {
   if (listed < (byId ? 1 : NAMED_PER_FOLDER)) return addPage(n, depth, "link");
   const example = state.pages.findIndex(sameKind);
   if (!countedContent.has(n)) {
-    countedContent.add(n);
+    countedContent.set(n, state.pages[example].url);
     state.pages[example] = { ...state.pages[example], similar: (state.pages[example].similar ?? 0) + 1 };
   }
   return null;
@@ -250,7 +281,7 @@ function addLink(link: LinkInfo, depth: number): string | null {
 
 /** A page's links as followed: when it has no navigation at all, every link counts as navigation. */
 function asFollowed(links: LinkInfo[]): LinkInfo[] {
-  return links.some((l) => l.nav) ? links : links.map((l) => ({ ...l, nav: true }));
+  return links.some((l) => l.nav) ? links : links.map((l) => ({ ...l, nav: true, assumed: true }));
 }
 
 /** How many candidate pages discovery collects before it stops looking. */
@@ -265,7 +296,8 @@ function beginDiscovery(startUrl: string, options: SiteScanOptions): SiteScanSta
   if (running) throw new Error("A site scan is already running. Stop it first.");
   control = "run";
   running = true;
-  countedContent = new Set();
+  countedContent = new Map();
+  seenOn = new Map();
   leftOut = new Set();
   state = {
     id: `site_${Date.now().toString(36)}`,
@@ -322,10 +354,11 @@ async function discover(): Promise<void> {
     const scripted = tabId !== null && renderedCount >= 3 && renderedCount > sameSite(htmlLinks).size * 2;
     let rendered = 0;
 
-    /** Same-site links of one page, rendered in the scan window or from its HTML. */
-    const linksOf = async (url: string): Promise<LinkInfo[]> => {
-      if (scripted && tabId !== null && rendered < MAX_RENDERED_DISCOVERY) {
+    /** Same-site links of one page, rendered in a scan window (`tab`) or from its HTML. */
+    const linksOf = async (url: string, tab: number | null): Promise<LinkInfo[]> => {
+      if (scripted && tab !== null && rendered < MAX_RENDERED_DISCOVERY) {
         rendered++;
+        const tabId = tab;
         try {
           await navigate(tabId, url, false);
           await new Promise((r) => setTimeout(r, SETTLE_MS));
@@ -342,6 +375,11 @@ async function discover(): Promise<void> {
           }
           return renderedLinks(tabId);
         } catch {
+          // The window was closed: this worker stops and another one reads the page.
+          if (!(await tabExists(tabId))) {
+            rendered--;
+            throw new WorkerGone();
+          }
           return [];
         }
       }
@@ -364,28 +402,41 @@ async function discover(): Promise<void> {
       };
       let level: string[] = [];
       for (const link of [...asFollowed(renderedStart), ...asFollowed(htmlLinks)]) {
-        const added = addLink(link, 1);
+        const added = addLink(link, 1, start);
         if (added) level.push(added);
+      }
+      // Readers: a script-built app's pages are opened in scan windows, `parallel` of them at a
+      // time (the main one plus helpers); other sites' HTML is fetched, a few at a time.
+      let readers: (number | null)[] = Array.from({ length: FETCH_CONCURRENCY }, () => null);
+      if (scripted && tabId !== null) {
+        await openHelpers(parallelWindows(options) - 1, start);
+        readers = [tabId, ...helpers.map((h) => h.tabId)];
       }
       for (let depth = 1; depth < options.maxDepth && level.length && control === "run"; depth++) {
         const next: string[] = [];
-        const batchSize = scripted ? 1 : FETCH_CONCURRENCY;
-        for (let i = 0; i < level.length && state.found.links < cap && control === "run"; i += batchSize) {
-          const batch = level.slice(i, i + batchSize).filter((u) => !read.has(u) && worthReading(u));
-          batch.forEach((u) => read.add(u));
-          if (!batch.length) continue;
-          await update({ message: `${scripted ? "Opening pages of the app" : "Following links"}: ${read.size} pages read, ${state.pages.length} found` });
-          for (const links of await Promise.all(batch.map(linksOf))) {
+        await runPool(
+          level,
+          readers,
+          (u) => {
+            if (state!.found.links >= cap || requested() !== "run") return "stop";
+            if (read.has(u) || !worthReading(u)) return false;
+            read.add(u);
+            void update({ message: `${scripted ? "Opening pages of the app" : "Following links"}: ${read.size} pages read, ${state!.pages.length} found` });
+            return true;
+          },
+          linksOf,
+          (u, links) => {
             for (const link of asFollowed(links)) {
-              if (state.found.links >= cap) break;
-              const added = addLink(link, depth + 1);
+              if (state!.found.links >= cap) break;
+              const added = addLink(link, depth + 1, u);
               if (added) next.push(added);
             }
-          }
-        }
+          },
+        );
         level = next;
       }
     } finally {
+      await closeHelpers();
       await closeWorker();
     }
     state.pages = choosePages(rankPages(state.pages), options);
@@ -422,6 +473,36 @@ async function ensureWorker(url: string): Promise<number> {
   workerWindowId = win.id;
   workerTabId = tab.id;
   return tab.id;
+}
+
+/** Open `count` extra scan windows for finding pages. */
+async function openHelpers(count: number, url: string): Promise<void> {
+  for (let k = 0; k < count; k++) {
+    try {
+      // Not focused: the main scan window keeps the focus; each helper is a window of its own
+      // because pages in background tabs are throttled. Chrome staggers new windows itself.
+      const win = await chrome.windows.create({ url: "about:blank", focused: false, type: "normal", width: 1100, height: 800 });
+      const tab = win?.tabs?.[0];
+      if (win?.id !== undefined && tab?.id !== undefined) helpers.push({ windowId: win.id, tabId: tab.id });
+    } catch {
+      break; // fewer windows: still works, only slower
+    }
+  }
+}
+
+async function closeHelpers(): Promise<void> {
+  const ids = helpers.map((h) => h.windowId);
+  helpers = [];
+  await Promise.all(ids.map((id) => chrome.windows.remove(id).catch(() => undefined)));
+}
+
+async function tabExists(tabId: number): Promise<boolean> {
+  try {
+    await chrome.tabs.get(tabId);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function closeWorker(): Promise<void> {
@@ -501,8 +582,23 @@ async function renderedLinks(tabId: number): Promise<LinkInfo[]> {
   try {
     const [res] = await chrome.scripting.executeScript({
       target: { tabId },
-      args: [NAV_SELECTOR],
-      func: async (navSelector: string) => {
+      args: [NAV_SELECTOR, MENU_WORDS],
+      func: async (navSelector: string, menuWords: string[]) => {
+        // As `isMenuName` (shared/site-crawl.ts), which cannot be passed into the page.
+        const menuName = (v: string | null) =>
+          !!v &&
+          v
+            .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+            .toLowerCase()
+            .split(/[\s_-]+/)
+            .some((part) => menuWords.includes(part));
+        const inMenu = (a: Element): boolean => {
+          if (a.closest(navSelector)) return true;
+          for (let el: Element | null = a; el && el !== document.body; el = el.parentElement) {
+            if (menuName(el.getAttribute("class")) || menuName(el.id)) return true;
+          }
+          return false;
+        };
         const anchors = () => [...document.querySelectorAll<HTMLAnchorElement | HTMLAreaElement>("a[href], area[href]")];
         // Parts of a page (dashboard widgets, menus fetched after load) can arrive seconds later:
         // wait until the links stop changing (three equal counts half a second apart), at most 10 s.
@@ -517,7 +613,7 @@ async function renderedLinks(tabId: number): Promise<LinkInfo[]> {
         // A plain "#section" link points into this same page; "#/route" links are pages of a hash-routed app.
         return anchors()
           .filter((a) => !/^#(?!!?\/)/.test(a.getAttribute("href") ?? ""))
-          .map((a) => ({ url: a.href, nav: !!a.closest(navSelector) }));
+          .map((a) => ({ url: a.href, nav: inMenu(a) }));
       },
     });
     return Array.isArray(res?.result) ? (res.result as LinkInfo[]) : [];
@@ -577,7 +673,7 @@ async function scanPages(): Promise<void> {
         } else {
           if (page.depth < state.options.maxDepth) {
             let added = false;
-            for (const link of asFollowed(await renderedLinks(tabId))) if (addLink(link, page.depth + 1)) added = true;
+            for (const link of asFollowed(await renderedLinks(tabId))) if (addLink(link, page.depth + 1, page.url)) added = true;
             if (added) state.pages = choosePages(state.pages, state.options);
           }
           if (requested() === "stop") {
@@ -754,7 +850,7 @@ export async function handleSiteScanMessage(msg: Message): Promise<unknown> {
 
 /** The tab the site scan loads pages in. */
 export function isSiteScanTab(tabId: number): boolean {
-  return tabId === workerTabId;
+  return tabId === workerTabId || helpers.some((h) => h.tabId === tabId);
 }
 
 export function isSiteScanMessage(msg: Message): boolean {
