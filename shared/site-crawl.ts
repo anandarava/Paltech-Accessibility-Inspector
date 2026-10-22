@@ -35,12 +35,19 @@ export interface SiteScanOptions {
    * lists) only add the first page of each kind; the rest are counted on that page (`similar`).
    */
   allLinks?: boolean;
+  /**
+   * Pages read at once while finding the pages of a script-built app, each in a scan window of
+   * its own (1–3; default 2). Scanning itself always uses one window.
+   */
+  parallel?: number;
 }
 
 /** A link found on a page, and whether it sits in the page's navigation. */
 export interface LinkInfo {
   url: string;
   nav: boolean;
+  /** Followed as navigation only because its page has no recognisable menu (not in a menu itself). */
+  assumed?: boolean;
 }
 
 /**
@@ -64,6 +71,24 @@ export const NAV_SELECTOR = [
   ".breadcrumb",
   ".breadcrumbs",
 ].join(",");
+
+/**
+ * Words that mark a menu when they are a whole part of a class or id: "side-nav__list",
+ * "navbar-expand", "mainMenu", "app-sidebar", "mat-sidenav". Parts are split at "-", "_" and
+ * camelCase humps, so "canvas" or "unavailable" do not count. Many applications build their menus
+ * from plain <div>s with such names instead of <nav>.
+ */
+export const MENU_WORDS = ["nav", "navs", "navbar", "navigation", "sidenav", "topnav", "subnav", "menu", "menus", "menubar", "submenu", "sidemenu", "sidebar", "drawer", "breadcrumb", "breadcrumbs"];
+
+/** True when a class list or id contains a menu word (see `MENU_WORDS`). */
+export function isMenuName(value: string | null | undefined): boolean {
+  if (!value) return false;
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+    .toLowerCase()
+    .split(/[\s_-]+/)
+    .some((part) => MENU_WORDS.includes(part));
+}
 
 export interface SitePage {
   url: string;
@@ -139,14 +164,96 @@ export const DEFAULT_SITE_SCAN_OPTIONS: SiteScanOptions = {
   useSitemap: true,
   exclude: DEFAULT_EXCLUDES,
   quick: false,
+  parallel: 2,
 };
+
+/** Most scan windows used at once while finding pages. */
+export const MAX_PARALLEL = 3;
+
+/** The number of windows to find pages with: `parallel` kept within 1…MAX_PARALLEL (default 2). */
+export function parallelWindows(options: Pick<SiteScanOptions, "parallel">): number {
+  const n = Math.round(Number(options.parallel ?? 2));
+  return Number.isFinite(n) ? Math.min(MAX_PARALLEL, Math.max(1, n)) : 2;
+}
+
+/**
+ * Run `work` over `items` with at most `workers.length` at a time, each worker taking the next
+ * item as soon as it is free. `take` decides, when an item comes up, whether to run it (false
+ * skips it; returning "stop" ends the run). Results are handed to `done` in the items' order,
+ * whatever order they finish in, so the outcome does not depend on which page loaded first.
+ * A worker whose `work` throws `WorkerGone` leaves the pool; its item is retried by another.
+ */
+export async function runPool<T, W, R>(
+  items: T[],
+  workers: W[],
+  take: (item: T) => boolean | "stop",
+  work: (item: T, worker: W) => Promise<R>,
+  done: (item: T, result: R) => void,
+): Promise<void> {
+  const results = new Map<number, R | typeof SKIPPED>();
+  let next = 0;
+  let committed = 0;
+  let stopped = false;
+  const retry: number[] = [];
+  const commit = () => {
+    while (results.has(committed)) {
+      const r = results.get(committed)!;
+      results.delete(committed);
+      if (r !== SKIPPED) done(items[committed], r as R);
+      committed++;
+    }
+  };
+  const runWorker = async (worker: W) => {
+    for (;;) {
+      let i: number;
+      if (retry.length) i = retry.shift()!;
+      else {
+        if (stopped || next >= items.length) return;
+        i = next++;
+        const t = take(items[i]);
+        if (t === "stop") {
+          stopped = true;
+          // Items not taken are skipped, so the ones before them still commit.
+          for (let k = i; k < items.length; k++) results.set(k, SKIPPED);
+          next = items.length;
+          commit();
+          return;
+        }
+        if (!t) {
+          results.set(i, SKIPPED);
+          commit();
+          continue;
+        }
+      }
+      try {
+        results.set(i, await work(items[i], worker));
+      } catch (e) {
+        if (e instanceof WorkerGone) {
+          retry.push(i);
+          return;
+        }
+        throw e;
+      }
+      commit();
+    }
+  };
+  await Promise.all(workers.map(runWorker));
+  // Retried items whose every worker has gone: skipped.
+  for (const i of retry) results.set(i, SKIPPED);
+  commit();
+}
+
+const SKIPPED = Symbol("skipped");
+
+/** Thrown by a pool worker that can take no more items (its window was closed). */
+export class WorkerGone extends Error {}
 
 /**
  * Files that are not web pages, by the extension of the address's last part. The extension may be
  * followed by junk a download page uses to test tools ("shell.txt jpg", "shell.txt::$DATA").
  */
 const FILE_EXT_RE =
-  /\.(pdf|zip|gz|tgz|tar|bz2|xz|rar|7z|dmg|exe|msi|apk|deb|rpm|jar|war|iso|bin|dat|tmp|log|jpe?g|png|gif|webp|avif|heic|svg|ico|bmp|tiff?|mp3|wav|ogg|m4a|mp4|m4v|mov|avi|wmv|flv|swf|webm|mkv|docx?|xlsx?|pptx?|odt|ods|odp|rtf|epub|md|csv|txt|xml|json|ya?ml|rss|atom|ics|vcf|eml|pfx|p12|cer|crt|pem|wsdl|wadl|woff2?|ttf|eot|css|js|sh|bat)([\s:].*)?$/i;
+  /\.(pdf|zip|gz|tgz|tar|bz2|xz|rar|7z|dmg|exe|msi|apk|deb|rpm|jar|war|iso|bin|dat|tmp|log|jpe?g|png|gif|webp|avif|heic|svg|ico|bmp|tiff?|mp3|wav|ogg|m4a|mp4|m4v|mov|avi|wmv|flv|swf|webm|mkv|docx?|xlsx?|pptx?|odt|ods|odp|rtf|epub|md|csv|txt|xml|json|ya?ml|rss|atom|ics|vcf|eml|pfx|p12|cer|crt|pem|wsdl|wadl|woff2?|ttf|eot|css|js|sh|bat|ps1|py|rb|java|cs|cpp|h|sql|ini|cfg|conf|toml|ipynb|patch|diff)([\s:].*)?$/i;
 
 /** The address's last part, decoded ("Hello%20World!.rtf" → "Hello World!.rtf"). */
 function lastSegment(pathname: string): string {
@@ -365,11 +472,49 @@ export function extractLinks(html: string, pageUrl: string): string[] {
   return extractLinkInfo(html, pageUrl).map((l) => l.url);
 }
 
-/** Like `extractLinks`, noting which links sit inside <nav>, <header>, <footer> or <aside>. */
-export function extractLinkInfo(html: string, pageUrl: string): LinkInfo[] {
-  const navRanges: Array<[number, number]> = [];
+const VOID_TAGS = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"]);
+
+/** Where the element whose start tag ends at `openEnd` closes, or -1 when it does not. */
+function elementEnd(html: string, tag: string, openEnd: number): number {
+  const re = new RegExp(`<(/?)${tag}\\b[^>]*?(/?)>`, "gi");
+  re.lastIndex = openEnd;
+  let depth = 1;
+  for (let m = re.exec(html); m; m = re.exec(html)) {
+    if (m[1]) depth--;
+    else if (!m[2]) depth++;
+    if (depth === 0) return m.index + m[0].length;
+  }
+  return -1;
+}
+
+/** Parts of an HTML page that are menus: <nav>, <header>, <footer>, <aside>, and elements with a menu-like class or id. */
+function menuRanges(html: string): Array<[number, number]> {
+  const ranges: Array<[number, number]> = [];
   const blockRe = /<(nav|header|footer|aside)\b[\s\S]*?<\/\1\s*>/gi;
-  for (let m = blockRe.exec(html); m; m = blockRe.exec(html)) navRanges.push([m.index, m.index + m[0].length]);
+  for (let m = blockRe.exec(html); m; m = blockRe.exec(html)) ranges.push([m.index, m.index + m[0].length]);
+  const openRe = /<([a-z][a-z0-9-]*)\b([^>]*)>/gi;
+  let coveredTo = -1;
+  for (let m = openRe.exec(html); m; m = openRe.exec(html)) {
+    if (m.index < coveredTo) continue; // inside a menu already found
+    const tag = m[1].toLowerCase();
+    const attrs = m[2];
+    if (VOID_TAGS.has(tag) || attrs.trimEnd().endsWith("/")) continue;
+    const value = (name: string) => {
+      const a = new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, "i").exec(attrs);
+      return a ? (a[1] ?? a[2]) : undefined;
+    };
+    if (!isMenuName(value("class")) && !isMenuName(value("id"))) continue;
+    const end = elementEnd(html, tag, m.index + m[0].length);
+    if (end < 0) continue;
+    ranges.push([m.index, end]);
+    coveredTo = end;
+  }
+  return ranges;
+}
+
+/** Like `extractLinks`, noting which links sit in a menu (<nav>, <header>, <footer>, <aside>, or a menu-like class or id). */
+export function extractLinkInfo(html: string, pageUrl: string): LinkInfo[] {
+  const navRanges = menuRanges(html);
   const inNav = (i: number) => navRanges.some(([a, b]) => i >= a && i < b);
   let base = pageUrl;
   const baseTag = /<base\b[^>]*\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(html);

@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_EXCLUDES,
@@ -13,6 +15,10 @@ import {
   makePage,
   normalizeUrl,
   samePage,
+  isMenuName,
+  runPool,
+  parallelWindows,
+  WorkerGone,
   parseSitemap,
   rankPages,
   robotsSitemaps,
@@ -23,7 +29,7 @@ import {
 
 describe("normalizeUrl", () => {
   it("leaves out downloadable files, also with odd endings", () => {
-    for (const file of ["https://a.com/download/Hello%20World!.rtf", "https://a.com/download/notes.md", "https://a.com/download/tmpfkman1.tmp", "https://a.com/download/shell.txt%20jpg", "https://a.com/download/shell.txt::$DATA", "https://a.com/files/report.PDF"]) {
+    for (const file of ["https://a.com/download/Hello%20World!.rtf", "https://a.com/download/notes.md", "https://a.com/download/tmpfkman1.tmp", "https://a.com/download/shell.txt%20jpg", "https://a.com/download/shell.txt::$DATA", "https://a.com/files/report.PDF", "https://a.com/download/files.py"]) {
       expect(normalizeUrl(file), file).toBeNull();
     }
     // An extension-like word inside a page name is not a file.
@@ -237,5 +243,96 @@ describe("samePage", () => {
     expect(samePage("https://b.com/shop", "https://b.com/shop/Default.aspx")).toBe(true);
     expect(samePage("https://b.com/SAML/x", "https://b.com/saml/x")).toBe(true);
     expect(samePage("https://b.com/shop", "https://b.com/shop/cart.html")).toBe(false);
+  });
+});
+
+describe("runPool", () => {
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  it("runs at most one item per worker at a time, and hands results over in the items' order", async () => {
+    let active = 0;
+    let most = 0;
+    const order: string[] = [];
+    // Later items finish first.
+    await runPool(
+      ["a", "b", "c", "d", "e"],
+      [1, 2, 3],
+      () => true,
+      async (item) => {
+        active++;
+        most = Math.max(most, active);
+        await sleep(item === "a" ? 40 : 5);
+        active--;
+        return item.toUpperCase();
+      },
+      (_item, r) => order.push(r),
+    );
+    expect(most).toBe(3);
+    expect(order).toEqual(["A", "B", "C", "D", "E"]);
+  });
+
+  it("skips items `take` refuses, and stops taking new ones on \"stop\"", async () => {
+    const ran: string[] = [];
+    const out: string[] = [];
+    await runPool(
+      ["a", "skip", "b", "end", "c"],
+      [1, 2],
+      (item) => (item === "skip" ? false : item === "end" ? "stop" : true),
+      async (item) => {
+        ran.push(item);
+        return item;
+      },
+      (_item, r) => out.push(r),
+    );
+    expect(ran.sort()).toEqual(["a", "b"]);
+    expect(out).toEqual(["a", "b"]);
+  });
+
+  it("gives a closed worker's item to another worker", async () => {
+    const out: string[] = [];
+    await runPool(
+      ["a", "b", "c"],
+      ["gone", "ok"],
+      () => true,
+      async (item, worker) => {
+        await sleep(item === "a" ? 1 : 10);
+        if (worker === "gone") throw new WorkerGone();
+        return `${item}@${worker}`;
+      },
+      (_item, r) => out.push(r),
+    );
+    expect(out).toEqual(["a@ok", "b@ok", "c@ok"]);
+  });
+});
+
+describe("parallelWindows", () => {
+  it("keeps the setting within 1 to 3, default 2", () => {
+    expect(parallelWindows({})).toBe(2);
+    expect(parallelWindows({ parallel: 0 })).toBe(1);
+    expect(parallelWindows({ parallel: 3 })).toBe(3);
+    expect(parallelWindows({ parallel: 9 })).toBe(3);
+    expect(parallelWindows({ parallel: Number.NaN })).toBe(2);
+  });
+});
+
+describe("menus built without <nav>", () => {
+  it("recognises menu words as whole parts of a class or id", () => {
+    for (const name of ["side-nav", "side-nav__list", "navbar navbar-expand", "mainMenu", "app-sidebar", "mat-sidenav", "top_menu", "breadcrumbs"]) expect(isMenuName(name), name).toBe(true);
+    for (const name of ["canvas-chart", "unavailable", "menuitems-grid", "content", "", undefined]) expect(isMenuName(name), String(name)).toBe(false);
+  });
+
+  it("counts links inside a <div class=\"side-nav\"> as navigation, even hidden and nested", () => {
+    const html = readFileSync(path.join(__dirname, "../../fixtures/sidenav/index.html"), "utf8");
+    const links = extractLinkInfo(html, "https://app.example.com/sidenav/index.html");
+    const nav = links.filter((l) => l.nav).map((l) => l.url.replace("https://app.example.com", ""));
+    const content = links.filter((l) => !l.nav).map((l) => l.url.replace("https://app.example.com", ""));
+    expect(nav).toEqual(expect.arrayContaining(["/sidenav/records/accounts.html", "/sidenav/records/gifts.html", "/sidenav/reports/saved.html", "/sidenav/reports/status.html"]));
+    expect(content).toEqual(["/sidenav/news/alpha.html", "/sidenav/news/beta.html", "/sidenav/news/gamma.html", "/sidenav/news/delta.html", "/sidenav/news/epsilon.html"]);
+  });
+
+  it("does not let an element without a closing tag swallow the rest of the page", () => {
+    const html = '<div class="nav-icon"><img class="menu-logo" src="x.png"><a href="/a">A</a></div><main><a href="/b">B</a></main>';
+    const links = extractLinkInfo(html, "https://x.com/");
+    expect(links).toEqual([{ url: "https://x.com/a", nav: true }, { url: "https://x.com/b", nav: false }]);
   });
 });

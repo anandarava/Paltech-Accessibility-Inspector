@@ -174,6 +174,17 @@ function SetupForm({ onStart, busy }: { onStart(url: string, options: SiteScanOp
           <div className="w-32">
             <NumberField id={`${id}-depth`} label="Link depth" value={options.maxDepth} min={1} max={10} onChange={(v) => set({ maxDepth: v })} />
           </div>
+          <div className="w-48">
+            <NumberField
+              id={`${id}-parallel`}
+              label="Pages read at once"
+              hint="Windows used to find the pages of apps built with script (1–3). Use 1 for production servers."
+              value={options.parallel ?? 2}
+              min={1}
+              max={3}
+              onChange={(v) => set({ parallel: v })}
+            />
+          </div>
           <div className="space-y-1.5">
             {checkbox("Use the site's sitemap", options.useSitemap, (v) => set({ useSitemap: v }))}
             {checkbox("Follow every link", options.allLinks === true, (v) => set({ allLinks: v }), "Not only menus, header and footer")}
