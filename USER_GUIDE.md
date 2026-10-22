@@ -195,7 +195,7 @@ The result is kept for the site and applied again when you rescan. It shows on t
 
 **Each tab works on its own.** The panel keeps a separate result, filters, scope and open view for every tab, so switching tabs and coming back restores what you left. If you close the panel and open it again, the last scan of the current tab comes back.
 
-**Save a scan.**
+**Save a scan.** Keep **Include screenshots** ticked (the default) to photograph every failed element while the page is open; the saved scan's reports and comparisons then show them, even after the page has changed.
 
 1. Click **Save scan** in the footer.
 2. Type a name (for example *Checkout page*) and press **Save**. The date and time are added to the name.
@@ -229,7 +229,7 @@ Scan many pages of one application from its address. Open it with **Scan whole s
 2. **Find pages.** PalTech reads the sitemap, opens the start page to read its menus (including ones built by script), and follows links. In an application built by script (Angular, React and similar), where the pages' HTML has no links, it opens each page in the scan window to read its menus and tabs. A menu address that only redirects to another page (for example `/me` to `/me/time-sheet`) is listed as "Redirects to …" and not scanned twice. In hash-routed apps (addresses like `app.example.com/#/leave`), each `#/route` is its own page and is loaded fresh before it is scanned; plain `#section` links are not pages. It uses your browser's sign-in, so sign in to the application first to reach pages behind a login.
 3. **Review the list.** The start page and its menu pages come first; the rest are ticked up to the page limit. Unticked pages say why ("Similar to 3 pages already listed", "Over the page limit"). Tick or untick pages, or type an address or path (`/checkout/step-2`) in **Add a page** for pages no link reaches. To check whether a page was found, type part of its address or title in **Search pages**; the list narrows as you type and shows how many pages match. If nothing matches, the page was not found and you can add it.
 4. **Scan.** Pages open one at a time in a separate window. Leave it open; it can sit behind other windows but must not be minimised. Links the rendered pages show are added to the list as the scan goes. **Pause** and **Stop** act between pages; **Resume** continues. If the window is closed or the browser restarts, the run pauses and can be resumed.
-5. **Results.** Each page shows its score, issues, items to review and scan time. **View** opens that page's results read-only in the panel (**Back to site scan** returns). **Export report** downloads one HTML report for all scanned pages (or **JSON**). **New site scan** clears the run.
+5. **Results.** Each page shows its score, issues, items to review and scan time. **View** opens that page in the current tab with its results in the panel, and outlines its issues on the page (**Issues** overlay), so you can see each problem in place; **View element** and the other overlays work as after a scan. A bar says it is the site scan result (rescan to check the page as it is now), and **Back to site scan** returns. **Export HTML** downloads one report for all scanned pages, and **Export JSON** the same results as JSON. With **Include screenshots** (More options, on by default) every failed element of each page is photographed while the page is open in the scan window, so the report shows them; this makes the scan slower. **New site scan** clears the run.
 6. **Rescan after fixes.** **Rescan all** scans every scanned page again, and **Rescan** on a row scans just that page, with no need to find the pages again. Each page shows what changed since its last scan, for example *Score 91 (was 88) · 12 (was 18) issues*, and the report uses the new results.
 
 Pages reached only by filling in forms, opening dialogs or following e-mailed links are not found automatically: add them by hand.
@@ -240,7 +240,7 @@ Use **Export** in the footer to download the current scan.
 
 | Option | Use it for |
 | --- | --- |
-| HTML report with screenshots | Clients and stakeholders. Captures a screenshot of the first element of each failed rule (up to 25) before building the report. The page scrolls while it runs and the tab must stay visible. |
+| HTML report with screenshots | Clients and stakeholders. Takes a screenshot of every failed element (and one per Needs review card) before building the report, so each element in the report shows how it looks. The page scrolls while it runs and the tab must stay visible; a page with many issues takes longer (about half a second per element). |
 | HTML report | A summary and developer details without screenshots. |
 | JSON | Raw results for tooling and CI. |
 
