@@ -92,7 +92,8 @@ export type Message =
   | { type: "PICKER_RESULT"; tabId: number; selector: string | null; html?: string }
   // ---- Saved scans ----
   | { type: "SAVED_SCANS_LIST" }
-  | { type: "SAVED_SCAN_SAVE"; tabId: number; name: string }
+  /** `screenshots`: photograph every failed element first, so the saved scan's reports show them. */
+  | { type: "SAVED_SCAN_SAVE"; tabId: number; name: string; screenshots?: boolean }
   | { type: "SAVED_SCAN_GET"; id: string }
   | { type: "SAVED_SCAN_RENAME"; id: string; name: string }
   | { type: "SAVED_SCAN_DELETE"; id: string }
@@ -135,6 +136,11 @@ export type Message =
   | { type: "SITE_SCAN_STOP" }
   /** The full result of one scanned page (index into `pages`). */
   | { type: "SITE_SCAN_RESULT"; index: number }
+  /**
+   * Open one scanned page in `tabId` and make its site-scan result that tab's result, so the
+   * issues can be shown on the page (overlay, View element). Returns the result.
+   */
+  | { type: "SITE_SCAN_SHOW"; index: number; tabId: number }
   | { type: "SITE_SCAN_EXPORT"; format: ExportFormat }
   | { type: "SITE_SCAN_CLEAR" }
   | { type: "SITE_SCAN_STATE"; state: SiteScanState | null }

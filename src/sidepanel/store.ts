@@ -104,6 +104,8 @@ export interface PanelState {
   viewingSaved: SavedScanMeta | null;
   /** The live result, parked while a saved scan is shown. */
   liveResult: ScanResult | undefined;
+  /** scanId of a site-scan page result opened on its page (View in Site scan), for "Back to site scan". */
+  siteScanResultId: string | null;
   compare: { a: CompareSide; b: CompareSide } | null;
   /** Scroll to and outline the element whenever an issue is opened. */
   autoHighlight: boolean;
@@ -265,6 +267,7 @@ export const useStore = create<PanelState>()((set, get) => ({
   picking: false,
   viewingSaved: null,
   liveResult: undefined,
+  siteScanResultId: null,
   compare: null,
   autoHighlight: true,
   checkerIssueId: null,

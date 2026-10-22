@@ -47,8 +47,10 @@ When both engines have a rule for the same requirement, this is what runs:
   2.1 the 2.2-only checks for target size (2.5.8) and focus not obscured
   (2.4.11) are skipped.
 - **WCAG level** (A / AA / AAA): each level includes the lower ones (AA means
-  A + AA). It controls which **axe-core** rules run. The advanced rules
-  currently run at every level (see section 6).
+  A + AA). It controls which **axe-core** rules run. The advanced rules run at
+  every level, but their findings for a stricter level than the one chosen are
+  dropped, so a Level A scan shows no AA findings. Best-practice findings are
+  kept at every level.
 
 ### Not controlled by these options
 
@@ -80,7 +82,7 @@ These 30 rules run only when **Best practices** is ticked. They run with
 | `aria-treeitem-name` | ARIA-07 | ARIA treeitem nodes should have an accessible name |
 | `empty-heading` | STR-12 | Headings should not be empty |
 | `empty-table-header` | its axe-core id | Table header text should not be empty |
-| `focus-order-semantics` | KBD-04 | Elements in the focus order should have an appropriate role |
+| `focus-order-semantics` | its axe-core id | Elements in the focus order should have an appropriate role |
 | `frame-tested` | STR-13 | Frames should be tested with axe-core |
 | `heading-order` | STR-04 | Heading levels should only increase by one |
 | `hidden-content` | its axe-core id | Hidden content on the page should be analyzed |
@@ -126,9 +128,11 @@ practices box:
 
 ## 4. Advanced rules (created by PalTech A11y Inspector)
 
-These run only when **axe-core only** is ✗. They are counted under
-**Automatic issues (advanced)** in the scan summary, and labelled
-"PalTech A11y Inspector rule" in issue details and reports.
+These run only when **axe-core only** is ✗. They are counted as the second
+number on the **axe-core / advanced** card in the scan summary, and labelled
+"PalTech A11y Inspector rule" in issue details and reports. The code is in
+[src/content/rules/](src/content/rules/); each file starts with a comment
+listing the rules it emits and the risks of its heuristics.
 
 ### 4a. Checks axe-core does not have
 
@@ -165,8 +169,31 @@ These run only when **axe-core only** is ✗. They are counted under
 | TGT-01 | 2.5.8 AA | Moderate | Target size, applying WCAG's 24 px spacing exception correctly | Replaces `target-size` |
 | TGT-02 | 2.5.5 AAA | Minor | Target smaller than 44 x 44 px; no spacing exception. Runs in AAA scans only | axe has no rule for 2.5.5 |
 | ZM-03 | 1.4.12 AA | Moderate | Applies the 1.4.12 text spacing to the page and looks for clipped text. Decoration hidden from screen readers and cut-off letter tails are ignored; a row of items cut off sideways (a carousel) goes to Needs review | Runs alongside `avoid-inline-spacing` |
+| ARIA-04 | 4.1.2 A | Serious | An element that Tab still reaches inside `aria-hidden="true"`, including cases axe-core skips (such as iframes): screen readers land on something they are told does not exist | Adds to `aria-hidden-focus` |
 
-### 4c. WCAG requirements only the advanced rules check
+### 4c. Needs review checks (created by PalTech A11y Inspector)
+
+These guess intent from how the page looks, so a person confirms them. They
+are listed on the **Needs review** tab (and in the "Needs review" part of the
+HTML report), never count as failures or toward the score, and can be turned
+off in Options ("Include findings that need manual review"). FRM-11 and FRM-12
+in 4a are of this kind too.
+
+| Rule | WCAG | What it flags |
+|---|---|---|
+| CLR-03 | 1.4.3 AA | Text over an image, a gradient that passes on some of its colours and fails on others, or media: the real background cannot be measured |
+| FRM-05 | 3.3.1 A | A visible error message not tied to its field with aria-describedby or aria-errormessage |
+| FRM-06 | 3.3.1 A | A field with a visible error that lacks `aria-invalid="true"` |
+| IMG-08 | 1.1.1 A | An inline `<svg>` with no role, no name and no aria-hidden (it may be decorative, but screen readers still expose it) |
+| KBD-01 | 2.1.1 A | An element that only has a pointer cursor and cannot be focused (the definite KBD-01 cases are in 4a) |
+| KBD-08 | 2.4.3 A | An open dialog that does not contain the focus |
+| ARIA-03 | 4.1.2 A | aria-describedby, -controls, -owns, -flowto or -details naming ids that do not exist (often added later on purpose) |
+| STR-07 | 1.3.1 A | A data table (at least 2 x 2 cells, with a border or numbers) that has no header cells at all |
+| STR-12 | Best practice | Text styled as a heading but marked up as a paragraph, on a page with no h2–h6 at all |
+| OTH-02 | 2.2.2 A | A carousel or slider that moves by itself (watched for 2.5 s) with no pause, stop or play control |
+| OTH-04 | Best practice | The scan landed on a bot check or access-denied page (for example a Cloudflare check): one note, and every other finding from that page moves to Needs review |
+
+### 4d. WCAG requirements only the advanced rules check
 
 With **axe-core only** ticked, nothing checks these:
 
@@ -176,25 +203,24 @@ With **axe-core only** ticked, nothing checks these:
 - 2.1.2 No Keyboard Trap (KBD-02, via the Keyboard test)
 - 2.4.7 Focus Visible (KBD-05)
 - 2.4.11 Focus Not Obscured (Minimum) (KBD-06)
+- 3.2.2 On Input (FRM-12, Needs review)
+- At AAA: 2.4.13 Focus Appearance (CLR-09) and 2.5.5 Target Size (Enhanced) (TGT-02)
 
 ## 5. Where you see each kind of rule
 
 | Kind | Panel | Issue details | HTML report |
 |---|---|---|---|
-| axe-core WCAG rule | **WCAG issues** tab; "Automatic issues (axe-core)" count | WCAG badge; subline ends "axe-core" | Listed with its WCAG criterion |
+| axe-core WCAG rule | **WCAG issues** tab; first number on the **axe-core / advanced** card | WCAG badge; subline ends "axe-core" | Listed with its WCAG criterion |
 | axe-core best-practice rule | **Best practices** tab | "Best practice" badge | "Best practice (not a WCAG failure)", after the WCAG problems |
-| Advanced rule | **WCAG issues** tab (or Best practices for LNK-03 / LNK-05); "Automatic issues (advanced)" count | Subline ends "PalTech A11y Inspector rule" | Listed with its WCAG criterion |
+| Advanced rule | **WCAG issues** tab (or Best practices for LNK-03 / LNK-05); second number on the **axe-core / advanced** card | Subline ends "PalTech A11y Inspector rule" | Listed with its WCAG criterion |
+| Needs review finding (either engine) | **Needs review** tab, not counted | "Needs review" | "Needs review" section, marked "not counted" |
 
 ## 6. Known gaps
 
-These behaviours were confirmed by scanning the test pages with every
-combination of level, Best practices and axe-core only:
-
-- **The advanced rules ignore the WCAG level.** With level **A** selected,
-  AA advanced rules (CLR-01, CLR-02, CLR-04, CLR-05, KBD-05, KBD-06, TGT-01,
-  ZM-02, ZM-03) still run. axe-core's rules do follow the level.
 - **The Best practices box does not switch off LNK-03 and LNK-05.** They run
-  whenever axe-core only is ✗.
+  whenever axe-core only is ✗. With the box unticked they are hidden from the
+  **All** tab but still listed on the **Best practices** tab. Expect them there
+  until this is fixed.
 
-Until these are fixed: for a Level A report, remove AA findings by hand, and
-expect LNK-03 / LNK-05 on the Best practices tab even with the box unticked.
+The earlier gap where the advanced rules ignored the WCAG level is fixed: their
+findings above the chosen level are now dropped (section 2).

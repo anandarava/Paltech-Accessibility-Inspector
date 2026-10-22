@@ -4,6 +4,7 @@ import { isMessage, sendToBackground } from "@shared/messages";
 import { DEFAULT_SITE_SCAN_OPTIONS, defaultWithin, type SitePage, type SiteScanOptions, type SiteScanState } from "@shared/site-crawl";
 import { useStore } from "@src/sidepanel/store";
 import { useFocusHeading } from "@src/sidepanel/hooks/useFocusHeading";
+import { sendToPage } from "@src/sidepanel/hooks/messaging";
 import { BackButton } from "./BackButton";
 import { Button } from "./Button";
 import { GlobeIcon } from "./icons";
@@ -188,6 +189,7 @@ function SetupForm({ onStart, busy }: { onStart(url: string, options: SiteScanOp
           <div className="space-y-1.5">
             {checkbox("Use the site's sitemap", options.useSitemap, (v) => set({ useSitemap: v }))}
             {checkbox("Follow every link", options.allLinks === true, (v) => set({ allLinks: v }), "Not only menus, header and footer")}
+            {checkbox("Include screenshots", options.screenshots !== false, (v) => set({ screenshots: v }), "Photographs every failed element of each page for the report and View; slower")}
           </div>
           <div>
             <label htmlFor={`${id}-ex`} className="mb-1 block text-xs font-semibold text-slate-800">
@@ -266,7 +268,7 @@ function PageRow({
         </span>
       </div>
       {(page.status === "done" || page.status === "failed") && onRescan && (
-        <Button size="sm" variant="ghost" onClick={() => onRescan(index)} aria-label={`Rescan ${path}`}>
+        <Button size="sm" onClick={() => onRescan(index)} aria-label={`Rescan ${path}`}>
           Rescan
         </Button>
       )}
@@ -343,6 +345,21 @@ export function SiteScan({ onBack }: { onBack(): void }) {
     if (s) setAddUrl("");
   };
   const view = async (index: number) => {
+    // Open the page in this tab with its results, so its issues can be shown on the page.
+    const tabId = useStore.getState().tabId;
+    if (tabId !== null) {
+      const shown = await call<ScanResult>({ type: "SITE_SCAN_SHOW", index, tabId }, "Could not open the page");
+      if (!shown) return;
+      const store = useStore.getState();
+      if (store.viewingSaved) store.exitSaved();
+      store.setResult(shown);
+      useStore.setState({ siteScanResultId: shown.scanId, view: "list" });
+      // Show the issues on the page, as after a scan of the page itself.
+      store.setOverlayMode("issues");
+      void sendToPage(tabId, { type: "TOGGLE_OVERLAY", tabId, visible: true, mode: "issues" });
+      return;
+    }
+    // No tab to show it in: the results alone, read-only.
     const r = await call<ScanResult>({ type: "SITE_SCAN_RESULT", index }, "Could not open the page's results");
     if (!r || !state) return;
     const meta: SavedScanMeta = {
@@ -489,16 +506,15 @@ export function SiteScan({ onBack }: { onBack(): void }) {
               {counts.done > 0 && !running && (
                 <>
                   <Button variant={phase === "done" ? "primary" : "secondary"} size="md" disabled={busy} onClick={() => void exportAll("html")}>
-                    Export report
+                    Export HTML
                   </Button>
                   <Button size="md" disabled={busy} onClick={() => void exportAll("json")}>
-                    JSON
+                    Export JSON
                   </Button>
                 </>
               )}
               {!running && (
                 <Button
-                  variant="ghost"
                   size="md"
                   disabled={busy}
                   onClick={() => {

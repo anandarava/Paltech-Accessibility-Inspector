@@ -57,6 +57,26 @@ function useWidth<T extends HTMLElement>(): [RefObject<T | null>, number] {
   return [ref, width];
 }
 
+/** Shown while a page opened from Site scan (View) shows its site-scan result in this tab. */
+function SiteScanPageBanner() {
+  const resultId = useStore((s) => s.result?.scanId);
+  const siteScanResultId = useStore((s) => s.siteScanResultId);
+  const viewingSaved = useStore((s) => s.viewingSaved);
+  const setView = useStore((s) => s.setView);
+  if (!siteScanResultId || resultId !== siteScanResultId || viewingSaved) return null;
+  return (
+    <div role="status" className="flex items-center gap-2 border-b border-indigo-700 bg-indigo-50 px-3 py-2 text-sm text-indigo-950">
+      <div className="min-w-0 flex-1">
+        <strong>Site scan result</strong> for this page
+        <span className="block text-xs">Scanned earlier; rescan to check the page as it is now</span>
+      </div>
+      <Button size="sm" variant="primary" onClick={() => setView("site")}>
+        Back to site scan
+      </Button>
+    </div>
+  );
+}
+
 function SavedBanner() {
   const saved = useStore((s) => s.viewingSaved);
   const exitSaved = useStore((s) => s.exitSaved);
@@ -240,6 +260,7 @@ export function App({ tabIdOverride, inspectable = false, onInspect, getInspecte
       {automated && (
         <>
         <SavedBanner />
+        <SiteScanPageBanner />
         <PageChangedBanner onRescan={() => void startScan()} />
 
         {tabId === null && !landing && (

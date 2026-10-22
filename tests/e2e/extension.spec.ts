@@ -1036,6 +1036,18 @@ test.describe("PalTech A11y Inspector extension", () => {
       expect(list.data?.some((m) => m.id === id && m.url.startsWith(url))).toBe(true);
       const got = await sendToBackground<{ result: ScanResult }>(panel, { type: "SAVED_SCAN_GET", id });
       expect(got.data?.result.issues.length).toBeGreaterThan(0);
+
+      // With screenshots: every open failed element that can be photographed has its own screenshot.
+      await page.bringToFront();
+      const withShots = await sendToBackground<{ id: string }>(panel, { type: "SAVED_SCAN_SAVE", tabId, name: "e2e images with screenshots", screenshots: true });
+      expect(withShots.ok, withShots.error).toBe(true);
+      const shotScan = (await sendToBackground<{ result: ScanResult }>(panel, { type: "SAVED_SCAN_GET", id: withShots.data!.id })).data!.result;
+      const failed = shotScan.issues.filter((i) => i.status === "new" && i.type !== "Semi");
+      const photographed = failed.filter((i) => i.evidence?.screenshot?.startsWith("data:image/png"));
+      // More than one per rule: the earlier limit of one element per rule (and 25 in all) is gone.
+      expect(new Set(failed.map((i) => i.ruleId)).size).toBeLessThan(failed.length);
+      expect(photographed.length).toBeGreaterThan(new Set(photographed.map((i) => i.ruleId)).size);
+      expect((await sendToBackground(panel, { type: "SAVED_SCAN_DELETE", id: withShots.data!.id })).ok).toBe(true);
       const renamed = await sendToBackground<{ name: string }>(panel, { type: "SAVED_SCAN_RENAME", id, name: "renamed" });
       expect(renamed.data?.name).toBe("renamed");
       expect((await sendToBackground(panel, { type: "SAVED_SCAN_DELETE", id })).ok).toBe(true);
@@ -1105,6 +1117,23 @@ test.describe("PalTech A11y Inspector extension", () => {
     state = await waitFor(["done"]);
     expect(state.pages.filter((p) => p.status === "done" && p.previous)).toHaveLength(5);
 
+    // View: the page opens in the tester's tab, which then holds that page's site-scan result (so its
+    // issues can be shown on the page), and arriving there is not reported as a page change.
+    const tester = await context.newPage();
+    await tester.goto(`${baseUrl}/site/index.html`);
+    const testerTab = await findTabId(panel, `${baseUrl}/site/index.html`);
+    const aboutResult = (await sendToBackground<ScanResult>(panel, { type: "SITE_SCAN_RESULT", index: about })).data!;
+    await panel.evaluate(() => ((window as unknown as { __a11yEvents: unknown[] }).__a11yEvents.length = 0));
+    const shown = await sendToBackground<ScanResult>(panel, { type: "SITE_SCAN_SHOW", index: about, tabId: testerTab });
+    expect(shown.ok, shown.error).toBe(true);
+    await expect.poll(() => tester.url()).toContain("/site/about.html");
+    const held = await sendToBackground<ScanResult>(panel, { type: "GET_LAST_RESULT", tabId: testerTab });
+    expect(held.data?.scanId).toBe(aboutResult.scanId);
+    await tester.waitForTimeout(2000);
+    const pageChanges = await panel.evaluate((t) => (window as unknown as { __a11yEvents: Array<{ type: string; tabId?: number }> }).__a11yEvents.filter((m) => m.type === "PAGE_CHANGED" && m.tabId === t).length, testerTab);
+    expect(pageChanges).toBe(0);
+    await tester.close();
+
     // Search box: finds a page by part of its address, and says when nothing matches.
     await panel.reload({ waitUntil: "load" });
     await panel.getByRole("button", { name: /Scan whole site/ }).click();
@@ -1122,6 +1151,28 @@ test.describe("PalTech A11y Inspector extension", () => {
     const cleared = await sendToBackground(panel, { type: "SITE_SCAN_CLEAR" });
     expect(cleared.ok, cleared.error).toBe(true);
     expect(await getState()).toBeNull();
+  });
+
+  test("site scan: with screenshots, each scanned page keeps a screenshot of its failed elements", async () => {
+    test.setTimeout(150_000);
+    const found = await sendToBackground<SiteScanState>(panel, {
+      type: "SITE_SCAN_DISCOVER",
+      url: `${baseUrl}/site/about.html`,
+      options: { maxPages: 1, maxDepth: 1, perTemplate: 1, useSitemap: false, exclude: ["logout"], within: "/site/", quick: true, screenshots: true },
+    });
+    expect(found.ok, found.error).toBe(true);
+    const poll = (phase: string) =>
+      expect.poll(async () => (await sendToBackground<SiteScanState | null>(panel, { type: "SITE_SCAN_GET" })).data?.phase, { timeout: 120_000, intervals: [500] }).toBe(phase);
+    await poll("review");
+    expect((await sendToBackground(panel, { type: "SITE_SCAN_START" })).ok).toBe(true);
+    await poll("done");
+    const state = (await sendToBackground<SiteScanState>(panel, { type: "SITE_SCAN_GET" })).data!;
+    const index = state.pages.findIndex((p) => p.status === "done" && p.url.endsWith("/site/about.html"));
+    expect(index).toBeGreaterThanOrEqual(0);
+    const result = (await sendToBackground<ScanResult>(panel, { type: "SITE_SCAN_RESULT", index })).data!;
+    const img = result.issues.find((i) => i.ruleId === "IMG-01" && i.status === "new");
+    expect(img?.evidence?.screenshot?.startsWith("data:image/png")).toBe(true);
+    expect((await sendToBackground(panel, { type: "SITE_SCAN_CLEAR" })).ok).toBe(true);
   });
 
   test("site scan: a script-built app is read page by page in the scan window, and stays inside its folder", async () => {

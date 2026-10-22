@@ -3,12 +3,16 @@
 A Chrome / Edge (Manifest V3) extension that scans the page you are looking at
 against **WCAG 2.2 Level A / AA** (AAA optional), highlights every failing
 element directly on the page, explains how to fix it, and exports findings as
-reports. Only **definite** failures are reported: findings the
-checks cannot decide automatically (axe "incomplete" results, text over a
-gradient, uncertain focus indicators…) are dropped rather than shown for
-review. Checks that need human judgement (alt text quality, heading structure,
-dialog behaviour…) still need manual testing; the **Keyboard test** covers
-keyboard access.
+reports. Only **definite** failures count as issues and toward the score:
+findings the checks cannot decide automatically (axe "incomplete" results, text
+over an image, uncertain focus indicators…) are listed apart on the **Needs
+review** tab. Checks that need human judgement (alt text quality, heading
+structure, dialog behaviour…) are covered by the **Manual** mode (Quick Assess
+and Full Assessment); the **Keyboard test** covers keyboard access.
+
+It can scan one page, part of a page, or a **whole site** (Site scan), and its
+Manual mode walks a tester through every WCAG 2.2 A/AA criterion that needs a
+person.
 
 The engine is [axe-core](https://github.com/dequelabs/axe-core) plus a set of
 custom rules (alpha-blended contrast, focus visibility, focus obscured, alt
@@ -38,8 +42,10 @@ Highlights:
   testing. Part 2 is for developers: every affected element with its own
   measurements (colour previews with a suggested passing colour), fix,
   selector, HTML and screenshot; XPath and fingerprint are under "Technical
-  details". "HTML report with screenshots" captures the first element of each
-  failed rule before exporting. The organisation and "Prepared by" shown on
+  details". "HTML report with screenshots" photographs every failed element
+  before exporting; Save scan and Site scan take the same screenshots while the
+  page is open ("Include screenshots", on by default), so saved-scan and site
+  reports show them too. The organisation and "Prepared by" shown on
   the report are set in Options
 - Baseline and ignore lists per origin, with reasons and authors
 
@@ -54,8 +60,8 @@ axe DevTools-style workflow:
   extension's own rules and lets axe's own
   `color-contrast` / `target-size` run, so counts line up with axe DevTools at
   the same WCAG version and level
-- **Result tabs**: All / WCAG issues / Best practices / Needs review / Passed,
-  free-text search, a **Status** filter (Open / Ignored / Baselined, with
+- **Result tabs**: All / WCAG issues / Best practices / Needs review / Failed
+  rules / Passed rules / Not applicable rules, free-text search, a **Status** filter (Open / Ignored / Baselined, with
   "Open only" and "Excluded only" shortcuts) to review ignored or baselined
   issues across all rules, results **grouped by rule** ("Text contrast (12)") with a
   "3 of 12 ◀ ▶" instance stepper and auto-highlight on the page. Inside a rule,
@@ -66,11 +72,27 @@ axe DevTools-style workflow:
 - **Saved scans**: name and save results, reopen them read-only, export,
   rename, delete, and compare two scans (or one with the current scan) as
   new / fixed / unchanged
-- **Site scan**: give an application's address; pages are found from the
-  sitemap, the rendered start page's menus and links (with the browser's
-  sign-in), similar pages are grouped, log-out/delete links skipped; review the
-  list, then the ticked pages are scanned one by one in a separate window
-  (pause / resume / stop) and exported as one multi-page report
+- **Site scan** (**Scan whole site** on the start screen): give an application's
+  address and it lists the application's screens, one row per screen, then scans
+  the ticked ones one by one in a separate window (pause / resume / stop) and
+  exports one multi-page report.
+  - Pages are found from the sitemap and from the menus of the rendered pages,
+    using the browser's sign-in, so pages behind a login are found while you are
+    signed in. Script-built apps (Angular, React; hash routes such as `#/leave`)
+    are read page by page in the scan window, up to 3 at once (**Pages read at
+    once**, default 2; use 1 for production servers).
+  - Menus are recognised from `<nav>`, header, footer, sidebars, tabs and
+    breadcrumbs, from containers with a menu-like class or id (`side-nav`,
+    `navbar`, `sidebar`…), and from links that repeat on several pages.
+  - One row per screen: detail pages (an id in the address, such as
+    `/products/123`) and repeat views of a listed screen are left out (a menu
+    link with an id keeps its first page as the example); named content pages of
+    one kind add three examples, the rest are counted as "+N similar". Log-out
+    and language-switch links, files, feeds, `/api/` addresses and session ids
+    in the path are skipped.
+  - Search the list, tick or untick pages, add pages by hand, **Rescan all** or
+    **Rescan** one page after fixes (each shows its last figures, "Score 91 (was
+    88)"), and **View** a page: it opens in the current tab with its results and its issues outlined on the page.
 - **Manual testing (Quick Assess and Full Assessment)**: the panel switches
   between Automated and Manual. Full Assessment covers every WCAG 2.2 A/AA
   criterion that needs a person (23 tests, 85 requirements; tests open as
@@ -79,10 +101,29 @@ axe DevTools-style workflow:
   links, images, focus order, contrast, headings, bypass blocks, instructions,
   reflow) with steps, visual helpers drawn on the page, Pass / Fail, instance
   lists for assisted requirements, failure instances picked on the page with a
-  screenshot, progress saved per page, .json download / load, and an HTML or
-  JSON report
+  screenshot, progress saved per page and .json download / load.
+  The HTML report has a summary (verdict, results by WCAG principle, top issues
+  to fix first), numbered issue cards for developers (filter by High / Medium,
+  copy all as CSV) and an optional ACR / VPAT style appendix by success
+  criterion; "Assessed by" is set in the Export dialog. JSON export is by
+  success criterion
 - **Copy issue** as plain text; two-pane list + detail layout when the panel is
   wide (typical in DevTools)
+
+Options page (right-click the extension icon → Options):
+
+- **General**: default WCAG version and level, best-practice checks, findings
+  that need manual review, axe-core rules only, automatic rescan when the page
+  changes, an environment name, and the organisation and "Prepared by" shown on
+  reports
+- **Categories**: limit scans to some rule categories
+- **Rules**: every rule with its WCAG mapping and severity; turn rules on or
+  off and adjust the thresholds some rules use
+- **Baselines and ignored issues**: list and remove them per site
+- **Screenshots and privacy**: selectors to blur (default `[type=password]`,
+  `.pii`) and masking of input values in screenshots
+- **Import / export**: the baseline, ignore list and rule configuration as one
+  JSON file
 
 ## Install
 
@@ -146,6 +187,23 @@ or dialog).
 | `aria.html` | invalid roles, missing required attributes, misspelled `aria-*`, invalid values, `aria-hidden` on focusables, orphan list items, unnamed progressbar / meter / dialog, status message without a live region |
 | `links.html` | empty link and button names, "click here" / "read more" / "here", unannounced `target=_blank`, 16x16 touching targets |
 | `spa.html` | `history.pushState` navigation between views, a modal dialog, view-specific violations |
+| `focus-indicators.html`, `target-size.html`, `labels-aria.html`, `missed-checks.html` | focus rings that are and are not indicators; 24px / 44px targets with the spacing exception; visible-label and strict ARIA cases; thrown-away focus, fake headings, headerless tables, navigating selects |
+| `bot-check.html`, `modal-dialog.html`, `overlay-no-main.html` | a bot-check page (findings moved to Needs review), an open modal, a full-screen overlay without `<main>` |
+| `real-site-cases.html`, `side-by-side.html` | patterns from real sites that must not be reported, next to look-alikes that must |
+| `locate.html`, `locate-frame.html` | elements re-drawn or removed after the scan, and cross-origin frames, for **View element** |
+| `assess.html` | links, images, headings, fields and controls for the Quick Assess / Full Assessment instance lists |
+
+Site scan test sites (folders, served the same way):
+
+| Folder | What it checks |
+|---|---|
+| `site/` + `sitemap.xml` | pages from links, a script-built link and the sitemap; log-out link, PDF, `mailto:` and product detail pages left out |
+| `app/` | a script-built app whose HTML has no links: menus read rendered, a redirecting menu address, staying inside the folder |
+| `hash/` | a hash-routed app: each `#/route` is its own page |
+| `shop/` | navigation followed; content links add one example of each kind |
+| `late/` | links a dashboard adds seconds after loading |
+| `sidenav/` | a menu built from a hidden `<div class="side-nav">` with nested lists, `href="#"` items and id-style links |
+| `plainmenu/` | a menu with no `<nav>` and no menu-like name, recognised because it repeats on every page |
 
 Serve them locally (no build step, no dependencies) and scan them with the
 extension:
@@ -167,7 +225,12 @@ best-practice weighting, `isNotConformant`),
 `src/content/fingerprint.ts`, `src/content/dom-utils.ts` (unique selectors,
 XPath, accessible-name precedence, focusable ordering), the HTML and JSON
 exporters, and the `alt-quality` / `link-text` custom rules run against jsdom
-documents with a minimal `RuleContext`.
+documents with a minimal `RuleContext`. Also covered: `shared/site-crawl.ts`
+(address clean-up, what is not a page, id and template rules, menu recognition,
+the worker pool used to read pages in several windows) and
+`shared/assessment.ts` / `shared/assessment-catalogue.ts` (the 85 requirements
+and their WCAG coverage, Quick Assess to Full Assessment, the assessment
+report and its appendix).
 
 ```bash
 npm test
@@ -190,7 +253,14 @@ npm test
    fixture's manifest;
 5. checks that scanning leaves the page unmodified (DOM, scroll, focus,
    injected styles) and that `spa.html` route changes and dialogs produce
-   `PAGE_CHANGED` events and a rescan finds the view-specific issues.
+   `PAGE_CHANGED` events and a rescan finds the view-specific issues;
+6. covers the panel features end to end: contrast checker and Check by eye,
+   View element, screenshots, ignore / baseline, saved scans, the Keyboard test
+   and the element picker;
+7. runs Site scan on the test sites above (pages found, one row per screen,
+   menus built from divs, several windows at once with the same result, hash
+   routes, late links, scanning, Rescan, the Search pages box) and Quick Assess /
+   Full Assessment on `assess.html`.
 
 The suite skips itself when `dist/` is missing. Run headed with
 `A11Y_E2E_HEADED=1`; point at another build with `A11Y_E2E_DIST=path`.
@@ -296,8 +366,10 @@ flowchart LR
         SP["Side panel"]
         DT["DevTools panel"]
         OPT["Options page"]
+        AS["Assessment tab<br/>Quick Assess / Full Assessment"]
     end
-    SW["Service worker<br/>message router, injection,<br/>screenshots,<br/>exports"]
+    SW["Service worker<br/>message router, injection,<br/>screenshots, exports,<br/>site scan"]
+    WIN["Site scan windows<br/>pages found and scanned"]
     subgraph Page["Page under test"]
         CS["Content script<br/>axe-core + custom rules,<br/>normaliser, SPA observer"]
         OV["Overlay<br/>(closed Shadow DOM)"]
@@ -310,6 +382,8 @@ flowchart LR
 
     SP <-->|runtime messages| SW
     DT <-->|runtime messages| SW
+    AS <-->|runtime messages| SW
+    SW -->|load, read links, scan| WIN
     OPT <--> STORE
     SW <-->|tabs.sendMessage| CS
     SW <--> STORE
@@ -327,11 +401,22 @@ content script runs axe and the custom rules per frame -> service worker merges
 frames, fingerprints and baselines issues, stores the result ->
 broadcasts `SCAN_RESULT` -> side panel renders; the overlay draws badges.
 
+Site scan (`src/background/site-scan.ts`, rules in `shared/site-crawl.ts`):
+`SITE_SCAN_DISCOVER` reads the sitemap and the start page, then follows menu
+links (fetched HTML, or rendered pages in up to 3 scan windows for script-built
+apps) and ends in a review list; `SITE_SCAN_START` loads each ticked page in a
+scan window of its own and runs the normal scan there; progress arrives as
+`SITE_SCAN_STATE`, and each page's result is stored apart. The assessment tab
+(`src/assessment/`) keeps its results per page in `chrome.storage.local` and uses
+the content script for instance lists, on-page helpers and element picking.
+
 ## Rule catalogue
 
 Generated from `shared/a11y-rules.json` v1.0.0 (WCAG 2.2) with
-`node scripts/print-rules.mjs`: 56 reported rules (43 backed by axe-core, 13
-custom).
+`node scripts/print-rules.mjs`, with notes on the custom parts of mixed rules:
+62 reported rules (43 backed by axe-core, 19 custom). Three of them (FRM-11,
+FRM-12, OTH-04) are "Semi" rules that report on the **Needs review** tab;
+`print-rules.mjs` leaves Semi rules out, so add them by hand when regenerating.
 
 #### Images and Media
 
@@ -402,7 +487,7 @@ custom).
 |---|---|---|---|---|---|---|
 | STR-01 | Missing or empty &lt;title&gt; | 2.4.2 Page Titled (A) | Auto | Serious | axe: `document-title` | yes |
 | STR-02 | &lt;html&gt; missing valid lang | 3.1.1 Language of Page (A) | Auto | Serious | axe: `html-has-lang`, `html-lang-valid`, `html-xml-lang-mismatch` | yes |
-| STR-07 | Data table without proper header association (&lt;th&gt;/scope/headers) | 1.3.1 Info and Relationships (A) | Auto | Serious | axe: `td-headers-attr`, `th-has-data-cells`, `table-duplicate-name`, `scope-attr-valid`, `table-fake-caption` | yes |
+| STR-07 | Data table without proper header association (&lt;th&gt;/scope/headers) | 1.3.1 Info and Relationships (A) | Auto | Serious | axe: `td-headers-attr`, `th-has-data-cells`, `table-duplicate-name`, `scope-attr-valid`, `table-fake-caption`, `td-has-header` | yes |
 | STR-08 | Duplicate id referenced by ARIA or &lt;label for&gt; | 4.1.2 Name, Role, Value (A) | Auto | Critical | axe: `duplicate-id-aria` (incomplete); custom: definite | yes |
 | STR-09 | &lt;iframe&gt; missing or duplicate title | 4.1.2 Name, Role, Value (A) | Auto | Serious | axe: `frame-title`, `frame-title-unique` | yes |
 | STR-11 | Invalid lang attribute on an element | 3.1.2 Language of Parts (AA) | Auto | Moderate | axe: `valid-lang` | yes |
@@ -456,9 +541,17 @@ unless enabled explicitly.
 
 ## Known limitations
 
-- Automated tools detect roughly 30-40% of WCAG issues; manual review, the
-  keyboard test and real screen reader testing (NVDA, JAWS, VoiceOver, TalkBack) remain
-  necessary. The score is not a compliance certification.
+- Automated tools detect roughly 30-40% of WCAG issues; manual review (the
+  Manual mode), the keyboard test and real screen reader testing (NVDA, JAWS,
+  VoiceOver, TalkBack) remain necessary. The score is not a compliance
+  certification.
+- Site scan finds pages through links. Screens reached only by clicking
+  something that is not a link (a `<div>` or button with no `href`) are not
+  found; add them with **Add a page**. It sees only what the signed-in account
+  can reach, and stops at the page limit and link depth. A site's bot protection
+  (such as a Cloudflare check) can block it, so that only the check page is
+  reached (flagged as OTH-04): open the site in the browser first. Script-built
+  apps are slower to read, since each page is opened.
 - The tool cannot judge the quality or accuracy of alt text, labels, or
   instructions; it only catches obvious patterns (filenames, generic words).
 - Contrast over images and videos is not checked (it cannot be decided
@@ -488,8 +581,9 @@ unless enabled explicitly.
 ```
 manifest.json                 MV3 manifest (CRXJS builds it)
 shared/                       rule catalogue, types, message contract, WCAG map, colour and scoring math
-src/background/               service worker, injection, keyboard tester, evidence, exporters
-src/content/                  content script, scanner, normaliser, custom rules, overlay, SPA observer
+src/background/               service worker, injection, keyboard tester, evidence, exporters, site scan, assessment
+src/content/                  content script, scanner, normaliser, custom rules, overlay, SPA observer, assessment helpers
+src/assessment/               Quick Assess / Full Assessment tab
 src/sidepanel | devtools | options | offscreen
 fixtures/                     test pages with planted violations and expected-result manifests
 tests/unit | tests/e2e        Vitest and Playwright suites

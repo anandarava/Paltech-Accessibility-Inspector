@@ -40,6 +40,8 @@ export interface SiteScanOptions {
    * its own (1–3; default 2). Scanning itself always uses one window.
    */
   parallel?: number;
+  /** Screenshot every failed element of each page while it is open, for the report (slower). */
+  screenshots?: boolean;
 }
 
 /** A link found on a page, and whether it sits in the page's navigation. */
@@ -165,6 +167,7 @@ export const DEFAULT_SITE_SCAN_OPTIONS: SiteScanOptions = {
   exclude: DEFAULT_EXCLUDES,
   quick: false,
   parallel: 2,
+  screenshots: true,
 };
 
 /** Most scan windows used at once while finding pages. */
