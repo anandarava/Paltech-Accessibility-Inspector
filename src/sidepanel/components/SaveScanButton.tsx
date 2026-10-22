@@ -20,6 +20,7 @@ export function SaveScanButton() {
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [withShots, setWithShots] = useState(true);
 
   const save = async (e: FormEvent) => {
     e.preventDefault();
@@ -30,7 +31,7 @@ export function SaveScanButton() {
     }
     setError(null);
     setBusy(true);
-    const res = await sendToBackground<SavedScanMeta>({ type: "SAVED_SCAN_SAVE", tabId, name: savedScanName(name) });
+    const res = await sendToBackground<SavedScanMeta>({ type: "SAVED_SCAN_SAVE", tabId, name: savedScanName(name), screenshots: withShots });
     setBusy(false);
     if (!res.ok) {
       showToast({ kind: "error", message: `Could not save the scan: ${res.error ?? "unknown error"}`, autoDismiss: false });
@@ -74,7 +75,7 @@ export function SaveScanButton() {
             className="min-w-0 flex-1 rounded-md border border-slate-500 bg-white px-2.5 py-1.5 text-sm text-slate-900 placeholder:text-slate-600"
           />
           <Button type="submit" variant="primary" disabled={busy}>
-            {busy ? "Saving…" : "Save"}
+            {busy ? (withShots ? "Taking screenshots…" : "Saving…") : "Save"}
           </Button>
         </div>
         {error && (
@@ -85,6 +86,13 @@ export function SaveScanButton() {
         <p id={`${id}-hint`} className="mt-1.5 text-xs text-slate-700">
           The date and time are added when you save.
         </p>
+        <label className="mt-2 flex items-start gap-2 text-sm text-slate-800">
+          <input type="checkbox" className="mt-1" checked={withShots} onChange={(e) => setWithShots(e.target.checked)} />
+          <span>
+            Include screenshots
+            <span className="block text-xs text-slate-700">Photographs every failed element now, so this scan's reports show them. The page scrolls while it runs.</span>
+          </span>
+        </label>
       </form>
     </Popover>
   );

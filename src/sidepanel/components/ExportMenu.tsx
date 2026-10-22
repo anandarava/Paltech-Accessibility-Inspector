@@ -19,7 +19,7 @@ interface ExportOption {
 }
 
 const OPTIONS: ExportOption[] = [
-  { id: "html-shots", format: "html", screenshots: true, live: true, label: "HTML report with screenshots", hint: "Captures each problem. The page scrolls while it runs.", chip: "HTML", featured: true },
+  { id: "html-shots", format: "html", screenshots: true, live: true, label: "HTML report with screenshots", hint: "Photographs every failed element. The page scrolls while it runs.", chip: "HTML", featured: true },
   { id: "html", format: "html", label: "HTML report", hint: "Summary and developer details", chip: "HTML" },
   { id: "json", format: "json", label: "JSON", hint: "Raw results for tooling and CI", chip: "JSON" },
 ];

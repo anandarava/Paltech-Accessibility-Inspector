@@ -109,6 +109,49 @@ function withTimeout<T>(p: Promise<T>, ms: number, fallback: () => T): Promise<T
 }
 
 /** Fire-and-forget broadcast to extension pages (side panel, devtools, options). */
+/** Tabs loading a page opened from Site scan (View): that load is not a change of the scanned page. */
+const showingSiteScanPage = new Set<number>();
+
+/**
+ * Open a site-scan page in the tester's tab and give that tab the page's result, so its issues
+ * can be shown on the page (overlay, View element) as after a scan of the tab itself.
+ */
+async function showSiteScanPage(tabId: number, index: number): Promise<ScanResult> {
+  const result = (await handleSiteScanMessage({ type: "SITE_SCAN_RESULT", index })) as ScanResult;
+  const tab = await chrome.tabs.get(tabId);
+  const bare = (u: string | undefined) => (u ?? "").split("#")[0].replace(/\/+$/, "").toLowerCase();
+  if (bare(tab.url) !== bare(result.url)) {
+    showingSiteScanPage.add(tabId);
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const done = () => {
+          clearTimeout(timer);
+          chrome.tabs.onUpdated.removeListener(onUpdated);
+          resolve();
+        };
+        const timer = setTimeout(done, 45_000);
+        const onUpdated = (id: number, info: { status?: string }) => {
+          if (id === tabId && info.status === "complete") done();
+        };
+        chrome.tabs.onUpdated.addListener(onUpdated);
+        chrome.tabs.update(tabId, { url: result.url, active: true }).catch((e: unknown) => {
+          clearTimeout(timer);
+          chrome.tabs.onUpdated.removeListener(onUpdated);
+          reject(e);
+        });
+      });
+    } finally {
+      // Let the "complete" handlers of this load run before page changes count again.
+      setTimeout(() => showingSiteScanPage.delete(tabId), 1500);
+    }
+  }
+  await setLastResult(tabId, result);
+  await ensureContentScript(tabId).catch(() => undefined);
+  // The overlay draws the issues from the result it is given.
+  void sendToTab(tabId, { type: "SCAN_RESULT", tabId, result }, 0);
+  return result;
+}
+
 function broadcast(msg: Message): void {
   try {
     chrome.runtime.sendMessage(msg, () => {
@@ -909,6 +952,9 @@ async function handleMessage(msg: Message, sender: Sender): Promise<unknown> {
     case "GET_LAST_RESULT":
       return getLastResult(msg.tabId);
 
+    case "SITE_SCAN_SHOW":
+      return showSiteScanPage(msg.tabId, msg.index);
+
     case "PICKER_START":
     case "PICKER_CANCEL": {
       await ensureContentScript(msg.tabId);
@@ -925,7 +971,9 @@ async function handleMessage(msg: Message, sender: Sender): Promise<unknown> {
       return listSavedScans();
 
     case "SAVED_SCAN_SAVE": {
-      const result = await requireLastResult(msg.tabId);
+      let result = await requireLastResult(msg.tabId);
+      // Screenshots are taken now, while the page is open, so the saved scan exports with them.
+      if (msg.screenshots) result = await photographIssues(msg.tabId, result);
       return saveScan(msg.name, result);
     }
 
@@ -1091,8 +1139,6 @@ async function handleKeyboardTestStart(msg: MessageOf<"KEYBOARD_TEST_START">): P
   return res.data;
 }
 
-/** Most elements a "with screenshots" export captures (about 0.6 s each). */
-const EXPORT_SCREENSHOT_LIMIT = 25;
 
 let logoDataUrl: Promise<string | undefined> | undefined;
 
@@ -1118,39 +1164,59 @@ async function reportMeta(): Promise<ReportMeta> {
 }
 
 /**
- * Screenshot the first open element of each failed rule that has none yet, so
- * the report shows readers what each problem looks like. The page scrolls
- * while this runs; failures are skipped rather than failing the export.
+ * The issues a report shows a screenshot for: every open failed issue (each element), and one
+ * element of each Needs review card. Issues that already have a screenshot are not taken again.
  */
-async function captureReportScreenshots(tabId: number, result: ScanResult): Promise<void> {
-  const seen = new Set<string>();
+function issuesToPhotograph(result: ScanResult): string[] {
   const wanted: string[] = [];
-  // One screenshot per rule card. Failures come first so needs-review cards never use up
-  // the limit; a rule can have a failure card and a needs-review card, each gets its own.
-  const ordered = [...result.issues.filter((i) => i.type !== "Semi"), ...result.issues.filter((i) => i.type === "Semi")];
-  for (const issue of ordered) {
+  const reviewCards = new Set<string>();
+  for (const issue of result.issues) {
     if (issue.status !== "new") continue;
-    const key = `${issue.type === "Semi" ? "review" : "issue"} ${issue.ruleId} ${issue.title}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
+    if (issue.type === "Semi") {
+      const card = `${issue.ruleId} ${issue.title}`;
+      if (reviewCards.has(card)) continue;
+      reviewCards.add(card);
+    }
     if (!issue.evidence?.screenshot) wanted.push(issue.id);
-    if (wanted.length >= EXPORT_SCREENSHOT_LIMIT) break;
   }
-  if (wanted.length === 0) return;
+  return wanted;
+}
+
+/** A copy of `result` with these screenshots attached to their issues. */
+function withScreenshots(result: ScanResult, screenshots: Record<string, string>): ScanResult {
+  if (Object.keys(screenshots).length === 0) return result;
+  const capturedAt = new Date().toISOString();
+  return {
+    ...result,
+    issues: result.issues.map((issue) => (screenshots[issue.id] ? { ...issue, evidence: { ...issue.evidence, screenshot: screenshots[issue.id], capturedAt } } : issue)),
+  };
+}
+
+/**
+ * Screenshot every element the report shows (see issuesToPhotograph) and return the result with
+ * them attached. The page scrolls while this runs; elements that cannot be photographed are
+ * skipped rather than failing the export. The screenshots are returned with the result rather than
+ * read back from session storage, whose screenshot budget may not hold them all.
+ */
+async function photographIssues(tabId: number, result: ScanResult): Promise<ScanResult> {
+  const wanted = issuesToPhotograph(result);
+  if (wanted.length === 0) return result;
   try {
     const screenshots = await captureIssueEvidence(tabId, result, wanted, await getSettings());
-    await storeEvidence(tabId, screenshots);
+    await storeEvidence(tabId, screenshots).catch(() => undefined);
     broadcast({ type: "EVIDENCE_RESULT", tabId, screenshots });
+    return withScreenshots(result, screenshots);
   } catch (e) {
     console.warn(`[a11y-checker] report screenshots skipped: ${describeError(e)}`);
+    return result;
   }
 }
 
 async function handleExport(msg: MessageOf<"EXPORT_REPORT">): Promise<unknown> {
   const { tabId } = msg;
   try {
-    if (msg.screenshots && msg.format === "html") await captureReportScreenshots(tabId, await requireLastResult(tabId));
-    const result = await requireLastResult(tabId);
+    let result = await requireLastResult(tabId);
+    if (msg.screenshots && msg.format === "html") result = await photographIssues(tabId, result);
     const file = buildReport(msg.format, result, await reportMeta());
     const downloadId = await downloadText(file.filename, file.mime, file.content);
     broadcast({ type: "EXPORT_RESULT", tabId, ok: true, filename: file.filename });
@@ -1188,6 +1254,7 @@ configureSidePanel();
 initSiteScan({
   scan: (tabId, options) => startScan(tabId, options),
   scanOptions: async () => defaultScanOptions(await getSettings()),
+  photograph: (tabId, result) => photographIssues(tabId, result),
   exportResults: async (format, results) => {
     const file = buildMultiPageReport(format, results, await reportMeta());
     await downloadText(file.filename, file.mime, file.content);
@@ -1275,6 +1342,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (changeInfo.status !== "complete") return;
+  if (showingSiteScanPage.has(tabId)) return;
   void (async () => {
     try {
       const last = await getLastResult(tabId);

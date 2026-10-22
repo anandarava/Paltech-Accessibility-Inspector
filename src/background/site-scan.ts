@@ -48,6 +48,8 @@ export interface SiteScanDeps {
   scan(tabId: number, options: ScanOptions): Promise<ScanResult>;
   /** Scan options from the current settings. */
   scanOptions(): Promise<ScanOptions>;
+  /** Screenshot every failed element of a scanned page (the tab must be visible); the result with them. */
+  photograph(tabId: number, result: ScanResult): Promise<ScanResult>;
   /** Build and download one report for several results. */
   exportResults(format: ExportFormat, results: ScanResult[]): Promise<{ filename: string }>;
   broadcast(msg: Message): void;
@@ -679,7 +681,12 @@ async function scanPages(): Promise<void> {
           if (requested() === "stop") {
             patch = { status: "pending" };
           } else {
-            const result = await deps.scan(tabId, options);
+            let result = await deps.scan(tabId, options);
+            // Screenshots while the page is open in the scan window, for the report and View.
+            if (state.options.screenshots) {
+              await update({ message: `Taking screenshots of the issues on page ${doneCount + 1} of ${total}` });
+              result = await deps.photograph(tabId, result);
+            }
             await chrome.storage.local.set({ [resultKey(state.id, index)]: result });
             patch = {
               status: "done",
@@ -854,5 +861,6 @@ export function isSiteScanTab(tabId: number): boolean {
 }
 
 export function isSiteScanMessage(msg: Message): boolean {
-  return msg.type.startsWith("SITE_SCAN_") && msg.type !== "SITE_SCAN_STATE";
+  // SITE_SCAN_SHOW works on the tester's tab and is handled with the tab's results (service worker).
+  return msg.type.startsWith("SITE_SCAN_") && msg.type !== "SITE_SCAN_STATE" && msg.type !== "SITE_SCAN_SHOW";
 }
