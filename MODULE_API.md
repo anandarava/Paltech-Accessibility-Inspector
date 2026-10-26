@@ -95,7 +95,8 @@ export interface ReportFile { filename: string; mime: string; content: string }
 export function buildReport(format: ExportFormat, result: ScanResult, meta?: ReportMeta): ReportFile
 ```
 `html-report.ts` exports `buildHtmlReport(result, meta?: ReportMeta): string` (`ReportMeta`:
-preparedBy, organisation, logo data URL). Self-contained (inline CSS, no external requests, itself
+preparedBy, organisation). The header logo is the scanned site's own icon (`ScanResult.siteLogo`,
+fetched and shrunk to 96 px during the scan); no logo when the site has none. Self-contained (inline CSS, no external requests, itself
 accessible). Part 1 is the summary for stakeholders, Part 2 the developer details. Plain-language text
 per rule (headline, impact, fix, users affected, effort) comes from `report-guidance.ts`
 (`guidanceFor`, `SEVERITY_MEANING`). `EXPORT_REPORT` accepts `screenshots: true` to capture the first

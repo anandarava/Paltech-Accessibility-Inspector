@@ -29,17 +29,19 @@ function hostOf(url: string): string {
   }
 }
 
-function stamp(iso: string): string {
-  const parsed = new Date(iso);
-  const date = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}${p(date.getMonth() + 1)}${p(date.getDate())}-${p(date.getHours())}${p(date.getMinutes())}${p(date.getSeconds())}`;
+/** The application's name for the filename: the scanned site's host without "www."; the first one when the scans span several. */
+function appName(results: ScanResult[]): string {
+  const host = hostOf(results[0]?.url ?? "").replace(/^www\./i, "");
+  return host.replace(/[^a-z0-9.-]+/gi, "_").replace(/^[._-]+|[._-]+$/g, "").slice(0, 60) || "page";
 }
 
-/** Filename that is safe for chrome.downloads on every platform. */
+/** "<application name>_Accessibility_Report.<ext>": safe for chrome.downloads on every platform. */
+function filenameFor(format: ExportFormat, results: ScanResult[]): string {
+  return `${appName(results)}_Accessibility_Report.${FORMATS[format].ext}`;
+}
+
 export function reportFilename(format: ExportFormat, result: ScanResult): string {
-  const host = hostOf(result.url).replace(/[^a-z0-9.-]+/gi, "_").slice(0, 60);
-  return `a11y-report_${host}_${stamp(result.timestamp)}.${FORMATS[format].ext}`;
+  return filenameFor(format, [result]);
 }
 
 export function buildReport(format: ExportFormat, result: ScanResult, meta: ReportMeta = {}): ReportFile {
@@ -57,7 +59,7 @@ export function buildMultiPageReport(format: ExportFormat, results: ScanResult[]
   if (results.length === 1) return buildReport(format, results[0], meta);
   const spec = FORMATS[format];
   if (!spec) throw new Error(`Unsupported export format: ${String(format)}`);
-  const filename = `a11y-report_${results.length}-pages_${stamp(now.toISOString())}.${spec.ext}`;
+  const filename = filenameFor(format, results);
   const content =
     format === "html"
       ? buildMultiPageHtmlReport(results, meta)

@@ -150,6 +150,8 @@ export interface ScanResult {
   url: string;
   origin: string;
   title: string;
+  /** The scanned site's own icon as a small data:image/png URL, shown in report headers. Absent when the site has none. */
+  siteLogo?: string;
   timestamp: string;
   environment?: string;
   browser: string;
