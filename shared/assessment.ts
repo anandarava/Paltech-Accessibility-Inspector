@@ -409,7 +409,7 @@ ${
     : ""
 }
 ${appendix ? appendix.replace('<section class="sheet"', '<section class="sheet appendix-break"') : ""}
-<footer>PalTech A11y Inspector · ${esc(name)} report · a manual assessment, not a certification of conformance</footer>
+<footer>PalTech Accessibility Testing · ${esc(name)} report · a manual assessment, not a certification of conformance</footer>
 </main><script>
 (function(){var b=[].slice.call(document.querySelectorAll('.tools [data-f]'));b.forEach(function(x){x.addEventListener('click',function(){b.forEach(function(y){y.setAttribute('aria-pressed',String(y===x))});var f=x.getAttribute('data-f');[].forEach.call(document.querySelectorAll('.card'),function(c){c.hidden=f!=='all'&&c.getAttribute('data-impact')!==f})})});
 var c=document.getElementById('copy');if(c)c.addEventListener('click',function(){var t=${JSON.stringify(csv).replace(/</g, "\\u003c")};var done=function(){document.getElementById('copied').textContent='Copied '+${items.length}+' issues.'};if(navigator.clipboard)navigator.clipboard.writeText(t).then(done,function(){prompt('Copy the issues:',t)});else prompt('Copy the issues:',t)})})();
@@ -438,7 +438,7 @@ export function buildAssessmentJson(state: AssessmentState, options: ReportOptio
     else if (r.status === "todo" && c.status === "pass") c.status = "todo";
   }
   return JSON.stringify(
-    { tool: "PalTech A11y Inspector", kind: state.kind === "full" ? "full-assessment" : "quick-assess", target: state.target, description: options.description || undefined, exportedAt: (options.now ?? new Date()).toISOString(), summary: summarize(state), requirements, byCriterion },
+    { tool: "PalTech Accessibility Testing", kind: state.kind === "full" ? "full-assessment" : "quick-assess", target: state.target, description: options.description || undefined, exportedAt: (options.now ?? new Date()).toISOString(), summary: summarize(state), requirements, byCriterion },
     (k, v) => (k === "next" ? v?.id : v),
     2,
   );

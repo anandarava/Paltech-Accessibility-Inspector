@@ -201,7 +201,7 @@ export function App({ tabIdOverride, inspectable = false, onInspect, getInspecte
   return (
     <div ref={rootRef} className="relative flex h-full flex-col overflow-hidden bg-white text-slate-900">
       <header className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-3 py-2">
-        <h1 className="text-base font-bold">PalTech A11y Inspector</h1>
+        <h1 className="text-base font-bold">PalTech Accessibility Testing</h1>
         {/* The landing view has the same settings in its card; the header shows them with the results. */}
         {automated && !landing && (
           <div className="flex flex-wrap items-center gap-x-1 gap-y-1">

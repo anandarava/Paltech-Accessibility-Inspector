@@ -66,7 +66,7 @@ const BASELINE_AUTHOR = "tester";
 const SCANNABLE_URL_RE = /^(https?|file):/i;
 const UNSUPPORTED_PAGE_ERROR = "Only http(s) and file pages can be scanned.";
 const NO_ACCESS_ERROR =
-  "PalTech A11y Inspector has no access to this tab. Click the PalTech A11y Inspector toolbar icon on this tab to grant access, " +
+  "PalTech Accessibility Testing has no access to this tab. Click the PalTech Accessibility Testing toolbar icon on this tab to grant access, " +
   "or allow site access for the extension in chrome://extensions.";
 
 /** Broadcast event types the content script may emit without a tabId. */
@@ -1192,9 +1192,27 @@ async function loadSiteLogo(iconUrls: string[]): Promise<string | undefined> {
   return undefined;
 }
 
+let toolLogoDataUrl: Promise<string | undefined> | undefined;
+
+/** The extension (PalTech) logo as a data: URL, shown in the report's sidebar. */
+function loadToolLogo(): Promise<string | undefined> {
+  toolLogoDataUrl ??= (async () => {
+    try {
+      const res = await fetch(chrome.runtime.getURL("icons/48.png"));
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      let binary = "";
+      for (const b of bytes) binary += String.fromCharCode(b);
+      return `data:image/png;base64,${btoa(binary)}`;
+    } catch {
+      return undefined;
+    }
+  })();
+  return toolLogoDataUrl;
+}
+
 async function reportMeta(): Promise<ReportMeta> {
   const settings = await getSettings();
-  return { preparedBy: settings.reportPreparedBy, organisation: settings.reportOrganisation };
+  return { preparedBy: settings.reportPreparedBy, organisation: settings.reportOrganisation, logo: await loadToolLogo() };
 }
 
 /**

@@ -1,9 +1,9 @@
 /**
- * DevTools page entry: registers the "PalTech A11y Inspector" panel. The panel itself
+ * DevTools page entry: registers the "PalTech Accessibility Testing" panel. The panel itself
  * (src/devtools/panel.html -> panel.tsx) renders the same App as the side panel
  * with tabId = chrome.devtools.inspectedWindow.tabId.
  */
-const PANEL_TITLE = "PalTech A11y Inspector";
+const PANEL_TITLE = "PalTech Accessibility Testing";
 const PANEL_ICON = "icons/16.png";
 const PANEL_PAGE = "src/devtools/panel.html";
 

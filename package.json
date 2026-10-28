@@ -2,7 +2,7 @@
   "name": "a11y-checker",
   "version": "1.0.0",
   "private": true,
-  "description": "PalTech A11y Inspector: scan pages for WCAG 2.2 accessibility issues, highlight them, and report bugs.",
+  "description": "PalTech Accessibility Testing: scan pages for WCAG 2.2 accessibility issues, highlight them, and report bugs.",
   "type": "module",
   "scripts": {
     "dev": "vite",

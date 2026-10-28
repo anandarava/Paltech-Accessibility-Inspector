@@ -274,7 +274,7 @@ export function Options(): JSX.Element {
   if (loading) {
     return (
       <main className="mx-auto max-w-5xl p-6">
-        <h1 className="text-2xl font-bold">PalTech A11y Inspector settings</h1>
+        <h1 className="text-2xl font-bold">PalTech Accessibility Testing settings</h1>
         <p role="status" aria-live="polite" className="mt-4 text-sm text-slate-600">
           Loading settings…
         </p>
@@ -285,7 +285,7 @@ export function Options(): JSX.Element {
   if (loadError) {
     return (
       <main className="mx-auto max-w-5xl p-6">
-        <h1 className="text-2xl font-bold">PalTech A11y Inspector settings</h1>
+        <h1 className="text-2xl font-bold">PalTech Accessibility Testing settings</h1>
         <p role="alert" className="mt-4 rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800">
           Settings could not be loaded: {loadError}
         </p>
@@ -303,7 +303,7 @@ export function Options(): JSX.Element {
       </a>
       <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-3 px-4 py-3">
-          <h1 className="text-xl font-bold text-slate-900">PalTech A11y Inspector settings</h1>
+          <h1 className="text-xl font-bold text-slate-900">PalTech Accessibility Testing settings</h1>
           <span className="text-xs text-slate-500">WCAG 2.2 · rule set {rulesFile.version}</span>
           <div className="ml-auto flex items-center gap-2">
             {/* Always mounted so the live region exists before its text changes; otherwise screen readers never announce it. */}

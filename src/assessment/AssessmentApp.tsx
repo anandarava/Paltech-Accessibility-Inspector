@@ -847,7 +847,7 @@ export function AssessmentApp() {
               <path d="M3 6h10M8 6v4M5.5 14 8 10l2.5 4" />
             </svg>
           </span>
-          PalTech A11y Inspector
+          PalTech Accessibility Testing
         </span>
         <span className="text-sm text-slate-700">
           Target page:{" "}

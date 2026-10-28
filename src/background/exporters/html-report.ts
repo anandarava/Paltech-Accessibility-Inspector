@@ -27,6 +27,8 @@ import MULTI_PAGE_TEMPLATE from "./multipage-template.html?raw";
 export interface ReportMeta {
   preparedBy?: string;
   organisation?: string;
+  /** data:image/png URL of the PalTech logo shown in the report's sidebar. */
+  logo?: string;
 }
 
 const CATEGORY_ORDER: Category[] = [
@@ -525,7 +527,7 @@ function sharedAdviceOf(group: RuleGroup): string | undefined {
 }
 
 function sourceLabel(source: Issue["source"]): string {
-  return source === "axe" ? "axe-core" : source === "custom" ? "PalTech A11y Inspector rule" : "Manual";
+  return source === "axe" ? "axe-core" : source === "custom" ? "PalTech Accessibility Testing rule" : "Manual";
 }
 
 function statusLabel(status: Issue["status"]): string {
@@ -1030,7 +1032,7 @@ export function buildHtmlReport(result: ScanResult, meta: ReportMeta = {}): stri
   const band = scoreBand(score);
   const target = `WCAG ${result.wcagVersion ?? "2.2"} ${result.wcagLevel}`;
   const scopeHtml = result.scope?.kind === "selector" ? `Part of the page (<code>${escapeHtml(result.scope.selector ?? "")}</code>)` : "Full page";
-  const rulesText = result.axeOnly ? "axe-core rules only" : "axe-core and PalTech A11y Inspector rules";
+  const rulesText = result.axeOnly ? "axe-core rules only" : "axe-core and PalTech Accessibility Testing rules";
   const applicable = passed.length + groups.length;
   const v = verdict(groups, active, target);
   const logo = safeImage(result.siteLogo);
@@ -1084,7 +1086,7 @@ ${unscanned.length ? `<details open><summary>${plural(unscanned.length, "frame")
 </ul></nav>
 
 <main id="main" class="wrap">
-<div class="part first" id="part-summary"><h2>Part 1 · Summary</h2></div>
+<div class="part first" id="part-summary"><h2>Summary</h2></div>
 
 <section class="card verdict ${v.tone}" aria-labelledby="h-verdict">
 <h3 id="h-verdict">${escapeHtml(v.title)}</h3>
@@ -1130,7 +1132,7 @@ ${renderAffected(groups) || ""}
 </section>
 </div>
 
-<div class="part" id="part-dev"><h2>Part 2 · Developer details</h2><span>Everything needed to find and fix each issue</span></div>
+<div class="part" id="part-dev"><h2>Developer details</h2><span>Everything needed to find and fix each issue</span></div>
 <p class="intro">Each problem below explains why it matters and how to fix it, then lists every affected element with its own measurements, suggested fix, code location and HTML.</p>
 
 ${renderSeverityFilter(counts, `${renderFailedRulesTable(groups)}
@@ -1237,7 +1239,7 @@ interface TemplatePage {
 
 /** The JSON the multi-page template's renderer reads (field names are the template's). */
 export interface MultiPageReportData {
-  tool: { name: string; version: string };
+  tool: { name: string; version: string; logo: string };
   generatedAt: string;
   standard: string;
   rulesets: string;
@@ -1367,10 +1369,10 @@ export function multiPageReportData(results: ScanResult[], meta: ReportMeta = {}
   const origins = unique(results.map((r) => originOf(r.url)));
   const times = results.map((r) => r.timestamp).sort();
   return {
-    tool: { name: tool.name, version: tool.version },
+    tool: { name: tool.name, version: tool.version, logo: safeImage(meta.logo) ?? "" },
     generatedAt: formatDate(now.toISOString()),
     standard: unique(results.map((r) => `WCAG ${r.wcagVersion ?? "2.2"} ${r.wcagLevel}`)).join(", "),
-    rulesets: results.every((r) => r.axeOnly) ? "axe-core rules only" : "axe-core and PalTech A11y Inspector rules",
+    rulesets: results.every((r) => r.axeOnly) ? "axe-core rules only" : "axe-core and PalTech Accessibility Testing rules",
     site: {
       name: meta.organisation?.trim() || (origins.length === 1 ? new URL(origins[0]).hostname : `${origins.length} sites`),
       origin: origins.join(", "),

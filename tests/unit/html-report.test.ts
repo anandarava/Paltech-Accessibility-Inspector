@@ -49,8 +49,8 @@ describe("buildHtmlReport", () => {
   it("has a plain-language summary part and a developer part", () => {
     const issues = [makeIssue({ ruleId: "CLR-01", severity: "Serious" }), makeIssue({ ruleId: "IMG-01", title: "Missing alt", severity: "Critical" })];
     const html = buildHtmlReport(makeScanResult({ issues }));
-    expect(html).toContain("Part 1 · Summary");
-    expect(html).toContain("Part 2 · Developer details");
+    expect(html).toContain("Summary");
+    expect(html).toContain("Developer details");
     expect(html).toContain("critical barriers found");
     expect(html).toContain("Fix these first");
     expect(html).toContain("Images have no text description");

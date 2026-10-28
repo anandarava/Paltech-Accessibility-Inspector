@@ -26,7 +26,7 @@ export function toolInfo(): ToolInfo {
   } catch {
     // Not running inside the extension; fall through to the static default.
   }
-  return { name: "PalTech A11y Inspector", version: "1.0.0" };
+  return { name: "PalTech Accessibility Testing", version: "1.0.0" };
 }
 
 export interface JsonReportDocument extends ScanResult {

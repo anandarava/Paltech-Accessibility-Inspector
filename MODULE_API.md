@@ -95,9 +95,10 @@ export interface ReportFile { filename: string; mime: string; content: string }
 export function buildReport(format: ExportFormat, result: ScanResult, meta?: ReportMeta): ReportFile
 ```
 `html-report.ts` exports `buildHtmlReport(result, meta?: ReportMeta): string` (`ReportMeta`:
-preparedBy, organisation). The header logo is the scanned site's own icon (`ScanResult.siteLogo`,
-fetched and shrunk to 96 px during the scan); no logo when the site has none. Self-contained (inline CSS, no external requests, itself
-accessible). Part 1 is the summary for stakeholders, Part 2 the developer details. Plain-language text
+preparedBy, organisation, PalTech logo data URL for the sidebar). Page and Application summary headers
+show the scanned site's own icon (`ScanResult.siteLogo`, fetched and shrunk to 96 px during the scan);
+no logo there when the site has none. Self-contained (inline CSS, no external requests, itself
+accessible). The Summary section is for stakeholders, Developer details for developers. Plain-language text
 per rule (headline, impact, fix, users affected, effort) comes from `report-guidance.ts`
 (`guidanceFor`, `SEVERITY_MEANING`). `EXPORT_REPORT` accepts `screenshots: true` to capture the first
 open element of each failed rule (max 25) before building. `json-report.ts` exports `buildJsonReport(result): string`.
@@ -241,7 +242,7 @@ data table, fix, Highlight / Copy / Screenshot / Ignore / Baseline actions with 
 `ExportMenu`, `Toast`. The panel resolves `tabId` from
 `chrome.tabs.query({ active: true, lastFocusedWindow: true })` and follows `chrome.tabs.onActivated`.
 The panel itself must be keyboard operable with visible focus and proper ARIA.
-`src/devtools/devtools.ts` calls `chrome.devtools.panels.create("PalTech A11y Inspector", "icons/16.png", "src/devtools/panel.html")`;
+`src/devtools/devtools.ts` calls `chrome.devtools.panels.create("PalTech Accessibility Testing", "icons/16.png", "src/devtools/panel.html")`;
 `src/devtools/panel.tsx` renders the same `<App />` with `tabId = chrome.devtools.inspectedWindow.tabId`
 and an "Inspect" action that runs `chrome.devtools.inspectedWindow.eval("inspect(document.querySelector(<selector>))")`.
 
