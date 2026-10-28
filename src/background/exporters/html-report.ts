@@ -27,7 +27,7 @@ import MULTI_PAGE_TEMPLATE from "./multipage-template.html?raw";
 export interface ReportMeta {
   preparedBy?: string;
   organisation?: string;
-  /** data:image/png URL of the logo shown in the report header. */
+  /** data:image/png URL of the PalTech logo shown in the report's sidebar. */
   logo?: string;
 }
 
@@ -527,7 +527,7 @@ function sharedAdviceOf(group: RuleGroup): string | undefined {
 }
 
 function sourceLabel(source: Issue["source"]): string {
-  return source === "axe" ? "axe-core" : source === "custom" ? "PalTech A11y Inspector rule" : "Manual";
+  return source === "axe" ? "axe-core" : source === "custom" ? "PalTech Accessibility Testing rule" : "Manual";
 }
 
 function statusLabel(status: Issue["status"]): string {
@@ -909,6 +909,8 @@ svg.ring,svg.donut{flex:none}
 .bandpill.poor{background:#fde8e8;color:#7a1414;border-color:#b3261e}
 .sev{display:flex;gap:1.1rem;align-items:center;flex-wrap:wrap}
 .sev ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem;flex:1;min-width:12rem}
+.rvline{margin:.9rem 0 0;padding-top:.7rem;border-top:1px dashed var(--line);display:flex;align-items:center;gap:.5rem;font-size:.88rem;color:var(--muted)}
+.rvcount{border:1px dashed #8a6d00;color:#6b5400;background:#fff8e0;border-radius:999px;padding:.05rem .6rem;font-weight:700;font-size:.82rem;flex:none}
 .sev li{display:grid;grid-template-columns:auto 1fr auto;column-gap:.5rem;align-items:center}
 .sev li small{grid-column:2/4;color:var(--muted);font-size:.78rem;line-height:1.2}
 .sev li b{font-variant-numeric:tabular-nums}
@@ -1030,10 +1032,10 @@ export function buildHtmlReport(result: ScanResult, meta: ReportMeta = {}): stri
   const band = scoreBand(score);
   const target = `WCAG ${result.wcagVersion ?? "2.2"} ${result.wcagLevel}`;
   const scopeHtml = result.scope?.kind === "selector" ? `Part of the page (<code>${escapeHtml(result.scope.selector ?? "")}</code>)` : "Full page";
-  const rulesText = result.axeOnly ? "axe-core rules only" : "axe-core and PalTech A11y Inspector rules";
+  const rulesText = result.axeOnly ? "axe-core rules only" : "axe-core and PalTech Accessibility Testing rules";
   const applicable = passed.length + groups.length;
   const v = verdict(groups, active, target);
-  const logo = safeImage(meta.logo);
+  const logo = safeImage(result.siteLogo);
   const preparedBy = meta.preparedBy?.trim();
   const organisation = meta.organisation?.trim();
 
@@ -1084,7 +1086,7 @@ ${unscanned.length ? `<details open><summary>${plural(unscanned.length, "frame")
 </ul></nav>
 
 <main id="main" class="wrap">
-<div class="part first" id="part-summary"><h2>Part 1 · Summary</h2><span>For team leads and clients</span></div>
+<div class="part first" id="part-summary"><h2>Summary</h2></div>
 
 <section class="card verdict ${v.tone}" aria-labelledby="h-verdict">
 <h3 id="h-verdict">${escapeHtml(v.title)}</h3>
@@ -1096,7 +1098,11 @@ ${unscanned.length ? `<details open><summary>${plural(unscanned.length, "frame")
 <div class="score">${scoreRing(score)}<div><span class="bandpill ${band.cls}">${band.label}</span>
 <p class="muted small">Share of the ${applicable} rules that applied which passed, with more serious rules counting more. Use it to track progress, not as a pass mark.</p></div></div></div>
 <div class="card"><h3 class="label">Issues by severity</h3>
-<div class="sev">${severityDonut(counts, active.length)}<ul aria-label="Open issues by severity">${sevList}</ul></div></div>
+<div class="sev">${severityDonut(counts, active.length)}<ul aria-label="Open issues by severity">${sevList}</ul></div>${
+  review.length
+    ? `<p class="rvline"><span class="rvcount">+${review.length}</span><span>need${review.length === 1 ? "s" : ""} review by hand, not counted above. <a href="#h-review">See ${review.length === 1 ? "it" : "them"}</a></span></p>`
+    : ""
+}</div>
 <div class="card"><h3 class="label">Rules</h3>
 <div class="kpis"><div class="kpi"><b>${groups.length}</b><span>failed</span></div><div class="kpi"><b>${passed.length}</b><span>passed</span></div><div class="kpi"><b>${inapplicable.length}</b><span>not applicable</span></div><div class="kpi"><b>${excluded.length}</b><span>issues excluded</span></div></div></div>
 </section>
@@ -1126,7 +1132,7 @@ ${renderAffected(groups) || ""}
 </section>
 </div>
 
-<div class="part" id="part-dev"><h2>Part 2 · Developer details</h2><span>Everything needed to find and fix each issue</span></div>
+<div class="part" id="part-dev"><h2>Developer details</h2><span>Everything needed to find and fix each issue</span></div>
 <p class="intro">Each problem below explains why it matters and how to fix it, then lists every affected element with its own measurements, suggested fix, code location and HTML.</p>
 
 ${renderSeverityFilter(counts, `${renderFailedRulesTable(groups)}
@@ -1213,6 +1219,8 @@ interface TemplatePage {
   id: string;
   title: string;
   url: string;
+  /** The scanned site's own icon (data:image/png URL); empty when it has none. */
+  logo: string;
   score: number;
   scannedAt: string;
   browser: string;
@@ -1329,6 +1337,7 @@ function templatePage(result: ScanResult, n: number): TemplatePage {
     id: `page-${n}`,
     title: result.title || result.url || "Untitled page",
     url,
+    logo: safeImage(result.siteLogo) ?? "",
     score: Number.isFinite(result.score) ? result.score : 0,
     scannedAt: formatDate(result.timestamp),
     browser: result.browser ?? "",
@@ -1363,7 +1372,7 @@ export function multiPageReportData(results: ScanResult[], meta: ReportMeta = {}
     tool: { name: tool.name, version: tool.version, logo: safeImage(meta.logo) ?? "" },
     generatedAt: formatDate(now.toISOString()),
     standard: unique(results.map((r) => `WCAG ${r.wcagVersion ?? "2.2"} ${r.wcagLevel}`)).join(", "),
-    rulesets: results.every((r) => r.axeOnly) ? "axe-core rules only" : "axe-core and PalTech A11y Inspector rules",
+    rulesets: results.every((r) => r.axeOnly) ? "axe-core rules only" : "axe-core and PalTech Accessibility Testing rules",
     site: {
       name: meta.organisation?.trim() || (origins.length === 1 ? new URL(origins[0]).hostname : `${origins.length} sites`),
       origin: origins.join(", "),

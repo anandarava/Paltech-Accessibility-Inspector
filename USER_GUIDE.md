@@ -1,4 +1,4 @@
-# PalTech A11y Inspector: User Guide
+# PalTech Accessibility Testing: User Guide
 
 A guide for testers and developers who use the extension day to day.
 
@@ -22,7 +22,7 @@ A guide for testers and developers who use the extension day to day.
 
 ## 1. What it is
 
-The PalTech A11y Inspector scans the page you are looking at for WCAG accessibility failures, outlines each failing element on the page, explains how to fix it, and exports the findings as a report.
+PalTech Accessibility Testing scans the page you are looking at for WCAG accessibility failures, outlines each failing element on the page, explains how to fix it, and exports the findings as a report.
 
 It runs in Chrome and Edge and checks against WCAG 2.0, 2.1 or 2.2 at Level A, AA or AAA. It combines the axe-core engine with extra checks of its own: contrast with transparency, focus visibility, alt text quality, vague link text, target size, form grouping, keyboard reachability and reflow.
 
@@ -42,7 +42,7 @@ Load the built extension in Chrome 116 or later (or Edge) from the project's `di
 There are three ways to use it:
 
 - **Side panel.** Click the toolbar icon on any web page. The panel follows the tab you are on. Close it with the cross at the top right.
-- **DevTools panel.** Open DevTools and choose **PalTech A11y Inspector**. It adds one extra option: scan the element selected in the Elements panel.
+- **DevTools panel.** Open DevTools and choose **PalTech Accessibility Testing**. It adds one extra option: scan the element selected in the Elements panel.
 - **Options page.** Open it from the extension's details on the extensions page. It holds the settings that apply to every scan and report.
 
 Chrome's own pages, the Chrome Web Store and other restricted pages cannot be scanned. The panel tells you when the current tab is one of them.
@@ -244,9 +244,9 @@ Use **Export** in the footer to download the current scan.
 | HTML report | A summary and developer details without screenshots. |
 | JSON | Raw results for tooling and CI. |
 
-Every HTML report, for one scan or several saved scans, uses the same layout. **Part 1** is a plain-language summary for team leads and clients: the verdict, the score, the severity breakdown, the problems to fix first, who is affected, what was tested and the limits of automated testing. **Part 2** is for developers: one card per rule, listing every affected element with its measurements, a fix, the selector, the HTML and the screenshot. **Needs review** follows, with the same cards marked *Needs review · not counted*.
+Every HTML report, for one scan or several saved scans, uses the same layout. **Summary** is a plain-language overview for team leads and clients: the verdict, the score, the severity breakdown, the problems to fix first, who is affected, what was tested and the limits of automated testing. **Developer details** is for developers: one card per rule, listing every affected element with its measurements, a fix, the selector, the HTML and the screenshot. **Needs review** follows, with the same cards marked *Needs review · not counted*.
 
-**Filter and browse.** A filter bar sits above the rule cards in Part 2:
+**Filter and browse.** A filter bar sits above the rule cards in Developer details:
 
 | Filter | What it does |
 | --- | --- |
@@ -255,7 +255,7 @@ Every HTML report, for one scan or several saved scans, uses the same layout. **
 | Search | Matches element text, selector or fingerprint |
 | Rule, Category, Effort, Affects | Narrow to one rule, one category (for example Forms), one effort level or one group of users |
 
-Rules start collapsed to one line each (rule, severity, number of elements): click a rule, or tab to it and press Enter, to open it. Inside a rule, each element is one line you can open. **Expand all** opens every rule; click it again to open every element too. **Collapse all** closes everything. Links in the summary and the *Failed rules* table open the rule they point to. **Reset filters** brings everything back. The line under the filters says how many elements are shown. The summary in Part 1 always shows the full totals. A report of several saved scans adds a list of pages on the left and an overview of all pages. The report needs JavaScript to display: open it in a browser.
+Rules start collapsed to one line each (rule, severity, number of elements): click a rule, or tab to it and press Enter, to open it. Inside a rule, each element is one line you can open. **Expand all** opens every rule; click it again to open every element too. **Collapse all** closes everything. Links in the summary and the *Failed rules* table open the rule they point to. **Reset filters** brings everything back. The line under the filters says how many elements are shown. The Summary always shows the full totals. A report of several saved scans adds a list of pages on the left and an overview of all pages. The report needs JavaScript to display: open it in a browser.
 
 The organisation name and the *Prepared by* line shown on the report are set in the Options page.
 

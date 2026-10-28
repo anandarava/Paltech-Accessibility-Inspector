@@ -42,7 +42,7 @@ async function listing() {
   const entries = await fs.readdir(ROOT, { withFileTypes: true });
   const files = entries.filter((e) => e.isFile() && /\.html?$/i.test(e.name)).map((e) => e.name).sort();
   const items = files.map((f) => `<li><a href="/${encodeURIComponent(f)}">${f}</a></li>`).join("\n");
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>PalTech A11y Inspector fixtures</title>
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>PalTech Accessibility Testing fixtures</title>
 <style>body{font-family:system-ui,sans-serif;max-width:640px;margin:40px auto;padding:0 16px;color:#1a1a1a}a{color:#0b4f9c}</style></head>
 <body><main><h1>Fixture pages</h1><p>Each page contains planted accessibility violations and a hidden <code>#expected</code> manifest.</p><ul>${items}</ul></main></body></html>`;
 }

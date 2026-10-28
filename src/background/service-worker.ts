@@ -66,7 +66,7 @@ const BASELINE_AUTHOR = "tester";
 const SCANNABLE_URL_RE = /^(https?|file):/i;
 const UNSUPPORTED_PAGE_ERROR = "Only http(s) and file pages can be scanned.";
 const NO_ACCESS_ERROR =
-  "PalTech A11y Inspector has no access to this tab. Click the PalTech A11y Inspector toolbar icon on this tab to grant access, " +
+  "PalTech Accessibility Testing has no access to this tab. Click the PalTech Accessibility Testing toolbar icon on this tab to grant access, " +
   "or allow site access for the extension in chrome://extensions.";
 
 /** Broadcast event types the content script may emit without a tabId. */
@@ -379,18 +379,20 @@ async function performScan(tabId: number, requested: ScanOptions | undefined): P
       throw e;
     }
 
-    // Host access exists but the Tab object did not carry the url/title: ask the
-    // top-frame content script (CS_PING answers with location.href and document.title).
-    if (!url || !title) {
-      const ping = await sendToTab<{ url?: unknown; title?: unknown }>(tabId, { type: "CS_PING" }, 0);
-      if (ping.ok && ping.data) {
-        if (!url && typeof ping.data.url === "string") url = ping.data.url;
-        if (!title && typeof ping.data.title === "string") title = ping.data.title;
-      }
+    // Ask the top-frame content script for the site's icons, and for the url/title when the
+    // Tab object did not carry them (CS_PING answers with location.href and document.title).
+    let icons: string[] = [];
+    const ping = await sendToTab<{ url?: unknown; title?: unknown; icons?: unknown }>(tabId, { type: "CS_PING" }, 0);
+    if (ping.ok && ping.data) {
+      if (!url && typeof ping.data.url === "string") url = ping.data.url;
+      if (!title && typeof ping.data.title === "string") title = ping.data.title;
+      if (Array.isArray(ping.data.icons)) icons = ping.data.icons.filter((u): u is string => typeof u === "string");
     }
     if (!url) throw new Error(NO_ACCESS_ERROR);
     if (!SCANNABLE_URL_RE.test(url)) throw new Error(UNSUPPORTED_PAGE_ERROR);
     const origin = originOf(url);
+    // Loaded while the scan runs; never fails the scan.
+    const siteLogo = loadSiteLogo(icons);
 
     const [settings, ruleConfig, baseline, ignored, previous, manualChecks] = await Promise.all([
       getSettings(),
@@ -490,6 +492,7 @@ async function performScan(tabId: number, requested: ScanOptions | undefined): P
       url,
       origin,
       title,
+      siteLogo: await siteLogo,
       timestamp: now.toISOString(),
       environment: settings.environment || undefined,
       browser: browserLabel(),
@@ -1140,11 +1143,60 @@ async function handleKeyboardTestStart(msg: MessageOf<"KEYBOARD_TEST_START">): P
 }
 
 
-let logoDataUrl: Promise<string | undefined> | undefined;
+/** Longest side of the site logo kept with a scan: enough for the report header, a few KB each. */
+const SITE_LOGO_PX = 96;
+/** Icon url → logo, so the pages of a site scan fetch their shared icon once. */
+const siteLogoCache = new Map<string, Promise<string | undefined>>();
 
-/** The extension logo as a data: URL, embedded in the HTML report header. */
-function loadLogo(): Promise<string | undefined> {
-  logoDataUrl ??= (async () => {
+/** One icon, scaled down to SITE_LOGO_PX and returned as a data:image/png URL; undefined when it cannot be used. */
+function siteLogoFrom(iconUrl: string): Promise<string | undefined> {
+  let pending = siteLogoCache.get(iconUrl);
+  if (!pending) {
+    pending = (async () => {
+      try {
+        const res = await fetch(iconUrl, { credentials: "omit", signal: AbortSignal.timeout(5000) });
+        if (!res.ok) return undefined;
+        const blob = await res.blob();
+        // SVG cannot be decoded in a worker; a page that has only an SVG icon gets no logo.
+        if (!blob.type.startsWith("image/") || blob.type.includes("svg")) return undefined;
+        const bitmap = await createImageBitmap(blob);
+        if (bitmap.width < 16 || bitmap.height < 16) return undefined;
+        const scale = Math.min(1, SITE_LOGO_PX / Math.max(bitmap.width, bitmap.height));
+        const canvas = new OffscreenCanvas(Math.round(bitmap.width * scale), Math.round(bitmap.height * scale));
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return undefined;
+        ctx.imageSmoothingQuality = "high";
+        ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+        bitmap.close();
+        const bytes = new Uint8Array(await (await canvas.convertToBlob({ type: "image/png" })).arrayBuffer());
+        let binary = "";
+        for (const b of bytes) binary += String.fromCharCode(b);
+        return `data:image/png;base64,${btoa(binary)}`;
+      } catch {
+        return undefined;
+      }
+    })();
+    if (siteLogoCache.size > 50) siteLogoCache.clear();
+    siteLogoCache.set(iconUrl, pending);
+  }
+  return pending;
+}
+
+/** The first of the page's icons (best first) that loads; undefined when the site has none. */
+async function loadSiteLogo(iconUrls: string[]): Promise<string | undefined> {
+  for (const url of iconUrls) {
+    if (!/^https?:/i.test(url)) continue;
+    const logo = await siteLogoFrom(url);
+    if (logo) return logo;
+  }
+  return undefined;
+}
+
+let toolLogoDataUrl: Promise<string | undefined> | undefined;
+
+/** The extension (PalTech) logo as a data: URL, shown in the report's sidebar. */
+function loadToolLogo(): Promise<string | undefined> {
+  toolLogoDataUrl ??= (async () => {
     try {
       const res = await fetch(chrome.runtime.getURL("icons/48.png"));
       const bytes = new Uint8Array(await res.arrayBuffer());
@@ -1155,12 +1207,12 @@ function loadLogo(): Promise<string | undefined> {
       return undefined;
     }
   })();
-  return logoDataUrl;
+  return toolLogoDataUrl;
 }
 
 async function reportMeta(): Promise<ReportMeta> {
   const settings = await getSettings();
-  return { preparedBy: settings.reportPreparedBy, organisation: settings.reportOrganisation, logo: await loadLogo() };
+  return { preparedBy: settings.reportPreparedBy, organisation: settings.reportOrganisation, logo: await loadToolLogo() };
 }
 
 /**

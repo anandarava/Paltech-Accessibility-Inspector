@@ -89,7 +89,7 @@ const TECHNICAL_KEYS = new Set(["checks", "tags", "axeRuleId", "impact", "ruleId
 /** Internal values of the rules (how a measurement was taken), listed under "Technical details" too. */
 const INTERNAL_KEYS = new Set(["canvas", "reachedOpaque", "textOpacity", "focusVisibleApplied", "frameUrl", "isIframe"]);
 
-const SOURCE_LABEL: Record<Issue["source"], string> = { axe: "axe-core", custom: "PalTech A11y Inspector rule", manual: "Manual" };
+const SOURCE_LABEL: Record<Issue["source"], string> = { axe: "axe-core", custom: "PalTech Accessibility Testing rule", manual: "Manual" };
 
 /** Severity pill: tinted background, dark text (>= 4.5:1), coloured dot. */
 const SEVERITY_PILL: Record<Issue["severity"], string> = {

@@ -49,8 +49,8 @@ describe("buildHtmlReport", () => {
   it("has a plain-language summary part and a developer part", () => {
     const issues = [makeIssue({ ruleId: "CLR-01", severity: "Serious" }), makeIssue({ ruleId: "IMG-01", title: "Missing alt", severity: "Critical" })];
     const html = buildHtmlReport(makeScanResult({ issues }));
-    expect(html).toContain("Part 1 · Summary");
-    expect(html).toContain("Part 2 · Developer details");
+    expect(html).toContain("Summary");
+    expect(html).toContain("Developer details");
     expect(html).toContain("critical barriers found");
     expect(html).toContain("Fix these first");
     expect(html).toContain("Images have no text description");
@@ -191,12 +191,14 @@ describe("multi-page report", () => {
     expect(/script-src 'nonce-([0-9a-f]{32})'/.exec(b)?.[1]).not.toBe(nonce);
   });
 
-  it("names one file for all pages; one scan gets its own file name and the same interactive template", () => {
+  it("names the file after the application; one scan gets the same name and the same interactive template", () => {
     const now = new Date(2026, 9, 12, 9, 30, 0);
-    expect(buildMultiPageReport("html", [home, checkout], {}, now).filename).toBe("a11y-report_2-pages_20261012-093000.html");
+    expect(buildMultiPageReport("html", [home, checkout], {}, now).filename).toBe("example.com_Accessibility_Report.html");
+    expect(buildMultiPageReport("json", [home, checkout], {}, now).filename).toBe("example.com_Accessibility_Report.json");
+    expect(buildMultiPageReport("html", [{ ...home, url: "https://www.eaggle.ai/" }], {}, now).filename).toBe("eaggle.ai_Accessibility_Report.html");
     expect(JSON.parse(buildMultiPageReport("json", [home, checkout], {}, now).content).pages).toHaveLength(2);
     const single = buildMultiPageReport("html", [home], {}, now);
-    expect(single.filename).not.toContain("pages");
+    expect(single.filename).toBe("example.com_Accessibility_Report.html");
     expect(single.content).toContain('id="report-data"');
     expect(single.content).toMatch(/script-src 'nonce-[0-9a-f]{32}'/);
   });

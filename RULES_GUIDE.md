@@ -1,4 +1,4 @@
-# Rules guide: what PalTech A11y Inspector checks
+# Rules guide: what PalTech Accessibility Testing checks
 
 This guide explains where the extension's rules come from, who wrote them,
 which rules are best practices, which are the extension's own "advanced"
@@ -12,8 +12,8 @@ Checked against axe-core 4.13.0, the version bundled with the extension.
 |---|---|---|---|
 | **WCAG** (Web Content Accessibility Guidelines) | **W3C**, the World Wide Web Consortium ([w3.org/TR/WCAG22](https://www.w3.org/TR/WCAG22/)) | The requirements themselves ("success criteria" such as 1.1.1 or 1.4.3), each with a level (A, AA, AAA) | Not code. The extension maps each criterion to its version and level in [shared/wcag-map.ts](shared/wcag-map.ts) |
 | **axe-core** | **Deque Systems** (the makers of axe DevTools), open source | Automatic checks for many WCAG criteria, plus 30 best-practice checks | The `axe-core` package (`node_modules/axe-core`). Deque's rule list: [dequeuniversity.com/rules/axe/4.13](https://dequeuniversity.com/rules/axe/4.13) |
-| **Advanced rules** | **PalTech A11y Inspector** (this project) | Checks axe-core does not have, and stronger versions of a few axe-core checks | Code in [src/content/rules/](src/content/rules/) |
-| **Rule catalogue** | **PalTech A11y Inspector** | One entry per reported rule (id such as `CLR-01`, title, WCAG criterion, severity), used to name and group every finding | [shared/a11y-rules.json](shared/a11y-rules.json) |
+| **Advanced rules** | **PalTech Accessibility Testing** (this project) | Checks axe-core does not have, and stronger versions of a few axe-core checks | Code in [src/content/rules/](src/content/rules/) |
+| **Rule catalogue** | **PalTech Accessibility Testing** | One entry per reported rule (id such as `CLR-01`, title, WCAG criterion, severity), used to name and group every finding | [shared/a11y-rules.json](shared/a11y-rules.json) |
 
 Every axe-core finding is renamed to a catalogue id so both sources appear in
 one list, e.g. axe-core's `image-alt` is reported as **IMG-01**. The original
@@ -106,7 +106,7 @@ These 30 rules run only when **Best practices** is ticked. They run with
 | `tabindex` | KBD-03 | Elements should not have tabindex greater than zero |
 | `table-duplicate-name` | STR-07 | Tables should not have the same summary and caption |
 
-### 3b. The extension's own best-practice rules (created by PalTech A11y Inspector)
+### 3b. The extension's own best-practice rules (created by PalTech Accessibility Testing)
 
 | Rule | Severity | What it checks | Runs when |
 |---|---|---|---|
@@ -126,11 +126,11 @@ practices box:
 | LNK-04 Same link text, different destinations | `identical-links-same-purpose` | 2.4.9 AAA (runs at AAA) |
 | FRM-10 Form field has multiple labels | `form-field-multiple-labels` | 3.3.2 A |
 
-## 4. Advanced rules (created by PalTech A11y Inspector)
+## 4. Advanced rules (created by PalTech Accessibility Testing)
 
 These run only when **axe-core only** is ✗. They are counted as the second
 number on the **axe-core / advanced** card in the scan summary, and labelled
-"PalTech A11y Inspector rule" in issue details and reports. The code is in
+"PalTech Accessibility Testing rule" in issue details and reports. The code is in
 [src/content/rules/](src/content/rules/); each file starts with a comment
 listing the rules it emits and the risks of its heuristics.
 
@@ -171,7 +171,7 @@ listing the rules it emits and the risks of its heuristics.
 | ZM-03 | 1.4.12 AA | Moderate | Applies the 1.4.12 text spacing to the page and looks for clipped text. Decoration hidden from screen readers and cut-off letter tails are ignored; a row of items cut off sideways (a carousel) goes to Needs review | Runs alongside `avoid-inline-spacing` |
 | ARIA-04 | 4.1.2 A | Serious | An element that Tab still reaches inside `aria-hidden="true"`, including cases axe-core skips (such as iframes): screen readers land on something they are told does not exist | Adds to `aria-hidden-focus` |
 
-### 4c. Needs review checks (created by PalTech A11y Inspector)
+### 4c. Needs review checks (created by PalTech Accessibility Testing)
 
 These guess intent from how the page looks, so a person confirms them. They
 are listed on the **Needs review** tab (and in the "Needs review" part of the
@@ -212,7 +212,7 @@ With **axe-core only** ticked, nothing checks these:
 |---|---|---|---|
 | axe-core WCAG rule | **WCAG issues** tab; first number on the **axe-core / advanced** card | WCAG badge; subline ends "axe-core" | Listed with its WCAG criterion |
 | axe-core best-practice rule | **Best practices** tab | "Best practice" badge | "Best practice (not a WCAG failure)", after the WCAG problems |
-| Advanced rule | **WCAG issues** tab (or Best practices for LNK-03 / LNK-05); second number on the **axe-core / advanced** card | Subline ends "PalTech A11y Inspector rule" | Listed with its WCAG criterion |
+| Advanced rule | **WCAG issues** tab (or Best practices for LNK-03 / LNK-05); second number on the **axe-core / advanced** card | Subline ends "PalTech Accessibility Testing rule" | Listed with its WCAG criterion |
 | Needs review finding (either engine) | **Needs review** tab, not counted | "Needs review" | "Needs review" section, marked "not counted" |
 
 ## 6. Known gaps

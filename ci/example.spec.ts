@@ -331,7 +331,7 @@ function isBaselined(issue: CiIssue, baseline: BaselineEntry[]): boolean {
   );
 }
 
-test.describe("accessibility parity with the PalTech A11y Inspector extension", () => {
+test.describe("accessibility parity with the PalTech Accessibility Testing extension", () => {
   test.skip(!process.env.A11Y_URL, "Set A11Y_URL (and optionally A11Y_BASELINE) to run the CI parity example.");
 
   test(`no new WCAG ${LEVEL} violations on ${TARGET_URL}`, async ({ page }) => {

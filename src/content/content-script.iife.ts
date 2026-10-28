@@ -1007,11 +1007,29 @@ function requireOverlay(): OverlayController {
   return overlay;
 }
 
+/**
+ * The page's own icons, best first: touch icons (usually large and square), then other icons by
+ * declared size, SVG last, then /favicon.ico. The service worker uses the first one it can load.
+ */
+function siteIconUrls(): string[] {
+  const rank = (link: HTMLLinkElement): number => {
+    const rel = link.rel.toLowerCase();
+    const size = Math.max(0, ...[...link.sizes].map((s) => parseInt(s, 10) || 0));
+    const svg = /svg/i.test(link.type) || /\.svg(\?|#|$)/i.test(link.href);
+    return (rel.includes("apple-touch-icon") ? 10000 : 0) + (svg ? -20000 : 0) + size;
+  };
+  const links = [...document.querySelectorAll<HTMLLinkElement>("link[rel][href]")]
+    .filter((l) => /(^|\s)(icon|apple-touch-icon(-precomposed)?)(\s|$)/i.test(l.rel) && /^https?:/i.test(l.href))
+    .sort((a, b) => rank(b) - rank(a))
+    .map((l) => l.href);
+  return [...new Set([...links, new URL("/favicon.ico", location.href).href])].slice(0, 6);
+}
+
 async function handle(msg: Message): Promise<Handled> {
   const raw = msg as unknown as Record<string, unknown>;
   switch (msg.type) {
     case "CS_PING":
-      return ok({ loaded: true, isTop, url: location.href, title: document.title });
+      return ok({ loaded: true, isTop, url: location.href, title: document.title, icons: siteIconUrls() });
 
     case "SCAN_START":
       return handleScanStart(msg.options);

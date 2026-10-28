@@ -204,7 +204,7 @@ function describeIssues(issues: Issue[]): string {
 // Tests
 // ---------------------------------------------------------------------------
 
-test.describe("PalTech A11y Inspector extension", () => {
+test.describe("PalTech Accessibility Testing extension", () => {
   test.skip(!HAS_DIST, `Extension build not found at ${DIST}. Run "npm run build" first.`);
   // Tests share one browser context (beforeAll) but each fixture test is
   // independent, so a failing fixture does not skip the others.

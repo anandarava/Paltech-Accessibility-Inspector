@@ -1,5 +1,5 @@
 /**
- * Shared domain types for the PalTech A11y Inspector extension.
+ * Shared domain types for the PalTech Accessibility Testing extension.
  * Used by the service worker, content script, side panel, options page,
  * exporters, and the CI parity tooling.
  */
@@ -150,6 +150,8 @@ export interface ScanResult {
   url: string;
   origin: string;
   title: string;
+  /** The scanned site's own icon as a small data:image/png URL, shown in report headers. Absent when the site has none. */
+  siteLogo?: string;
   timestamp: string;
   environment?: string;
   browser: string;

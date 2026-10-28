@@ -12,11 +12,11 @@ function inspectSelector(selector: string): void {
   try {
     chrome.devtools.inspectedWindow.eval(expression, (_result: unknown, exceptionInfo?: chrome.devtools.inspectedWindow.EvaluationExceptionInfo) => {
       if (exceptionInfo && (exceptionInfo.isException || exceptionInfo.isError)) {
-        console.warn("PalTech A11y Inspector: inspect() failed", exceptionInfo.value ?? exceptionInfo.description);
+        console.warn("PalTech Accessibility Testing: inspect() failed", exceptionInfo.value ?? exceptionInfo.description);
       }
     });
   } catch (e) {
-    console.warn("PalTech A11y Inspector: inspect() failed", e);
+    console.warn("PalTech Accessibility Testing: inspect() failed", e);
   }
 }
 

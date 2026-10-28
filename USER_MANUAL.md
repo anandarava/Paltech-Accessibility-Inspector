@@ -1,9 +1,9 @@
-# PalTech A11y Inspector
+# PalTech Accessibility Testing
 
 ## User Manual
 
 **Version 1.0**
-**October 22, 2026**
+**October 28, 2026**
 
 ---
 
@@ -18,7 +18,7 @@
 5. [How accessibility is tested](#5-how-accessibility-is-tested)
 6. [What automated testing can and cannot find](#6-what-automated-testing-can-and-cannot-find)
 
-**Part B: About PalTech A11y Inspector**
+**Part B: About PalTech Accessibility Testing**
 
 7. [What the extension does](#7-what-the-extension-does)
 8. [Features at a glance](#8-features-at-a-glance)
@@ -157,7 +157,7 @@ A complete accessibility test uses several methods together:
 | **Assistive technology testing** | Using the page with a screen reader, keyboard only, zoom, voice control | Real-world problems that rules miss | Hours |
 | **User testing** | People with disabilities use the product | Usability problems and priorities | Days |
 
-PalTech A11y Inspector covers the first three methods: **automated**, **assisted** and **manual**.
+PalTech Accessibility Testing covers the first three methods: **automated**, **assisted** and **manual**.
 
 ## 6. What automated testing can and cannot find
 
@@ -184,11 +184,11 @@ On their own, automated checks find only part of the problems. This is commonly 
 
 ---
 
-# Part B: About PalTech A11y Inspector
+# Part B: About PalTech Accessibility Testing
 
 ## 7. What the extension does
 
-**PalTech A11y Inspector** is a Chrome and Edge browser extension. It tests web pages for accessibility against **WCAG 2.0, 2.1 or 2.2** at **Level A, AA or AAA**.
+**PalTech Accessibility Testing** is a Chrome and Edge browser extension. It tests web pages for accessibility against **WCAG 2.0, 2.1 or 2.2** at **Level A, AA or AAA**.
 
 - It **scans** the page you are looking at, **marks** each problem on the page, **explains** how to fix it and **exports** a report.
 - It can scan **one page**, **part of a page**, or a **whole site** (Site scan).
@@ -275,7 +275,7 @@ On their own, automated checks find only part of the problems. This is commonly 
 ## 12. Installation
 
 **Objective:**
-Add PalTech A11y Inspector to your browser and pin it to the toolbar.
+Add PalTech Accessibility Testing to your browser and pin it to the toolbar.
 
 **Navigation:**
 Chrome >> Extensions >> Load unpacked
@@ -286,14 +286,14 @@ Chrome >> Extensions >> Load unpacked
 2. Open `chrome://extensions` (in Edge: `edge://extensions`).
 3. Turn on **Developer mode** (top right).
 4. Click **Load unpacked** and select the `dist` folder.
-5. Click the puzzle-piece icon in the toolbar and **pin** PalTech A11y Inspector.
+5. Click the puzzle-piece icon in the toolbar and **pin** PalTech Accessibility Testing.
 
 > **Fig 1: Extensions page with Developer mode and Load unpacked.** *[Insert screenshot]*
 
 **Open the extension:**
 
 - **Side panel:** click the PalTech icon on any web page. The panel opens beside the page and follows the tab you are on.
-- **DevTools panel:** press F12 and choose the **PalTech A11y Inspector** tab.
+- **DevTools panel:** press F12 and choose the **PalTech Accessibility Testing** tab.
 - **Options page:** right-click the PalTech icon >> **Options**.
 
 > **Note:** Chrome's own pages (`chrome://…`), the Chrome Web Store and some other protected pages cannot be scanned. The panel tells you when the current tab is one of them.
@@ -620,11 +620,14 @@ Footer >> Export
 
 **What the HTML report contains:**
 
-- **Part 1, Summary** (for team leads and clients): verdict, score, severity breakdown, problems to fix first, who is affected, what was tested and the limits of automated testing.
-- **Part 2, Details** (for developers): one card per rule, with every affected element, its measurements, the fix, selector, HTML and screenshot. A filter bar narrows by **Severity**, **Show**, **Search**, **Rule**, **Category**, **Effort** and **Affects**.
+- **Header:** the scanned site's own logo (its icon, taken during the scan), the page title and address. When the site has no icon, no logo is shown.
+- **Summary** (for team leads and clients): verdict, score, severity breakdown, problems to fix first, who is affected, what was tested and the limits of automated testing. Under **Issues by severity**, a line such as *+3 need review by hand, not counted above* shows how many undecided findings there are; they are never part of the issue counts.
+- **Developer details** (for developers): one card per rule, with every affected element, its measurements, the fix, selector, HTML and screenshot. A filter bar narrows by **Severity**, **Show**, **Search**, **Rule**, **Category**, **Effort** and **Affects**.
 - **Needs review:** the undecided findings, marked *Needs review · not counted*.
 
 > **Fig 14: HTML report summary.** *[Insert screenshot]*
+
+**File names:** reports are saved as `<application name>_Accessibility_Report.html` (or `.json`), where the application name is the site's address without `www.`, for example `example.com_Accessibility_Report.html`.
 
 The organisation name and **Prepared by** shown on the report are set in the Options page (Section 17).
 
@@ -727,6 +730,20 @@ The summary line reads, for example: *146 pages found (0 from the sitemap, 145 f
 After a rescan each page shows what changed, for example *Score 91 (was 88) · 12 (was 18) issues*.
 
 > **Note:** Screens reached only by clicking something that is not a link (a `div` or button without an address), or only through a form or e-mailed link, are not found automatically. Add them with **Add a page**.
+
+**The site scan HTML report** is saved as `<application name>_Accessibility_Report.html` (see Section 14.10) and contains:
+
+> **Fig 18b: Site scan HTML report: the Application summary and the sidebar of pages.** *[Insert screenshot]*
+
+| Part | What it shows |
+|---|---|
+| **Sidebar** (more than one page) | The PalTech logo, the **Application summary** with the total issue count, and every scanned page with its score and issue count |
+| **Application summary header** | The site's own logo (when every page has the same one), its name, and four figures: **average score**, **issues**, **pages with critical** issues and **pages scanned** |
+| **Summary** | Verdict; **Average score** with links to the **Lowest** and **Highest** scoring pages (click one to open it); **Issues by severity** across all pages, with *+N need review by hand on N pages, not counted above*; page counts |
+| **Pages in this export** | Every page, filtered by **All pages** or **With critical issues** and sorted by **Most issues**, **Lowest score** or **Scan order** |
+| **Problems on many pages** | Rules that fail on several pages, so one fix (often in a shared template) solves them all |
+| **Scan details** | Site, start and finish time, browser, viewport and standard |
+| **Each page** | The same Summary, Developer details and Needs review as a single-page report |
 
 ## 16. Manual module
 
@@ -877,7 +894,7 @@ Click **Save** to keep changes.
 Use the extension inside Chrome DevTools, next to the Elements panel.
 
 **Navigation:**
-F12 >> **PalTech A11y Inspector** tab
+F12 >> **PalTech Accessibility Testing** tab
 
 **Process:**
 
@@ -997,4 +1014,4 @@ The full list of 62 rules, with WCAG mapping, severity and source, is in the pro
 
 ---
 
-*PalTech A11y Inspector · User Manual · Version 1.0*
+*PalTech Accessibility Testing · User Manual · Version 1.0*

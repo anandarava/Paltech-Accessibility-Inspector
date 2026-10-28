@@ -1,4 +1,4 @@
-# PalTech A11y Inspector
+# PalTech Accessibility Testing
 
 A Chrome / Edge (Manifest V3) extension that scans the page you are looking at
 against **WCAG 2.2 Level A / AA** (AAA optional), highlights every failing
@@ -36,10 +36,10 @@ Highlights:
 - SPA support: rescans (or prompts) on `pushState` route changes, dialog
   opening, and large DOM changes
 - Evidence screenshots per issue with redaction; HTML and JSON export. The
-  HTML report has two parts. Part 1 is a plain-language summary for team
+  HTML report has two sections. **Summary** is a plain-language overview for team
   leads and clients: verdict, score, severity donut, the problems to fix
   first, who is affected, what was tested and the limits of automated
-  testing. Part 2 is for developers: every affected element with its own
+  testing. **Developer details** is for developers: every affected element with its own
   measurements (colour previews with a suggested passing colour), fix,
   selector, HTML and screenshot; XPath and fingerprint are under "Technical
   details". "HTML report with screenshots" photographs every failed element
@@ -140,7 +140,7 @@ Load the unpacked extension:
 2. Turn on **Developer mode**.
 3. Click **Load unpacked** and pick the `dist/` folder.
 4. Pin the extension and click its icon on any page to open the side panel.
-   A DevTools panel named **PalTech A11y Inspector** is available too.
+   A DevTools panel named **PalTech Accessibility Testing** is available too.
 
 ## Development
 

@@ -1,5 +1,5 @@
 /**
- * Storage access for the PalTech A11y Inspector extension.
+ * Storage access for the PalTech Accessibility Testing extension.
  *
  * - `chrome.storage.local`   : settings, rule config, baseline / ignored
  *                              fingerprints per origin, saved scans.

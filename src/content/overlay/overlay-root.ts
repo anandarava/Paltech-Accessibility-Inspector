@@ -196,7 +196,7 @@ export function createOverlay(): OverlayController {
     host = document.createElement("div");
     host.id = OVERLAY_HOST_ID;
     host.setAttribute(EXT_MARKER_ATTR, "overlay");
-    host.setAttribute("aria-label", "PalTech A11y Inspector overlay");
+    host.setAttribute("aria-label", "PalTech Accessibility Testing overlay");
     host.style.cssText = HOST_STYLE;
     shadow = host.attachShadow({ mode: "closed" });
 

@@ -179,7 +179,7 @@ export async function captureIssueEvidence(
         full = await captureVisible(windowId);
       } catch (e) {
         if (/<all_urls>|activeTab/i.test(describeError(e))) {
-          throw new Error("Chrome did not allow a screenshot of this tab. Click the PalTech A11y Inspector toolbar icon on this tab, then try again.");
+          throw new Error("Chrome did not allow a screenshot of this tab. Click the PalTech Accessibility Testing toolbar icon on this tab, then try again.");
         }
         throw e;
       }
