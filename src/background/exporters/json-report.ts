@@ -20,13 +20,14 @@ export function toolInfo(): ToolInfo {
     if (typeof chrome !== "undefined" && chrome.runtime && typeof chrome.runtime.getManifest === "function") {
       const m = chrome.runtime.getManifest();
       if (m && typeof m.name === "string" && typeof m.version === "string") {
-        return { name: m.name, version: m.version };
+        // version_name carries a pre-release label ("2.0.0-beta") that version cannot.
+        return { name: m.name, version: typeof m.version_name === "string" ? m.version_name : m.version };
       }
     }
   } catch {
     // Not running inside the extension; fall through to the static default.
   }
-  return { name: "PalTech Accessibility Testing", version: "1.0.0" };
+  return { name: "PalTech Accessibility Testing", version: "2.0.0" };
 }
 
 export interface JsonReportDocument extends ScanResult {
