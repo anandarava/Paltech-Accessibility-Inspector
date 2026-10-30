@@ -247,7 +247,7 @@ On their own, automated checks find only part of the problems. This is commonly 
 
 - Scanning runs **entirely in your browser**. The extension makes no network requests of its own.
 - Nothing leaves your computer unless **you** export a report.
-- Screenshots are taken only when you ask for them. Input values are masked, and password fields and elements with the `.pii` class are blurred before an image is stored.
+- Screenshots are taken only when you ask for them. Before an image is stored, these are covered with a **solid black box**: form fields with text in them, password fields, elements with the `.pii` class, and frames from another website (their content cannot be read, so the whole frame is covered). To change this, see **Screenshots and privacy** in section 17.
 
 **Permissions the extension asks for**
 
@@ -824,6 +824,8 @@ Record exactly what fails, where, with evidence.
 3. Optionally click **Pick on page**. The page comes forward; click the element. You return with its **selector** and a **screenshot**.
 4. Save the instance. Add as many as needed.
 
+> **Note:** Filled form fields, password fields and frames from other websites show as black boxes in the screenshot. This is privacy masking, not an error (see section 10 and **Screenshots and privacy** in section 17).
+
 > **Fig 25: Add a failure instance.** *[Insert screenshot]*
 
 ### 16.4 Save, load, start over
@@ -883,7 +885,7 @@ Right-click the PalTech icon >> **Options**
 | **Categories** | Limit scans to some rule categories |
 | **Rules** | Every rule with its WCAG mapping and severity; turn rules on or off; adjust thresholds some rules use |
 | **Baselines and ignored issues** | Per site: every baselined or ignored issue with its reason and author; remove one or all |
-| **Screenshots and privacy** | Selectors to blur in screenshots (default `[type=password]`, `.pii`); mask input values |
+| **Screenshots and privacy** | **Mask input values in screenshots** (on by default): covers filled form fields and frames from other websites with a black box. **Selectors to blur**: elements always covered with a black box (default `[type=password]`, `.pii`). Untick masking or remove a selector to show that content; do this only on test data, because screenshots go into exported reports |
 | **Import and export** | Save or load the baseline, ignore list and rule configuration as one JSON file |
 
 Click **Save** to keep changes.
@@ -912,6 +914,7 @@ F12 >> **PalTech Accessibility Testing** tab
 | An outline does not show | Use **View element**. If the element is gone, the page changed: rescan |
 | A yellow bar says "started debugging this browser" | Expected during a scan; it lets the focus-indicator checks work. It closes when the scan ends |
 | Screenshots missing in the report | Keep the tab visible and active while the report builds |
+| A screenshot shows black boxes over the content | Privacy masking: filled form fields, password fields, `.pii` elements and frames from other websites are covered so personal data does not reach reports. To show them: **Options >> Screenshots and privacy**, untick **Mask input values in screenshots** and/or remove the selector, then retake the screenshot. Do this only on test data, and turn masking back on afterwards |
 | Counts differ from axe DevTools | Tick **axe-core only** and use the same WCAG version and level |
 | Site scan found only the login page | Sign in to the application first, then **Find pages** again |
 | Site scan found only 1 page and score 100 | The site's bot protection (for example a Cloudflare check) blocked it; open the site in the browser first. This is flagged as OTH-04 |

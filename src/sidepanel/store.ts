@@ -23,7 +23,7 @@ import type {
 import { DEFAULT_SETTINGS } from "@shared/constants";
 import { computeScore, isNotConformant, summarize } from "@shared/scoring";
 
-export type View = "list" | "detail" | "keyboard" | "saved" | "compare" | "contrast" | "site";
+export type View = "list" | "detail" | "keyboard" | "reader" | "saved" | "compare" | "contrast" | "site";
 
 /** Result tabs, as in axe DevTools: every finding, WCAG failures, best practices, passed and not-applicable rules. */
 export type ResultTab = "all" | "auto" | "bp" | "review" | "failed" | "passed" | "na";

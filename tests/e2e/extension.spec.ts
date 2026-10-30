@@ -21,6 +21,7 @@ import type { Issue, KeyboardTestResult, ScanResult } from "@shared/types";
 import type { Message, Response, ScanOptions } from "@shared/messages";
 import type { SiteScanState } from "@shared/site-crawl";
 import type { AssessmentState, Instance } from "@shared/assessment";
+import type { Transcript } from "@shared/announce";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const DIST = path.resolve(ROOT, process.env.A11Y_E2E_DIST ?? "dist");
@@ -948,6 +949,54 @@ test.describe("PalTech Accessibility Testing extension", () => {
       await expect.poll(hostDisplay, { timeout: 10_000, message: "overlay still visible after the panel closed" }).toBe("none");
     } finally {
       if (!panelTab.isClosed()) await panelTab.close();
+      await page.close();
+    }
+  });
+
+  test("screen reader: reads Chrome's accessibility tree, flags problems, links findings and shows a line's element", async () => {
+    const { page, tabId } = await openFixture("screen-reader");
+    try {
+      const result = await scan(tabId);
+      const res = await sendToBackground<Transcript>(panel, { type: "SR_TRANSCRIPT", tabId });
+      expect(res.ok, res.error).toBe(true);
+      const t = res.data as Transcript;
+      const texts = t.lines.map((l) => l.text);
+      const dump = texts.join("\n");
+      expect(t.source, dump).toBe("tree");
+      // The extension's own overlay (issue badges drawn on the page) is not part of the page.
+      expect(texts.filter((l) => /Issue \d+:/.test(l)), dump).toEqual([]);
+      for (const line of ['navigation landmark, "Main"', 'link, "Home"', 'heading, level 1, "Patient intake"', "list, 2 items", 'edit, required, "Email"', 'button, "Submit"']) {
+        expect(texts, dump).toContain(line);
+      }
+      expect(texts.indexOf('heading, level 1, "Patient intake"'), dump).toBeLessThan(texts.indexOf('button, "Submit"'));
+      expect(t.lines.find((l) => l.text === "button")?.problems.map((p) => p.code), dump).toContain("no-name");
+      // The planted nested radio: the scan's KBD-10 finding shows on the transcript.
+      expect(result.issues.some((i) => i.ruleId === "KBD-10")).toBe(true);
+      expect(t.lines.some((l) => l.issues.some((i) => i.ruleId === "KBD-10")), dump).toBe(true);
+
+      const submit = t.lines.find((l) => l.text === 'button, "Submit"')!;
+      const shown = await sendToBackground(panel, { type: "SR_HIGHLIGHT", tabId, source: t.source, nodeId: submit.nodeId, backendNodeId: submit.backendNodeId });
+      expect(shown.ok, shown.error).toBe(true);
+      expect(await page.evaluate(() => document.querySelectorAll("[data-pt-sr-target]").length), "marker left on the page").toBe(0);
+      expect((await sendToBackground(panel, { type: "SR_CLOSE", tabId })).ok).toBe(true);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("screen reader: the panel view lists the transcript and filters it to headings", async () => {
+    const { page, tabId } = await openFixture("screen-reader");
+    const panelTab = await context.newPage();
+    try {
+      await panelTab.goto(`chrome-extension://${extensionId}/src/sidepanel/index.html?tabId=${tabId}`, { waitUntil: "load" });
+      await panelTab.getByRole("button", { name: "Screen reader" }).first().click();
+      const transcript = panelTab.getByRole("list", { name: "Transcript" });
+      await expect(transcript).toContainText('heading, level 1, "Patient intake"');
+      await expect(transcript).toContainText('button, "Submit"');
+      await panelTab.getByLabel("Show").selectOption("headings");
+      await expect(transcript.getByRole("listitem")).toHaveCount(1);
+    } finally {
+      await panelTab.close();
       await page.close();
     }
   });

@@ -8,7 +8,8 @@ findings the checks cannot decide automatically (axe "incomplete" results, text
 over an image, uncertain focus indicators…) are listed apart on the **Needs
 review** tab. Checks that need human judgement (alt text quality, heading
 structure, dialog behaviour…) are covered by the **Manual** mode (Quick Assess
-and Full Assessment); the **Keyboard test** covers keyboard access.
+and Full Assessment); the **Keyboard test** covers keyboard access, and the
+**Screen reader** view shows what a screen reader announces.
 
 It can scan one page, part of a page, or a **whole site** (Site scan), and its
 Manual mode walks a tester through every WCAG 2.2 A/AA criterion that needs a
@@ -28,6 +29,11 @@ Highlights:
   accessible-name tooltips, colour-blindness simulation
 - Keyboard test: records where focus goes while you press Tab through the page
   and detects keyboard traps and unreachable controls
+- Screen reader view: what a screen reader announces on the page, in reading
+  order (role, name, state), read from Chrome's accessibility tree; lists of
+  headings, landmarks, links and form fields; unnamed and nested controls and
+  the scan's findings marked on their lines; click a line to show its element;
+  Speak reads the lines aloud
 - Contrast checker: type colours (hex, rgb, hsl, names), pick them on the page
   with the eyedropper, or read an element's exact CSS colour; shows the WCAG ratio,
   AA/AAA and non-text results and the nearest passing colours. "Check by eye" on
@@ -120,8 +126,9 @@ Options page (right-click the extension icon → Options):
 - **Rules**: every rule with its WCAG mapping and severity; turn rules on or
   off and adjust the thresholds some rules use
 - **Baselines and ignored issues**: list and remove them per site
-- **Screenshots and privacy**: selectors to blur (default `[type=password]`,
-  `.pii`) and masking of input values in screenshots
+- **Screenshots and privacy**: selectors to cover (default `[type=password]`,
+  `.pii`) and masking of input values and cross-origin frames in screenshots;
+  covered areas show as black boxes
 - **Import / export**: the baseline, ignore list and rule configuration as one
   JSON file
 
@@ -255,8 +262,8 @@ npm test
    injected styles) and that `spa.html` route changes and dialogs produce
    `PAGE_CHANGED` events and a rescan finds the view-specific issues;
 6. covers the panel features end to end: contrast checker and Check by eye,
-   View element, screenshots, ignore / baseline, saved scans, the Keyboard test
-   and the element picker;
+   View element, screenshots, ignore / baseline, saved scans, the Keyboard test,
+   the Screen reader view and the element picker;
 7. runs Site scan on the test sites above (pages found, one row per screen,
    menus built from divs, several windows at once with the same result, hash
    routes, late links, scanning, Rescan, the Search pages box) and Quick Assess /
@@ -287,7 +294,7 @@ window. If you see "chromium distribution not found", run
 | `unlimitedStorage` | Saved scans keep full results including evidence screenshots, which quickly exceed the default 10 MB `chrome.storage.local` quota (up to 100 saved scans are kept) |
 | `downloads` | Save exported HTML and JSON reports |
 | `offscreen` | Crop evidence screenshots and build large report downloads: the MV3 service worker has no DOM canvas and no `URL.createObjectURL` |
-| `debugger` | Check focus indicators correctly (KBD-05, CLR-05). While you work in the side panel the page does not have focus, and Chrome then draws no focus styles at all. During a scan the extension turns on "emulate a focused page" (the same switch as in DevTools' Rendering panel) and turns it off again afterwards. Chrome shows a "started debugging this browser" bar while this runs. If it cannot attach, the focus check is skipped with one Needs review note |
+| `debugger` | Check focus indicators correctly (KBD-05, CLR-05). While you work in the side panel the page does not have focus, and Chrome then draws no focus styles at all. During a scan the extension turns on "emulate a focused page" (the same switch as in DevTools' Rendering panel) and turns it off again afterwards. Chrome shows a "started debugging this browser" bar while this runs. If it cannot attach, the focus check is skipped with one Needs review note. The **Screen reader** view also uses it, to read Chrome's accessibility tree while the view is open; without it the view falls back to an approximate tree built from the HTML |
 
 The extension asks for no optional permissions.
 
@@ -296,9 +303,10 @@ The extension asks for no optional permissions.
 - Scanning runs entirely inside your browser. No page content, screenshots, or
   results leave the machine unless **you** export a report. The extension makes
   no network requests of its own.
-- Screenshots are taken only on explicit action. Input values are masked and
-  elements matching your redaction selectors (default `[type=password]`, `.pii`)
-  are blurred before an image is stored.
+- Screenshots are taken only on explicit action. Before an image is stored,
+  filled form fields, elements matching your redaction selectors (default
+  `[type=password]`, `.pii`) and cross-origin frames are covered with a solid
+  black box.
 - The overlay lives in a closed Shadow DOM, is excluded from scans, and every
   rule restores focus, scroll position and injected styles it touched.
 - No remote code: axe-core and all rules are bundled, as Manifest V3 requires.

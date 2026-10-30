@@ -5,7 +5,7 @@ import { Button } from "./Button";
 import { useStartScan } from "./ScanButton";
 import { ScopeSelectorFields, useScopeSelector } from "./ScopeSelector";
 import { LandingIllustration } from "./EmptyState";
-import { KeyboardIcon, LightbulbIcon, MonitorIcon, PartOfPageIcon, PlayIcon, ClockIcon, DropperIcon, GlobeIcon } from "./icons";
+import { KeyboardIcon, LightbulbIcon, MonitorIcon, PartOfPageIcon, PlayIcon, ClockIcon, DropperIcon, GlobeIcon, ScreenReaderIcon } from "./icons";
 import { SelectMenu, WCAG_LEVEL_OPTIONS, WCAG_VERSION_OPTIONS, type SelectOption } from "./SelectMenu";
 
 const SCAN_TYPE_OPTIONS: Array<SelectOption<"page" | "selector">> = [
@@ -204,6 +204,9 @@ export function LandingView({ getInspectedSelector }: { getInspectedSelector?():
         <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
           <Button variant="ghost" size="action" onClick={() => setView("keyboard")} disabled={noTab}>
             <KeyboardIcon /> Keyboard test
+          </Button>
+          <Button variant="ghost" size="action" onClick={() => setView("reader")} disabled={noTab}>
+            <ScreenReaderIcon /> Screen reader
           </Button>
           <Button variant="ghost" size="action" onClick={() => openChecker(null)}>
             <DropperIcon /> Contrast checker

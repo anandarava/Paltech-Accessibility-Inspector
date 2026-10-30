@@ -25,6 +25,7 @@ import type {
 } from "./types";
 import type { SiteScanOptions, SiteScanState } from "./site-crawl";
 import type { AssessmentKind, InstanceKind } from "./assessment";
+import type { Transcript } from "./announce";
 
 /** What the side panel sends for a manual contrast check; the service worker adds the rest. */
 export type ManualCheckInput = Omit<ManualCheck, "originalType" | "author" | "checkedAt">;
@@ -71,6 +72,17 @@ export type Message =
   | { type: "KEYBOARD_TEST_STOP"; tabId: number }
   | { type: "KEYBOARD_TEST_PROGRESS"; tabId: number; step: number; selector: string }
   | { type: "KEYBOARD_TEST_RESULT"; tabId: number; result: KeyboardTestResult }
+  // ---- Screen reader view ----
+  /** UI -> SW: build the screen reader transcript of the page (answers a Transcript). */
+  | { type: "SR_TRANSCRIPT"; tabId: number }
+  /** UI -> SW: outline and scroll to the element of one transcript line. */
+  | { type: "SR_HIGHLIGHT"; tabId: number; source: Transcript["source"]; nodeId: string; backendNodeId?: number }
+  /** UI -> SW: the view closed; give up the debugger connection it held. */
+  | { type: "SR_CLOSE"; tabId: number }
+  /** SW -> CS: build the accessibility tree from the HTML (answers a PageTree), resolving `selectors` to node ids. */
+  | { type: "CS_SR_TREE"; tabId: number; selectors: string[] }
+  /** SW -> CS: outline the element of an HTML-tree node, or (no nodeId) the element the debugger marked. */
+  | { type: "CS_SR_HIGHLIGHT"; tabId: number; nodeId?: string }
   // ---- Content-script internals (SW -> CS) ----
   | { type: "CS_PING" }
   /** Forget every scan result, highlight and overlay badge held by the page (panel "Reset"). */
