@@ -164,6 +164,21 @@ The result shows the focus path and whether a trap was found. **Show tab order**
 
 The test does not press keys for you: it only records what you press.
 
+### Screen reader
+
+The Screen reader view shows what a screen reader announces on the page, in reading order: each item's role, name and state, such as `radio button, not checked, "Yes", 1 of 2`. It reads Chrome's accessibility tree, the same information screen readers get, so you can check a page without installing NVDA, JAWS or VoiceOver. Open it with **Screen reader** in the action row.
+
+- **Show** picks a list: **Everything**, or only **Headings**, **Landmarks**, **Links** or **Form fields** (the lists screen reader users jump through).
+- **Click a line** to outline and scroll to its element on the page.
+- **Speak** reads the lines aloud from the selected line; the line being spoken is highlighted in the panel and on the page. **Stop speaking** ends it.
+- Lines marked **⚠** have a problem a screen reader user would run into: a control or image with no name, or a control inside another control (announced twice, as with a custom radio wrapping a real one). Findings from the last scan are listed under their element's line; click one to open the issue. **Only lines with problems** hides the rest.
+- **Copy** copies the lines shown, with their problems, as text for a bug ticket.
+- When the page changes, a **Refresh** prompt appears.
+
+While the view is open Chrome shows its "started debugging this browser" bar. If the bar is closed, or Chrome does not allow it on the page, the view is built from the page's HTML instead and says it is approximate.
+
+This is a simulation: NVDA, JAWS and VoiceOver word things a little differently. Check critical flows with a real screen reader too.
+
 ### Contrast checker
 
 The Contrast checker measures two colours and shows the WCAG contrast ratio. It uses the same formula as the scan, so the numbers always match. Open it with **Contrast checker** in the action row.
@@ -294,8 +309,9 @@ Changes are saved with the **Save** button. Settings changed in the side panel a
 | Cursor or layout looks wrong after an update | Reload the extension on `chrome://extensions` and reload the page. |
 | You want to start over on a tab | Press **Reset** in the footer. |
 | A yellow bar says the extension "started debugging this browser" | This is expected during a scan. To check focus indicators, the extension makes the page behave as if it had keyboard focus (the side panel has it while you work), then switches this off. The bar closes when the scan ends. If you cancel it, focus indicators are not checked and one note appears under **Needs review**. |
+| A screenshot shows black boxes over the content | This is privacy masking, not an error. Filled form fields, password fields, `.pii` elements and frames from other websites are covered so personal data does not reach reports. To show them, open **Options > Screenshots and privacy**, untick **Mask input values in screenshots** or remove the selector, and take the screenshot again. Do this only on test data, and turn masking back on afterwards. |
 
-**Privacy.** Scanning runs entirely in your browser and the extension makes no network requests of its own. Screenshots are taken only when you ask for them, input values are masked and elements matching your redaction selectors (by default password fields and `.pii`) are blurred before an image is stored.
+**Privacy.** Scanning runs entirely in your browser and the extension makes no network requests of its own. Screenshots are taken only when you ask for them. Before an image is stored, filled form fields, elements matching your redaction selectors (by default password fields and `.pii`) and frames from other websites are covered with a solid black box.
 
 ## 13. Manual testing: Quick Assess and Full Assessment
 

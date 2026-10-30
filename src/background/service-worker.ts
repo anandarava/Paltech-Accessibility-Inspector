@@ -23,6 +23,7 @@ import type {
 } from "@shared/types";
 import type { ManualCheckInput, Message, MessageOf, Response, ScanOptions } from "@shared/messages";
 import { isMessage, issueFrameTarget, sendToTab } from "@shared/messages";
+import type { PageTree } from "@shared/announce";
 import { computeScore, isNotConformant, summarize } from "@shared/scoring";
 import { wcagDocsUrl } from "@shared/wcag-map";
 import { PANEL_PORT_PREFIX } from "@shared/constants";
@@ -32,6 +33,7 @@ import { fingerprint } from "@src/content/fingerprint";
 import { buildMultiPageReport, buildReport, type ReportMeta } from "@src/background/exporters/index";
 import { ensureContentScript } from "./injector";
 import { disableFocusEmulation, enableFocusEmulation } from "./focus-emulation";
+import { closeScreenReader, markTreeNode, readTranscript } from "./screen-reader";
 import {
   addBaseline,
   addIgnored,
@@ -815,6 +817,20 @@ async function pushSettingsToTabs(settings: Settings): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Screen reader view
+// ---------------------------------------------------------------------------
+
+async function screenReaderTranscript(tabId: number) {
+  const [last, tab] = await Promise.all([getLastResult(tabId).catch(() => undefined), chrome.tabs.get(tabId)]);
+  return readTranscript(tabId, last?.issues ?? [], { url: tab.url ?? "", title: tab.title ?? "" }, async (selectors) => {
+    await ensureContentScript(tabId);
+    const res = await sendToTab<PageTree>(tabId, { type: "CS_SR_TREE", tabId, selectors }, 0);
+    if (!res.ok || !res.data) throw new Error(res.error ?? "The page did not respond.");
+    return res.data;
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Message handlers
 // ---------------------------------------------------------------------------
 
@@ -889,6 +905,29 @@ async function handleMessage(msg: Message, sender: Sender): Promise<unknown> {
 
     case "KEYBOARD_TEST_START":
       return handleKeyboardTestStart(msg);
+
+    case "SR_TRANSCRIPT":
+      return screenReaderTranscript(msg.tabId);
+
+    case "SR_HIGHLIGHT": {
+      await ensureContentScript(msg.tabId);
+      // A Chrome-tree line: the debugger marks its element, then the page outlines what it marked.
+      if (msg.source === "tree" && (msg.backendNodeId === undefined || !(await markTreeNode(msg.tabId, msg.backendNodeId)))) {
+        throw new Error("This element is no longer on the page. Press Refresh.");
+      }
+      const res = await sendToTab(msg.tabId, { type: "CS_SR_HIGHLIGHT", tabId: msg.tabId, nodeId: msg.source === "html" ? msg.nodeId : undefined }, 0);
+      if (!res.ok) throw new Error(res.error ?? "The page did not respond.");
+      return undefined;
+    }
+
+    case "SR_CLOSE":
+      await closeScreenReader(msg.tabId);
+      return undefined;
+
+    case "CS_SR_TREE":
+    case "CS_SR_HIGHLIGHT":
+      // Content-script messages; the service worker sends them, never answers them.
+      return undefined;
 
     case "KEYBOARD_TEST_STOP": {
       // The content script records the test; it answers with the partial
@@ -1364,6 +1403,7 @@ async function clearPageOverlay(tabId: number): Promise<void> {
     { type: "KEYBOARD_TEST_STOP", tabId },
   ];
   for (const msg of messages) await sendToTab(tabId, msg, 0);
+  await closeScreenReader(tabId);
 }
 
 chrome.runtime.onConnect.addListener((port) => {

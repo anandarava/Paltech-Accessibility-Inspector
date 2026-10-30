@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Screen reader fixture - A11y Checker</title>
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: #1a1a1a; background: #ffffff; margin: 0; line-height: 1.5; }
+    header, main, footer { max-width: 760px; margin: 0 auto; padding: 16px 24px; }
+    nav a { color: #0b4f9c; margin-right: 16px; }
+    .radio { display: inline-block; margin-right: 16px; }
+    button { font: inherit; padding: 8px 16px; background: #0b4f9c; color: #fff; border: 0; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <!-- Screen reader view: Chrome's accessibility tree read through the debugger. -->
+  <header>
+    <nav aria-label="Main"><a href="#home">Home</a><a href="#help">Help</a></nav>
+  </header>
+  <main>
+    <h1>Patient intake</h1>
+    <p>Fill in <em>every</em> field before you submit.</p>
+    <ul><li>Name</li><li>Allergies</li></ul>
+    <!-- A custom radio (role="radio") wrapping a real radio: two radio buttons for one option (KBD-10). -->
+    <fieldset>
+      <legend>Known allergies</legend>
+      <div class="radio" id="allergy-yes" role="radio" aria-checked="false" tabindex="0">
+        <label><input type="radio" tabindex="-1" aria-label="" value="Yes"> Yes (Patient has Known Allergies)</label>
+      </div>
+      <div class="radio" id="allergy-no" role="radio" aria-checked="false" tabindex="0">
+        <label><input type="radio" tabindex="-1" aria-label="" value="No"> No</label>
+      </div>
+    </fieldset>
+    <p><label for="email">Email</label> <input id="email" type="email" required></p>
+    <!-- No name: an icon-only button. -->
+    <button id="icon-button" type="button"><svg width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="6"/></svg></button>
+    <button type="submit">Submit</button>
+  </main>
+  <footer><p>Example clinic</p></footer>
+</body>
+</html>

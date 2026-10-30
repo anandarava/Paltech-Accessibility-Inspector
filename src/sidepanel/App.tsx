@@ -16,6 +16,7 @@ import { Filters } from "./components/Filters";
 import { IssueList } from "./components/IssueList";
 import { IssueDetail } from "./components/IssueDetail";
 import { KeyboardTest } from "./components/KeyboardTest";
+import { ScreenReaderView } from "./components/ScreenReaderView";
 import { ContrastChecker } from "./components/ContrastChecker";
 import { SavedScans } from "./components/SavedScans";
 import { SiteScan } from "./components/SiteScan";
@@ -28,7 +29,7 @@ import { SaveScanButton } from "./components/SaveScanButton";
 import { Toast } from "./components/Toast";
 import { PageChangedBanner } from "./components/PageChangedBanner";
 import { SelectMenu, WCAG_LEVEL_OPTIONS, WCAG_VERSION_OPTIONS } from "./components/SelectMenu";
-import { BookmarkIcon, DropperIcon, GlobeIcon, KeyboardIcon } from "./components/icons";
+import { BookmarkIcon, DropperIcon, GlobeIcon, KeyboardIcon, ScreenReaderIcon } from "./components/icons";
 
 export interface AppProps {
   /** DevTools passes chrome.devtools.inspectedWindow.tabId; the side panel resolves the active tab itself. */
@@ -278,6 +279,9 @@ export function App({ tabIdOverride, inspectable = false, onInspect, getInspecte
           <Button onClick={() => setView("keyboard")} disabled={tabId === null} aria-pressed={view === "keyboard"} size="action" className="flex-1 basis-[5.5rem] whitespace-normal leading-tight">
             <KeyboardIcon /> Keyboard test
           </Button>
+          <Button onClick={() => setView("reader")} disabled={tabId === null} aria-pressed={view === "reader"} size="action" className="flex-1 basis-[5.5rem] whitespace-normal leading-tight">
+            <ScreenReaderIcon /> Screen reader
+          </Button>
           <Button onClick={() => openChecker(null)} aria-pressed={view === "contrast"} size="action" className="flex-1 basis-[5.5rem] whitespace-normal leading-tight">
             <DropperIcon /> Contrast checker
           </Button>
@@ -303,6 +307,7 @@ export function App({ tabIdOverride, inspectable = false, onInspect, getInspecte
           )}
           {!landing && resultsView && !wide && (view === "list" ? listPane : detailPane)}
           {view === "keyboard" && <KeyboardTest onBack={backToList} />}
+          {view === "reader" && <ScreenReaderView onBack={backToList} />}
           {view === "contrast" && <ContrastChecker key={checkerIssueId ?? "standalone"} onBack={backFromChecker} />}
           {view === "saved" && <SavedScans onBack={backToList} />}
           {view === "compare" && <CompareView onBack={() => setView("saved")} />}

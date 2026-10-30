@@ -13,8 +13,10 @@ Each release is a `v<version>` tag on `main` with a GitHub Release. Development 
 ## [2.0.0] – unreleased
 
 ### Added
+- **Screen reader view**: what a screen reader announces on the page, in reading order, read from Chrome's accessibility tree. Lists of headings, landmarks, links and form fields; unnamed and nested controls and the scan's findings marked on their lines; click a line to show its element; Speak reads the lines aloud; Copy for bug tickets. Falls back to an approximate tree built from the HTML when the debugger is not available.
 
 ### Changed
+- Focus emulation and the Screen reader view share one debugger connection per tab.
 
 ### Fixed
 

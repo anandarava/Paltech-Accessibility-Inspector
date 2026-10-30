@@ -14,38 +14,25 @@
  * Chrome will not let extensions debug, the user cancelling the bar) leaves
  * the scan running without emulation, and the focus rule then reports one
  * needs-review note instead of a finding per element.
+ *
+ * The connection is shared with other features (see debugger-session.ts).
  */
-
-const PROTOCOL_VERSION = "1.3";
-
-function debuggerApi(): typeof chrome.debugger | undefined {
-  return typeof chrome !== "undefined" ? chrome.debugger : undefined;
-}
+import { acquireDebugger, releaseDebugger, sendDebuggerCommand } from "./debugger-session";
 
 /** Attach to the tab and turn focus emulation on. Resolves false when that is not possible. */
 export async function enableFocusEmulation(tabId: number): Promise<boolean> {
-  const api = debuggerApi();
-  if (!api) return false;
-  const target = { tabId };
+  if (!(await acquireDebugger(tabId))) return false;
   try {
-    await api.attach(target, PROTOCOL_VERSION);
-  } catch {
-    return false;
-  }
-  try {
-    await api.sendCommand(target, "Emulation.setFocusEmulationEnabled", { enabled: true });
+    await sendDebuggerCommand(tabId, "Emulation.setFocusEmulationEnabled", { enabled: true });
     return true;
   } catch {
-    await api.detach(target).catch(() => undefined);
+    await releaseDebugger(tabId);
     return false;
   }
 }
 
-/** Turn focus emulation off and detach. Never throws. */
+/** Turn focus emulation off and give up the connection. Never throws. */
 export async function disableFocusEmulation(tabId: number): Promise<void> {
-  const api = debuggerApi();
-  if (!api) return;
-  const target = { tabId };
-  await api.sendCommand(target, "Emulation.setFocusEmulationEnabled", { enabled: false }).catch(() => undefined);
-  await api.detach(target).catch(() => undefined);
+  await sendDebuggerCommand(tabId, "Emulation.setFocusEmulationEnabled", { enabled: false }).catch(() => undefined);
+  await releaseDebugger(tabId);
 }

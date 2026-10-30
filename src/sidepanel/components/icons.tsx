@@ -57,6 +57,16 @@ export function KeyboardIcon(p: IconProps) {
   );
 }
 
+/** A speaker with sound waves: the Screen reader view. */
+export function ScreenReaderIcon(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path d="M2.5 6h2.5l3.5-3v10L5 10H2.5Z" />
+      <path d="M11 5.5a3.5 3.5 0 0 1 0 5M12.8 3.5a6 6 0 0 1 0 9" />
+    </Svg>
+  );
+}
+
 /** The half-filled contrast circle: the Contrast checker. */
 export function DropperIcon(p: IconProps) {
   return (

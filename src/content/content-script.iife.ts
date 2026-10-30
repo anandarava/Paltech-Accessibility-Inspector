@@ -19,6 +19,7 @@ import { accessibleName, boundingBoxes, fingerprintSelector, getFocusableElement
 import { cancelPicker, startPicker } from "./picker";
 import { elementColors } from "./color-pick";
 import { listInstances } from "./assess";
+import { buildPageTree, srTargetElement } from "./screen-reader";
 
 declare global {
   interface Window {
@@ -68,6 +69,8 @@ const HANDLED_TYPES = new Set<string>([
   "CS_ELEMENT_COLORS",
   "CS_ASSESS_LIST",
   "CS_ASSESS_SHOT_PREPARE",
+  "CS_SR_TREE",
+  "CS_SR_HIGHLIGHT",
 ]);
 
 /** Overlay-related messages: child frames have no overlay and stay silent so the top frame answers. */
@@ -90,6 +93,8 @@ const TOP_ONLY_TYPES = new Set<string>([
   "CS_ELEMENT_COLORS",
   "CS_ASSESS_LIST",
   "CS_ASSESS_SHOT_PREPARE",
+  "CS_SR_TREE",
+  "CS_SR_HIGHLIGHT",
 ]);
 
 /**
@@ -1232,6 +1237,20 @@ async function handle(msg: Message): Promise<Handled> {
 
     case "CS_ASSESS_LIST":
       return ok(listInstances(msg.kind));
+
+    case "CS_SR_TREE":
+      return ok(buildPageTree(readStringArray(msg.selectors)));
+
+    case "CS_SR_HIGHLIGHT": {
+      const el = srTargetElement(msg.nodeId);
+      if (!el) return fail("This element is no longer on the page. Press Refresh.");
+      const ov = requireOverlay();
+      ov.show();
+      ov.highlightSelectors([uniqueSelector(el)]);
+      el.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+      window.setTimeout(() => ov.reposition(), 400);
+      return ok();
+    }
 
     case "CS_ASSESS_SHOT_PREPARE": {
       const el = resolveSelector(msg.selector);
